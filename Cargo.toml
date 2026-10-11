@@ -1,10 +1,10 @@
 [package]
-name = "apexline"
+name = "boxboxbox"
 version = "0.1.0"
 edition = "2021"
-description = "Telemetry dashboard and driving coach for Gran Turismo 7 (PS5)"
+description = "Telemetry dashboard, race strategy and driving coach for Gran Turismo 7 (PS5) – fork of Apexline"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/Pflegusch/apexline"
+repository = "https://github.com/ahosovidaho/boxboxbox"
 keywords = ["telemetry", "dashboard", "sim-racing", "coach"]
 categories = ["command-line-utilities", "games"]
 

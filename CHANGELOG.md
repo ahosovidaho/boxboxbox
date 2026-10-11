@@ -1,5 +1,14 @@
 # Changelog
 
+## BOXBOXBOX 0.1.0-fork1 – 2026-10-11
+
+- Fork Apexline pod názvem BOXBOXBOX (program `boxboxbox`, titulek dashboardu). Datová složka
+  nativní instalace zůstává `apexline`, aby byly vidět dřívější záznamy.
+- Docker: `Dockerfile`, `docker-compose.yml`, `.env.example` (PS5 IP povinná, data v `telemetry-data/`).
+- CSV kol nově ukládá `fuel_capacity` (poslední sloupec; starší soubory ho nemají).
+- `tools/stint_analyza.py`: oficiální čas kola z `last_lap_ms`, rozjeté kolo se nepočítá,
+  průměrná spotřeba a dojezd na plnou nádrž.
+
 ## 0.1.0 – 2026-10-08
 
 First public release.

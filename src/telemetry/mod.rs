@@ -39,8 +39,13 @@ pub struct Link {
 
 /// Receives telemetry until the program ends. `configured` carries the PS5 address from the
 /// settings (`None` = search) and may change at runtime; `state_file` remembers the address found.
+///
+/// `behind_nat`: packets arrive through a port forward (Docker Desktop) that rewrites their sender
+/// address, so the sender is not compared with the configured PS5 address; the configured address
+/// is shown as the source instead.
 pub async fn run(
     sock: UdpSocket,
+    behind_nat: bool,
     mut configured: watch::Receiver<Option<Ipv4Addr>>,
     state_file: PathBuf,
     mut tracker: Tracker,
@@ -119,14 +124,19 @@ pub async fn run(
             }
             res = sock.recv_from(&mut buf) => match res {
                 Ok((n, from)) => {
-                    let IpAddr::V4(ip) = from.ip() else { continue };
-                    // After changing the address, the old console streams on for a few seconds
-                    if fixed.is_some_and(|f| f != ip) {
+                    let IpAddr::V4(sender) = from.ip() else { continue };
+                    // After changing the address, the old console streams on for a few seconds.
+                    // Behind NAT every packet seems to come from the gateway, so skip that check.
+                    if !behind_nat && fixed.is_some_and(|f| f != sender) {
                         continue;
                     }
+                    let ip = if behind_nat { fixed.unwrap_or(sender) } else { sender };
                     let Some(p) = packet::parse(&buf[..n]) else { continue };
                     if last_packet.is_none() || source != Some(ip) {
                         println!("{}", tr!("Telemetrie empfangen von {ip} ({n} Bytes)", "Receiving telemetry from {ip} ({n} bytes)"));
+                        if sender != ip {
+                            println!("{}", tr!("  (über NAT, Absender {sender})", "  (through NAT, sender {sender})"));
+                        }
                     }
                     if fixed.is_none() && state.ps5_found != Some(ip) {
                         state.ps5_found = Some(ip);

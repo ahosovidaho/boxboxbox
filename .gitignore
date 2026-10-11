@@ -3,3 +3,5 @@
 /coach
 /perf
 __pycache__/
+/telemetry-data
+.env

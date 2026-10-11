@@ -46,7 +46,8 @@ tire_radius_fl,tire_radius_fr,tire_radius_rl,tire_radius_rr,susp_fl,susp_fr,susp
 fuel,boost_bar,oil_pressure,water_temp,oil_temp,energy_recovery,time_of_day_ms,\
 unk_b0,unk_b1,unk_b2,unk_b3,unk_f0,unk_f1,unk_f2,unk_f3,unk_f4,\
 last_lap_ms,best_lap_ms,rpm_alert_min,rpm_alert_max,total_laps,\
-gear_ratio_1,gear_ratio_2,gear_ratio_3,gear_ratio_4,gear_ratio_5,gear_ratio_6,gear_ratio_7,gear_ratio_8";
+gear_ratio_1,gear_ratio_2,gear_ratio_3,gear_ratio_4,gear_ratio_5,gear_ratio_6,gear_ratio_7,gear_ratio_8,\
+fuel_capacity";
 
 impl Recorder {
     /// `wake` is notified whenever a lap file is finished or a session ends (coach trigger).
@@ -129,6 +130,8 @@ impl Recorder {
         for r in p.gear_ratios {
             let _ = write!(s, ",{r:.4}");
         }
+        // Appended at the end: readers look columns up by name, older files simply lack it
+        let _ = write!(s, ",{:.3}", p.fuel_capacity);
         s
     }
 }
@@ -271,5 +274,22 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_matches_header() {
+        let p = Packet { fuel_capacity: 100.0, fuel_level: 42.5, ..Default::default() };
+        let d = crate::telemetry::dynamics::compute(&p, 1.0);
+        let row = Recorder::row(&p, &d, Some(1000), None);
+        let cols: Vec<&str> = HEADER.split(',').collect();
+        let cells: Vec<&str> = row.split(',').collect();
+        assert_eq!(cols.len(), cells.len(), "header and row column count differ");
+        let i = cols.iter().position(|c| *c == "fuel_capacity").expect("fuel_capacity column");
+        assert_eq!(cells[i], "100.000");
     }
 }

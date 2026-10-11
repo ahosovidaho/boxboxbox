@@ -15,6 +15,8 @@ use std::io;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
+/// Kept as "apexline" on purpose: config and recordings from the upstream program stay where
+/// they are, so a native install of the fork sees all earlier sessions.
 const APP: &str = "apexline";
 pub const DEFAULT_PORT: u16 = 8080;
 
