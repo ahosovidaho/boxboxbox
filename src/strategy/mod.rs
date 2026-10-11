@@ -41,6 +41,8 @@ pub struct Race {
     pub pit_required: bool,
     /// Compound that has to be used once, e.g. "RS"
     pub mandatory: Option<String>,
+    /// Tyres at the start; after a tyre change the same compound is assumed
+    pub start_compound: Option<String>,
     /// Fuel per lap to plan with before a lap has been measured
     pub fuel_per_lap: Option<f32>,
     pub reserve_laps: Option<f32>,
@@ -246,9 +248,29 @@ impl Strategy {
 
     fn stint_mut(&mut self) -> &mut Stint {
         if self.saved.stints.is_empty() {
-            self.saved.stints.push(Stint::default());
+            let compound = self.saved.race.as_ref().and_then(|r| r.start_compound.clone());
+            self.saved.stints.push(Stint { compound, ..Default::default() });
         }
         self.saved.stints.last_mut().unwrap()
+    }
+
+    /// After a stop the tracker saw whether the tyres came out cold (new) or not. A choice the
+    /// driver made on the dashboard is kept; new tyres are assumed to be the same compound.
+    pub fn tyres_detected(&mut self, changed: bool) {
+        let Some(stop) = self.saved.stops.last_mut() else { return };
+        if stop.tyres.is_some() {
+            return;
+        }
+        stop.tyres = Some(changed);
+        let lap = stop.lap;
+        if changed {
+            let compound = effective_stints(&self.saved).last().and_then(|s| s.compound.clone());
+            if self.saved.stints.is_empty() {
+                self.saved.stints = effective_stints(&self.saved);
+            }
+            self.saved.stints.push(Stint { start: lap as f32, compound, wear: vec![] });
+        }
+        self.save();
     }
 
     /// Compound of the tyres on the car now (corrects the current stint).
@@ -302,7 +324,7 @@ impl Strategy {
 
     fn calibration_key(&self) -> Option<String> {
         let race = self.saved.race.as_ref()?;
-        let compound = self.saved.stints.last()?.compound.clone()?;
+        let compound = effective_stints(&self.saved).last()?.compound.clone()?;
         Some(format!("{}|{}|{}|{}", self.live.car_code, race.track, compound, race.tyre_wear.unwrap_or(1.0)))
     }
 
@@ -321,6 +343,18 @@ impl Strategy {
     pub fn plan(&self) -> Plan {
         plan(&self.saved, &self.live, self.fuel_per_lap(), self.calibration_key().and_then(|k| self.saved.calibration.get(&k).copied()))
     }
+}
+
+/// The stints, with the starting tyres from the race settings when nothing was picked yet.
+fn effective_stints(saved: &Saved) -> Vec<Stint> {
+    let start = saved.race.as_ref().and_then(|r| r.start_compound.clone());
+    let mut stints = saved.stints.clone();
+    match stints.first_mut() {
+        None if start.is_some() => stints.push(Stint { compound: start, ..Default::default() }),
+        Some(first) if first.compound.is_none() => first.compound = start,
+        _ => {}
+    }
+    stints
 }
 
 /// Wear per lap of a stint: line through the origin (new tyres = 0 %) fitted to the readings.
@@ -369,11 +403,12 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
     p.fuel_source = source;
 
     // ---- Tyres ----
-    let stint = saved.stints.last();
+    let stints = effective_stints(saved);
+    let stint = stints.last();
     p.compound = stint.and_then(|s| s.compound.clone());
     p.stint_laps = stint.map_or(driven, |s| (driven - s.start).max(0.0));
     p.mandatory_done = match &race.mandatory {
-        Some(m) => saved.stints.iter().any(|s| s.compound.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(m))),
+        Some(m) => stints.iter().any(|s| s.compound.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(m))),
         None => true,
     };
     p.tyre_question = saved.stops.last().is_some_and(|s| s.tyres.is_none());
@@ -673,6 +708,28 @@ mod tests {
         assert_eq!(p.stops_needed, 2);
         assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
         assert!(p.calls.iter().any(|c| c.text.starts_with("1. zastávka nejpozději v kole")));
+    }
+
+    #[test]
+    fn tyre_change_detected_keeps_the_start_compound() {
+        let mut s = Strategy::load(None);
+        let mut race = barcelona(11).race.unwrap();
+        race.start_compound = Some("RS".into());
+        s.set_race(race);
+        let p = s.plan();
+        assert_eq!(p.compound.as_deref(), Some("RS"));
+        assert!(p.mandatory_done);
+        s.stopped(7);
+        assert!(s.plan().tyre_question);
+        s.tyres_detected(true);
+        let p = s.plan();
+        assert!(!p.tyre_question && p.pit_done);
+        assert_eq!(s.saved.stints.len(), 2);
+        assert_eq!(s.saved.stints[1].start, 7.0);
+        assert_eq!(p.compound.as_deref(), Some("RS"));
+        // A later detection does not overwrite the answer
+        s.tyres_detected(false);
+        assert_eq!(s.saved.stops[0].tyres, Some(true));
     }
 
     #[test]

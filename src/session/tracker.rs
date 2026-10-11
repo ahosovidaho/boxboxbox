@@ -26,6 +26,10 @@ const RESUME_DISTANCE: f32 = 50.0;
 const FUEL_HISTORY: usize = 5;
 /// Standing still this long in a race lap counts as a pit stop
 const PIT_STILL: Duration = Duration::from_secs(5);
+/// After a stop, the tyre temperature is watched this long while driving …
+const TYRE_CHECK: Duration = Duration::from_secs(30);
+/// … and a drop of at least this much (°C, mean of the four) means new tyres
+const TYRE_DROP: f32 = 8.0;
 const LAP_HISTORY: usize = 8;
 /// Smoothing of the balance display (packets): ~0.25 s
 const BALANCE_SMOOTHING: f32 = 15.0;
@@ -158,6 +162,16 @@ pub struct Tracker {
     still_since: Option<Instant>,
     /// The car has driven in this race (standing on the grid before the start is no pit stop)
     raced: bool,
+    /// Mean tyre temperature when the car came to a stand
+    still_temp: f32,
+    /// After a stop: were the tyres changed? (new tyres come out clearly colder)
+    tyre_check: Option<TyreCheck>,
+}
+
+struct TyreCheck {
+    before: f32,
+    moving_since: Option<Instant>,
+    coldest: f32,
 }
 
 impl Tracker {
@@ -187,6 +201,8 @@ impl Tracker {
             lap_full: false,
             still_since: None,
             raced: false,
+            still_temp: 0.0,
+            tyre_check: None,
         }
     }
 
@@ -297,15 +313,30 @@ impl Tracker {
         } else if p.speed_ms > 15.0 {
             self.raced = true;
         }
+        let tyre_temp = p.tire_temp.iter().sum::<f32>() / 4.0;
         if self.raced && on_track && !paused && !loading && p.current_lap > 0 && p.speed_ms < 0.2 {
-            let since = *self.still_since.get_or_insert(now);
-            if now.duration_since(since) >= PIT_STILL {
+            if self.still_since.is_none() {
+                self.still_since = Some(now);
+                self.still_temp = tyre_temp;
+            }
+            if self.still_since.is_some_and(|since| now.duration_since(since) >= PIT_STILL) {
                 let lap = p.current_lap;
                 self.lap_refuel = true; // this lap's fuel figure is not a racing lap
                 self.with_strategy(|s| s.stopped(lap));
+                self.tyre_check.get_or_insert(TyreCheck { before: self.still_temp, moving_since: None, coldest: f32::MAX });
             }
         } else {
             self.still_since = None;
+        }
+        // New tyres: clearly colder than the old ones were when the car stopped (today ~12 °C)
+        if let Some(tc) = self.tyre_check.as_mut().filter(|_| p.speed_ms > 5.0 && !paused) {
+            let since = *tc.moving_since.get_or_insert(now);
+            tc.coldest = tc.coldest.min(tyre_temp);
+            if now.duration_since(since) >= TYRE_CHECK {
+                let changed = tc.before - tc.coldest >= TYRE_DROP;
+                self.tyre_check = None;
+                self.with_strategy(|s| s.tyres_detected(changed));
+            }
         }
 
         // Time spent paused must not count towards the lap time
@@ -699,6 +730,48 @@ mod tests {
         assert_eq!(s.saved.stops.len(), 1);
         assert_eq!(s.saved.stops[0].lap, 5);
         assert!(s.plan().pit_done && s.plan().tyre_question);
+    }
+
+    #[test]
+    fn tyre_change_is_seen_in_the_temperatures() {
+        for (after, changed) in [(62.0f32, true), (78.0, false)] {
+            let st = strategy::Strategy::load(None).shared();
+            st.lock().unwrap().set_race(strategy::Race {
+                name: "Test".into(),
+                laps: Some(11),
+                start_compound: Some("RS".into()),
+                ..Default::default()
+            });
+            let mut t = Tracker::new(None, None);
+            t.set_strategy(st.clone());
+            let (mut now, mut id) = (Instant::now(), 0);
+            let mut step = |t: &mut Tracker, lap: i16, speed: f32, temp: f32, secs: u32| {
+                for _ in 0..secs * 60 {
+                    id += 1;
+                    now += Duration::from_micros(16_667);
+                    let p = Packet {
+                        car_code: 1,
+                        flags: flags::ON_TRACK,
+                        current_lap: lap,
+                        total_laps: 11,
+                        fuel_level: 60.0,
+                        fuel_capacity: 100.0,
+                        speed_ms: speed,
+                        packet_id: id,
+                        tire_temp: [temp; 4],
+                        ..Default::default()
+                    };
+                    t.update_at(&p, now);
+                }
+            };
+            step(&mut t, 7, 50.0, 81.0, 5);
+            step(&mut t, 7, 0.0, 80.0, 18); // in the box
+            step(&mut t, 8, 20.0, after, 35); // pit exit and the first part of the lap
+            let s = st.lock().unwrap();
+            assert_eq!(s.saved.stops[0].tyres, Some(changed), "after {after} °C");
+            assert_eq!(s.saved.stints.len(), if changed { 2 } else { 0 });
+            assert!(!s.plan().tyre_question);
+        }
     }
 
     #[test]

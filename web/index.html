@@ -711,6 +711,9 @@
     <label><span>Povinná směs</span> <select id="rMand">
       <option value="">žádná</option><option>RS</option><option>RM</option><option>RH</option>
       <option>SS</option><option>SM</option><option>SH</option><option>CS</option><option>CM</option><option>CH</option></select></label>
+    <label><span>Startovní směs</span> <select id="rStart">
+      <option value="">nevím</option><option>RS</option><option>RM</option><option>RH</option>
+      <option>SS</option><option>SM</option><option>SH</option><option>CS</option><option>CM</option><option>CH</option></select></label>
     <label><span>Odhad spotřeby / kolo (než změřím)</span> <input type="number" id="rFpl" inputmode="decimal" step="0.01"></label>
     <label><span>Rezerva paliva v cíli (kola)</span> <input type="number" id="rReserve" inputmode="decimal" step="0.1"></label>
     <label><span>Limit opotřebení gum %</span> <input type="number" id="rLimit" inputmode="numeric"></label>
@@ -1768,6 +1771,7 @@
     $('rName').value = r.name || ''; $('rTrack').value = r.track || '';
     $('rLaps').value = r.laps ?? ''; $('rWear').value = r.tyre_wear ?? ''; $('rFuelMult').value = r.fuel_mult ?? '';
     $('rRefuel').value = r.refuel_rate ?? ''; $('rPit').checked = !!r.pit_required; $('rMand').value = r.mandatory || '';
+    $('rStart').value = r.start_compound || '';
     $('rFpl').value = r.fuel_per_lap ?? ''; $('rReserve').value = r.reserve_laps ?? 0.3; $('rLimit').value = r.wear_limit ?? 70;
     $('raceSheet').dataset.id = r.id || '';
   }
@@ -1802,6 +1806,7 @@
       id: $('raceSheet').dataset.id || '', name: $('rName').value.trim(), track: $('rTrack').value.trim(),
       laps: numIn($('rLaps').value), tyre_wear: numIn($('rWear').value), fuel_mult: numIn($('rFuelMult').value),
       refuel_rate: numIn($('rRefuel').value), pit_required: $('rPit').checked, mandatory: $('rMand').value || null,
+      start_compound: $('rStart').value || null,
       fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), wear_limit: numIn($('rLimit').value),
     };
     if (!race.name) { $('rErr').textContent = 'Vyplň aspoň název závodu.'; $('rErr').hidden = false; return; }
