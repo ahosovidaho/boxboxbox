@@ -11,7 +11,8 @@ services:
     image: boxboxbox:local
     container_name: boxboxbox
     restart: unless-stopped
-    command: ["--ps5", "${PS5_IP:?Doplň PS5_IP do souboru .env}"]
+    # --behind-nat: Docker Desktop přepisuje odesílatele paketů z PS5 na svou bránu
+    command: ["--ps5", "${PS5_IP:?Doplň PS5_IP do souboru .env}", "--behind-nat"]
     ports:
       - "${DASHBOARD_PORT:-8099}:8080/tcp"
       - "33740:33740/udp"

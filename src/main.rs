@@ -41,6 +41,11 @@ struct Args {
     #[arg(long, global = true, default_value_t = 30)]
     hz: u32,
 
+    /// Telemetry arrives through a port forward (Docker Desktop) that rewrites the sender address:
+    /// accept packets from any sender and use the PS5 address from --ps5
+    #[arg(long, global = true)]
+    behind_nat: bool,
+
     /// Do not record laps
     #[arg(long, global = true)]
     no_record: bool,
@@ -195,7 +200,7 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
         tokio::spawn(demo::run(tracker, publisher));
     } else {
         let sock = telemetry::bind().await?;
-        tokio::spawn(telemetry::run(sock, ps5_rx, data.state.clone(), tracker, publisher));
+        tokio::spawn(telemetry::run(sock, args.behind_nat, ps5_rx, data.state.clone(), tracker, publisher));
     }
 
     let state = web::api::AppState {
