@@ -1686,7 +1686,7 @@
     if ($('stCalls').innerHTML !== calls) $('stCalls').innerHTML = calls;
     // Fuel
     const m = st.fuel_margin_laps;
-    setText('stFuelBig', st.window && st.stops_needed > 0 ? `BOX ${st.window[0]}–${st.window[1]}` : m == null ? '–' : (m >= 0 ? '+' : '') + nf(m) + ' kola');
+    setText('stFuelBig', st.window && st.stops_needed > 0 ? 'BOX ' + (st.window[0] === st.window[1] ? st.window[0] : `${st.window[0]}–${st.window[1]}`) : m == null ? '–' : (m >= 0 ? '+' : '') + nf(m) + ' kola');
     setText('stLap', st.total_laps ? `${Math.max(d.lap, 0)} / ${st.total_laps}` : `${Math.max(d.lap, 0)}`);
     setText('stLeft', nf(st.laps_left));
     setText('stFpl', st.fuel_per_lap == null ? '–' : nf(st.fuel_per_lap, 2) + ({ manual: ' (zadaný odhad)', so_far: ' (z dosavadní spotřeby)' }[st.fuel_source] || ''));

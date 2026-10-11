@@ -124,6 +124,8 @@ pub struct Plan {
     /// Laps the fuel on board reaches beyond the finish (negative = short)
     pub fuel_margin_laps: Option<f32>,
     pub stops_needed: u32,
+    /// Two stops needed now, but one would do at this fuel per lap (saving fuel)
+    pub one_stop_fpl: Option<f32>,
     /// Next stop: enter the pit at the end of one of these laps
     pub window: Option<[i16; 2]>,
     /// Refuel amount when boxing at the end of this lap
@@ -319,6 +321,10 @@ fn wear_rate(stint: &Stint) -> Option<f32> {
     (sxx > 0.0).then(|| pts.iter().map(|(x, y)| x * y).sum::<f32>() / sxx)
 }
 
+fn fmt2(v: f32) -> String {
+    format!("{v:.2}").replace('.', ",")
+}
+
 fn fmt1(v: f32) -> String {
     format!("{v:.1}").replace('.', ",")
 }
@@ -389,11 +395,22 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             // Earliest (one stop): what is still needed after the stop must fit into the tank
             let earliest = if p.stops_needed == 1 { (total + p.reserve_laps - cap / fpl).ceil() as i16 } else { live.lap };
             let earliest = earliest.max(live.lap.max(1));
+            let one_stop = |f: f32| {
+                let latest = ((driven + live.fuel / f - PIT_MARGIN).floor() as i16).min(total as i16 - 1);
+                let earliest = ((total + p.reserve_laps - cap / f).ceil() as i16).max(live.lap.max(1));
+                (earliest <= latest && latest >= live.lap).then_some([earliest, latest])
+            };
             if p.stops_needed == 1 && earliest > latest {
                 p.stops_needed = 2;
             }
-            // latest < current lap: the fuel runs out before the pit ("box now")
-            p.window = Some([earliest.min(latest), latest]);
+            if p.stops_needed == 2 {
+                // How much less fuel per lap would make one stop enough (lift and coast)?
+                p.one_stop_fpl = (1..=150).map(|i| fpl - i as f32 * 0.005).find(|f| one_stop(*f).is_some());
+                p.window = Some([live.lap.max(1).min(latest), latest]);
+            } else {
+                // latest < current lap: the fuel runs out before the pit ("box now")
+                p.window = Some([earliest.min(latest), latest]);
+            }
         } else if race.pit_required && !p.pit_done {
             p.window = Some([live.lap.max(1), (total as i16 - 1).max(live.lap.max(1))]);
         }
@@ -427,6 +444,12 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             }
             if p.stops_needed > 1 {
                 calls.push(call("warn", format!("Palivo vyžaduje {} zastávky", p.stops_needed)));
+                if let (Some(target), Some(f)) = (p.one_stop_fpl, fpl) {
+                    calls.push(call(
+                        "info",
+                        format!("1 zastávka stačí při spotřebě {} / kolo (ušetřit {})", fmt2(target), fmt2(f - target)),
+                    ));
+                }
             }
         }
         (_, Some(m)) => calls.push(call("info", format!("Palivo do cíle stačí (+{} kola)", fmt1(m)))),
@@ -598,6 +621,19 @@ mod tests {
         let p = plan(&barcelona(27), &l, Some(7.0), None);
         assert_eq!(p.window, Some([14, 14]));
         assert!(p.calls.iter().any(|c| c.text == "Box v kole 14"));
+    }
+
+    #[test]
+    fn two_stops_but_one_with_fuel_saving() {
+        // Today's grid: 98.4 on board, 7.06 per lap, 27 laps → one stop misses by a hair
+        let mut l = live(0, 0.0, 98.4);
+        l.total_laps = 27;
+        let p = plan(&barcelona(27), &l, Some(7.06), None);
+        assert_eq!(p.stops_needed, 2);
+        assert_eq!(p.window, Some([1, 13]));
+        let target = p.one_stop_fpl.unwrap();
+        assert!(target < 7.06 && target > 6.9, "{target}");
+        assert!(p.calls.iter().any(|c| c.text.starts_with("1 zastávka stačí při spotřebě")));
     }
 
     #[test]
