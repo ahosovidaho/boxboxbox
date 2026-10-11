@@ -9,6 +9,7 @@
 use super::recorder::{Msg, Recorder};
 use super::track_map::Track;
 use crate::perf;
+use crate::strategy;
 use crate::telemetry::packet::{flags, Packet};
 use crate::telemetry::{cars, dynamics, Link};
 use crate::tr;
@@ -121,6 +122,8 @@ pub struct Snapshot {
     pub perf: perf::Live,
     /// Connection to the PS5 (search state while there is no data)
     pub link: Link,
+    /// Race strategy (page 5), `null` without a strategy
+    pub strategy: Option<strategy::Plan>,
 }
 
 pub struct Tracker {
@@ -141,6 +144,12 @@ pub struct Tracker {
     last_packet: Option<Instant>,
     perf: perf::Detector,
     perf_store: Option<perf::Store>,
+    strategy: Option<strategy::Shared>,
+    /// Fuel of the previous packet (refuelling detection)
+    prev_fuel: Option<f32>,
+    /// Fuel burnt in the current lap (refuelling not counted)
+    lap_burn: f32,
+    lap_refuel: bool,
 }
 
 impl Tracker {
@@ -163,6 +172,20 @@ impl Tracker {
             last_packet: None,
             perf: perf::Detector::default(),
             perf_store,
+            strategy: None,
+            prev_fuel: None,
+            lap_burn: 0.0,
+            lap_refuel: false,
+        }
+    }
+
+    pub fn set_strategy(&mut self, s: strategy::Shared) {
+        self.strategy = Some(s);
+    }
+
+    fn with_strategy(&self, f: impl FnOnce(&mut strategy::Strategy)) {
+        if let Some(s) = &self.strategy {
+            f(&mut s.lock().unwrap_or_else(|e| e.into_inner()));
         }
     }
 
@@ -200,6 +223,7 @@ impl Tracker {
         } else if p.current_lap < self.lap || (p.current_lap == 0 && self.lap != 0) {
             // Race/time trial restarted: new lap file, map and best lap stay
             self.reset(false);
+            self.with_strategy(|s| s.reset_progress());
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));
             }
@@ -227,6 +251,12 @@ impl Tracker {
                     }
                 }
             }
+            if self.lap > 0 && crossed_line {
+                let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
+                self.with_strategy(|s| s.lap_done(lap, burn, refuel));
+            }
+            self.lap_burn = 0.0;
+            self.lap_refuel = false;
             self.track.lap_started(finished, crossed_line && p.current_lap > 0);
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));
@@ -235,6 +265,20 @@ impl Tracker {
             self.lap_start_tick = (p.current_lap > 0).then_some(p.packet_id);
             self.fuel_at_lap_start = (p.current_lap > 0).then_some(p.fuel_level);
         }
+
+        // Fuel: burnt per lap, and refuelling in the pit (fuel goes up)
+        let loading = p.flags & flags::LOADING != 0;
+        if let (Some(prev), true) = (self.prev_fuel, on_track && !loading && p.current_lap > 0) {
+            let diff = p.fuel_level - prev;
+            if diff > 0.05 {
+                self.lap_refuel = true;
+                let lap = p.current_lap;
+                self.with_strategy(|s| s.refuelled(lap, diff));
+            } else if diff < 0.0 && !paused {
+                self.lap_burn -= diff;
+            }
+        }
+        self.prev_fuel = Some(p.fuel_level);
 
         // Time spent paused must not count towards the lap time
         if let (true, Some(start), Some(last)) = (paused, self.lap_start_tick.as_mut(), self.last_tick) {
@@ -354,6 +398,27 @@ impl Tracker {
         s.extended = p.extended;
         s.recording = self.recorder.is_some() && self.session_open;
         s.perf.clone_from(&self.perf.live);
+        if let Some(st) = &self.strategy {
+            // Progress in the lap from the typical lap time (median of recent laps, else best)
+            let mut laps: Vec<i32> = s.laps.iter().copied().filter(|v| *v > 0).collect();
+            laps.sort_unstable();
+            let reference = laps.get(laps.len() / 2).copied().or(s.best_lap_ms).filter(|v| *v > 0);
+            let frac = match (lap_ms, reference) {
+                (Some(ms), Some(r)) => (ms as f32 / r as f32).min(0.99),
+                _ => 0.0,
+            };
+            let live = strategy::Live {
+                lap: p.current_lap,
+                total_laps: p.total_laps,
+                frac,
+                fuel: p.fuel_level,
+                capacity: p.fuel_capacity,
+                car_code: p.car_code,
+            };
+            let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
+            st.update_live(live);
+            s.strategy = Some(st.plan());
+        }
         s.perf.saved = self.perf_store.as_ref().map_or(0, perf::Store::saved);
         s
     }
@@ -467,6 +532,7 @@ impl Tracker {
             paused_since: self.paused_since,
             off_track_since: self.off_track_since,
             last_packet: self.last_packet,
+            strategy: self.strategy.take(),
             ..Tracker::new(self.recorder.take(), self.perf_store.take())
         };
     }
@@ -510,6 +576,61 @@ mod tests {
             }
         }
         now
+    }
+
+    #[test]
+    fn strategy_follows_a_race() {
+        let st = strategy::Strategy::load(None).shared();
+        st.lock().unwrap().set_race(strategy::Race {
+            name: "Test".into(),
+            track: "Barcelona".into(),
+            laps: Some(23),
+            refuel_rate: Some(3.0),
+            pit_required: true,
+            ..Default::default()
+        });
+        let mut t = Tracker::new(None, None);
+        t.set_strategy(st.clone());
+        let (mut fuel, mut id) = (100.0f32, 0i32);
+        let mut now = Instant::now();
+        // 13 laps of 120 s, 7.16 fuel per lap; in lap 12 the car refuels by 60
+        for lap in 1..=13i16 {
+            for k in 0..120 {
+                id += 60; // one second of ticks
+                if lap == 12 && (40..60).contains(&k) {
+                    fuel += 3.0; // standing in the pit: no fuel burnt
+                } else {
+                    fuel -= 7.16 / 120.0;
+                }
+                let p = Packet {
+                    car_code: 1,
+                    flags: flags::ON_TRACK,
+                    current_lap: lap,
+                    total_laps: 23,
+                    fuel_level: fuel,
+                    fuel_capacity: 100.0,
+                    speed_ms: 50.0,
+                    packet_id: id,
+                    last_lap_ms: if lap > 1 { 120_000 } else { 0 },
+                    position: [k as f32, 0.0, lap as f32],
+                    ..Default::default()
+                };
+                now += Duration::from_secs(1);
+                t.update_at(&p, now);
+            }
+        }
+        let s = st.lock().unwrap();
+        let fpl = s.fuel_per_lap().unwrap();
+        assert!((fpl - 7.16).abs() < 0.01, "fuel per lap {fpl}");
+        assert_eq!(s.saved.stops.len(), 1);
+        assert_eq!(s.saved.stops[0].lap, 12);
+        assert!((s.saved.stops[0].fuel_added - 60.0).abs() < 0.01);
+        assert!(s.saved.fuel_laps.iter().any(|l| l.lap == 12 && l.refuel));
+        let plan = t.snap.strategy.clone().unwrap();
+        assert!(plan.pit_done && plan.tyre_question);
+        // 12.99 laps driven, fuel 100 − 13 × 7.16 + 60 ≈ 66.9: 10 laps left need ~74 → one more stop
+        assert_eq!(plan.stops_needed, 1);
+        assert_eq!(plan.total_laps, Some(23));
     }
 
     #[test]

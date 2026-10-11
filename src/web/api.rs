@@ -6,10 +6,14 @@
 //! | GET | `/api/map` | track map |
 //! | GET | `/api/perf?car=<code>` | measurements of a car (page 4) |
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
+//! | GET | `/api/strategy` | race, stints, stops and calibration |
+//! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
+//! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"wear"/"reset"/"clear", …}` |
 
 use super::Feeds;
 use crate::config::{Config, DataPaths, Language, Units};
 use crate::perf;
+use crate::strategy;
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
@@ -32,6 +36,7 @@ pub struct AppState {
     /// Serve the dashboard from this folder instead of the built-in copy
     pub web_dir: Option<PathBuf>,
     pub perf: perf::Store,
+    pub strategy: strategy::Shared,
     pub settings: Arc<Settings>,
 }
 
@@ -52,6 +57,66 @@ pub fn routes() -> Router<AppState> {
         .route("/api/map", get(map))
         .route("/api/perf", get(perf_overview))
         .route("/api/settings", get(settings).post(update_settings))
+        .route("/api/strategy", get(strategy_state))
+        .route("/api/strategy/race", axum::routing::post(strategy_race))
+        .route("/api/strategy/action", axum::routing::post(strategy_action))
+}
+
+async fn strategy_state(State(s): State<AppState>) -> impl IntoResponse {
+    json_body(s.strategy.lock().unwrap_or_else(|e| e.into_inner()).json())
+}
+
+async fn strategy_race(State(s): State<AppState>, Json(race): Json<strategy::Race>) -> impl IntoResponse {
+    let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    st.set_race(race);
+    json_body(st.json())
+}
+
+#[derive(Deserialize)]
+struct StrategyAction {
+    action: String,
+    compound: Option<String>,
+    pct: Option<f32>,
+}
+
+async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction>) -> impl IntoResponse {
+    let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    let compound = a.compound.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    let ok = match (a.action.as_str(), compound, a.pct) {
+        ("compound", Some(c), _) => {
+            st.set_compound(c);
+            true
+        }
+        ("new_tyres", Some(c), _) => {
+            st.new_tyres(c);
+            true
+        }
+        ("same_tyres", ..) => {
+            st.same_tyres();
+            true
+        }
+        ("wear", _, Some(p)) => {
+            st.add_wear(p);
+            true
+        }
+        ("reset", ..) => {
+            st.reset_progress();
+            st.save();
+            true
+        }
+        ("clear", ..) => {
+            st.saved.race = None;
+            st.reset_progress();
+            st.save();
+            true
+        }
+        _ => false,
+    };
+    if ok {
+        (StatusCode::OK, json_body(st.json())).into_response()
+    } else {
+        (StatusCode::BAD_REQUEST, json_body(json!({ "error": "unknown action or missing value" }).to_string())).into_response()
+    }
 }
 
 fn json_body(body: String) -> impl IntoResponse {

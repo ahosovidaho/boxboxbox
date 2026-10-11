@@ -1,5 +1,15 @@
 # Changelog
 
+## BOXBOXBOX 0.2.0-fork1 – 2026-10-11
+
+- **Strategie** (stránka 5, přejetím doprava): palivo do cíle, okno zastávky („Box v kole A–B“),
+  kolik dotankovat při boxu na konci kola a doba tankování, povinná zastávka a povinná směs,
+  opotřebení gum z ručně zadaných procent ze hry (kalibrace auto + trať + směs + multiplikátor).
+- Výběr závodu z kalendáře šampionátu (Firestore tamayo.cz, jen čtení) nebo ruční zadání.
+- Automatická detekce tankování v boxech a spotřeby po kolech (bez 1. kola z roštu a kol s tankováním).
+- Na stránce 1 ve spodní liště nejdůležitější pokyn (BOX / varování).
+- Stav strategie v `strategy.json` v datové složce (vydrží restart).
+
 ## BOXBOXBOX 0.1.0-fork1 – 2026-10-11
 
 - Fork Apexline pod názvem BOXBOXBOX (program `boxboxbox`, titulek dashboardu). Datová složka

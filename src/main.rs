@@ -4,6 +4,7 @@ mod demo;
 mod i18n;
 mod perf;
 mod session;
+mod strategy;
 mod telemetry;
 mod web;
 
@@ -193,7 +194,10 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
     let recorder = recording.then(|| Recorder::start(data.recordings.clone(), wake));
     let perf_store = perf::Store::new(data.perf.clone());
     // Demo data is measured live but not stored
-    let tracker = Tracker::new(recorder, (!demo).then(|| perf_store.clone()));
+    let mut tracker = Tracker::new(recorder, (!demo).then(|| perf_store.clone()));
+    // Demo: strategy works but nothing is stored
+    let strategy = strategy::Strategy::load((!demo).then(|| data.root.join("strategy.json"))).shared();
+    tracker.set_strategy(strategy.clone());
 
     if demo {
         println!("{}", tr!("Demo-Modus: simulierte Telemetrie", "Demo mode: simulated telemetry"));
@@ -208,6 +212,7 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
         hz: args.hz.clamp(1, 60),
         web_dir: args.web_dir.clone(),
         perf: perf_store,
+        strategy,
         settings: Arc::new(web::api::Settings { config: Mutex::new(cfg), config_file: config_file.to_path_buf(), data, ps5: ps5_tx, port }),
     };
     web::server::serve(port, state).await
