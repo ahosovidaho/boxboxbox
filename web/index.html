@@ -1700,7 +1700,7 @@
     const question = st.tyre_question || stNewMode;
     const chips = compoundsFor(st).map(c =>
       `<button data-c="${c}" class="${c === st.compound && !question ? 'on' : ''} ${question ? 'new' : ''}">${c}</button>`).join('')
-      + (st.tyre_question ? '<button data-same="1">Stejné gumy</button>' : '');
+      + (st.tyre_question ? '<button data-same="1">Stejné gumy</button><button data-nostop="1">Nebyla to zastávka</button>' : '');
     if (chips !== stLastChips) { $('stChips').innerHTML = chips; stLastChips = chips; }
     setText('stStint', nf(st.stint_laps));
     setText('stRate', st.wear_per_lap == null ? 'zadej níže' : nf(st.wear_per_lap, 2) + ' %' + (st.wear_source === 'calibration' ? ' (z kalibrace)' : ''));
@@ -1721,7 +1721,8 @@
     const b = e.target.closest('button');
     if (!b) return;
     const q = (lastData.strategy && lastData.strategy.tyre_question) || stNewMode;
-    if (b.dataset.same) await stAction('same_tyres');
+    if (b.dataset.nostop) await stAction('no_stop');
+    else if (b.dataset.same) await stAction('same_tyres');
     else if (q) await stAction('new_tyres', { compound: b.dataset.c });
     else await stAction('compound', { compound: b.dataset.c });
     stNewMode = false;

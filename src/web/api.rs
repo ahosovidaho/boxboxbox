@@ -8,7 +8,7 @@
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
 //! | GET | `/api/strategy` | race, stints, stops and calibration |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
-//! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"wear"/"reset"/"clear", …}` |
+//! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
 
 use super::Feeds;
 use crate::config::{Config, DataPaths, Language, Units};
@@ -93,6 +93,10 @@ async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction
         }
         ("same_tyres", ..) => {
             st.same_tyres();
+            true
+        }
+        ("no_stop", ..) => {
+            st.no_stop();
             true
         }
         ("wear", _, Some(p)) => {

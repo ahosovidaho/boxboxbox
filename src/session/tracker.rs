@@ -156,6 +156,8 @@ pub struct Tracker {
     lap_full: bool,
     /// Standing still since (pit stop detection)
     still_since: Option<Instant>,
+    /// The car has driven in this race (standing on the grid before the start is no pit stop)
+    raced: bool,
 }
 
 impl Tracker {
@@ -184,6 +186,7 @@ impl Tracker {
             lap_refuel: false,
             lap_full: false,
             still_since: None,
+            raced: false,
         }
     }
 
@@ -289,7 +292,12 @@ impl Tracker {
 
         // Pit stop without refuelling: standing still in a race lap for a while. A spin stops the
         // car for a second or two, a stop for new tyres takes 15 s or more.
-        if on_track && !paused && !loading && p.current_lap > 0 && p.speed_ms < 0.2 {
+        if p.current_lap <= 0 {
+            self.raced = false;
+        } else if p.speed_ms > 15.0 {
+            self.raced = true;
+        }
+        if self.raced && on_track && !paused && !loading && p.current_lap > 0 && p.speed_ms < 0.2 {
             let since = *self.still_since.get_or_insert(now);
             if now.duration_since(since) >= PIT_STILL {
                 let lap = p.current_lap;
@@ -679,6 +687,7 @@ mod tests {
                 t.update_at(&p, now);
             }
         };
+        step(&mut t, 1, 0.0, 10); // standing start: lap 1 on the grid before the lights
         step(&mut t, 4, 50.0, 3);
         step(&mut t, 4, 0.0, 2); // spin: 2 s standing
         step(&mut t, 4, 50.0, 3);

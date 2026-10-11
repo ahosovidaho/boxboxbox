@@ -275,6 +275,14 @@ impl Strategy {
         self.save();
     }
 
+    /// The last detected stop was none (the car only stood still): forget it.
+    pub fn no_stop(&mut self) {
+        if self.saved.stops.last().is_some_and(|s| s.tyres.is_none() && s.fuel_added <= 0.0) {
+            self.saved.stops.pop();
+        }
+        self.save();
+    }
+
     pub fn same_tyres(&mut self) {
         if let Some(s) = self.saved.stops.last_mut() {
             s.tyres.get_or_insert(false);
@@ -303,8 +311,9 @@ impl Strategy {
         // The lap with a stop and the one after it (pit exit) burn less than a racing lap
         let pit = |l: &FuelLap| l.refuel || self.saved.stops.iter().any(|s| s.lap == l.lap || s.lap == l.lap - 1);
         let clean: Vec<f32> = self.saved.fuel_laps.iter().filter(|l| !pit(l) && l.lap > 1).map(|l| l.used).collect();
+        // No clean lap yet: better a lap next to a stop than no figure at all
         let pick =
-            if clean.is_empty() { self.saved.fuel_laps.iter().filter(|l| !pit(l)).map(|l| l.used).collect::<Vec<_>>() } else { clean };
+            if clean.is_empty() { self.saved.fuel_laps.iter().filter(|l| !l.refuel).map(|l| l.used).collect::<Vec<_>>() } else { clean };
         let recent = &pick[pick.len().saturating_sub(FUEL_LAPS)..];
         (!recent.is_empty()).then(|| recent.iter().sum::<f32>() / recent.len() as f32)
     }
@@ -348,7 +357,8 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
 
     // Without a measured lap (e.g. the server started mid-race): fuel burnt so far, assuming a
     // full tank at the start and no refuelling yet
-    let so_far = (driven >= 1.0 && saved.stops.is_empty() && live.capacity > live.fuel).then(|| (live.capacity - live.fuel) / driven);
+    let refuelled = saved.stops.iter().any(|s| s.fuel_added > 0.0);
+    let so_far = (driven >= 1.0 && !refuelled && live.capacity > live.fuel).then(|| (live.capacity - live.fuel) / driven);
     let (fpl, source) = match (measured_fpl, race.fuel_per_lap, so_far) {
         (Some(f), ..) => (Some(f), "measured"),
         (None, Some(f), _) => (Some(f), "manual"),
@@ -425,7 +435,7 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
     // ---- Calls ----
     let mut calls = Vec::new();
     if p.tyre_question {
-        calls.push(call("warn", "Zastávka: nasadil jsi nové gumy? Zvol směs, nebo „stejné“.".into()));
+        calls.push(call("warn", "Zastávka? Zvol nové gumy, „Stejné gumy“, nebo „Nebyla to zastávka“.".into()));
     }
     if race.name.is_empty() {
         calls.push(call("info", "Vyber závod, ať vím počet kol a pravidla.".into()));
@@ -436,6 +446,11 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             let add = p.add_now.map_or(String::new(), |v| format!(" · dotankovat {}", fmt1(v)));
             if b < lap {
                 calls.push(call("box", "BOX TEĎ – palivo nevystačí na další kolo!".into()));
+            } else if p.stops_needed > 1 && lap < b {
+                // Two stops: the first one can be any time until lap b, no alarm before the last chance
+                calls.push(call("info", format!("1. zastávka nejpozději v kole {b}")));
+            } else if lap == b {
+                calls.push(call("box", format!("BOX na konci tohoto kola – poslední možnost{add}")));
             } else if (a..=b).contains(&lap) {
                 calls.push(call("box", format!("Okno otevřené: box na konci tohoto kola{add}")));
             } else {
@@ -634,6 +649,30 @@ mod tests {
         let target = p.one_stop_fpl.unwrap();
         assert!(target < 7.06 && target > 6.9, "{target}");
         assert!(p.calls.iter().any(|c| c.text.starts_with("1 zastávka stačí při spotřebě")));
+    }
+
+    #[test]
+    fn false_stop_can_be_dismissed_and_fuel_still_estimated() {
+        let mut s = Strategy::load(None);
+        s.set_race(barcelona(27).race.unwrap());
+        s.stopped(1);
+        s.lap_done(1, 6.9, false);
+        s.lap_done(2, 7.1, false);
+        assert!(s.fuel_per_lap().is_some(), "laps next to a stop still give a figure");
+        assert!(s.plan().pit_done);
+        s.no_stop();
+        assert!(s.saved.stops.is_empty() && !s.plan().pit_done);
+    }
+
+    #[test]
+    fn two_stops_no_alarm_before_last_chance() {
+        // Lap 4 of 27, 76.2 on board, 7.37 per lap (today's refresh)
+        let mut l = live(4, 0.2, 76.2);
+        l.total_laps = 27;
+        let p = plan(&barcelona(27), &l, Some(7.37), None);
+        assert_eq!(p.stops_needed, 2);
+        assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
+        assert!(p.calls.iter().any(|c| c.text.starts_with("1. zastávka nejpozději v kole")));
     }
 
     #[test]
