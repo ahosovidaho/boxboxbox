@@ -234,6 +234,14 @@ impl Strategy {
         }
     }
 
+    /// The car stood still in a race lap long enough to be a pit stop (tyres only, no fuel).
+    pub fn stopped(&mut self, lap: i16) {
+        if !self.saved.stops.last().is_some_and(|s| s.lap == lap) {
+            self.saved.stops.push(Stop { lap, fuel_added: 0.0, tyres: None });
+            self.save();
+        }
+    }
+
     fn stint_mut(&mut self) -> &mut Stint {
         if self.saved.stints.is_empty() {
             self.saved.stints.push(Stint::default());
@@ -290,9 +298,11 @@ impl Strategy {
 
     /// Clean laps (no refuelling, not the first lap from the grid); the first lap only if nothing else.
     pub fn fuel_per_lap(&self) -> Option<f32> {
-        let clean: Vec<f32> = self.saved.fuel_laps.iter().filter(|l| !l.refuel && l.lap > 1).map(|l| l.used).collect();
+        // The lap with a stop and the one after it (pit exit) burn less than a racing lap
+        let pit = |l: &FuelLap| l.refuel || self.saved.stops.iter().any(|s| s.lap == l.lap || s.lap == l.lap - 1);
+        let clean: Vec<f32> = self.saved.fuel_laps.iter().filter(|l| !pit(l) && l.lap > 1).map(|l| l.used).collect();
         let pick =
-            if clean.is_empty() { self.saved.fuel_laps.iter().filter(|l| !l.refuel).map(|l| l.used).collect::<Vec<_>>() } else { clean };
+            if clean.is_empty() { self.saved.fuel_laps.iter().filter(|l| !pit(l)).map(|l| l.used).collect::<Vec<_>>() } else { clean };
         let recent = &pick[pick.len().saturating_sub(FUEL_LAPS)..];
         (!recent.is_empty()).then(|| recent.iter().sum::<f32>() / recent.len() as f32)
     }
@@ -412,7 +422,8 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             } else if (a..=b).contains(&lap) {
                 calls.push(call("box", format!("Okno otevřené: box na konci tohoto kola{add}")));
             } else {
-                calls.push(call("info", format!("Box v kole {a}–{b}")));
+                let laps = if a == b { format!("{a}") } else { format!("{a}–{b}") };
+                calls.push(call("info", format!("Box v kole {laps}")));
             }
             if p.stops_needed > 1 {
                 calls.push(call("warn", format!("Palivo vyžaduje {} zastávky", p.stops_needed)));
@@ -563,6 +574,30 @@ mod tests {
         other.id = "y".into();
         s.set_race(other);
         assert!(s.saved.fuel_laps.is_empty());
+    }
+
+    #[test]
+    fn tyre_only_stop_counts_and_pit_laps_leave_the_average() {
+        let mut s = Strategy::load(None);
+        for (lap, used) in [(2, 7.13), (3, 7.17), (4, 7.33), (5, 6.25), (6, 6.78), (7, 7.13)] {
+            s.lap_done(lap, used, false);
+        }
+        s.stopped(5);
+        s.stopped(5); // still standing: no second stop
+        assert_eq!(s.saved.stops.len(), 1);
+        assert!(s.saved.stops[0].tyres.is_none());
+        // laps 5 (stop) and 6 (pit exit) are left out
+        assert!((s.fuel_per_lap().unwrap() - (7.13 + 7.17 + 7.33 + 7.13) / 4.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn single_lap_window_reads_naturally() {
+        // 27 laps at 7.0: one stop only at the end of lap 14
+        let mut l = live(1, 0.0, 99.7);
+        l.total_laps = 27;
+        let p = plan(&barcelona(27), &l, Some(7.0), None);
+        assert_eq!(p.window, Some([14, 14]));
+        assert!(p.calls.iter().any(|c| c.text == "Box v kole 14"));
     }
 
     #[test]

@@ -24,6 +24,8 @@ const SESSION_OFF_END: Duration = Duration::from_secs(60);
 /// Driving on this close to the known track (m) continues the session
 const RESUME_DISTANCE: f32 = 50.0;
 const FUEL_HISTORY: usize = 5;
+/// Standing still this long in a race lap counts as a pit stop
+const PIT_STILL: Duration = Duration::from_secs(5);
 const LAP_HISTORY: usize = 8;
 /// Smoothing of the balance display (packets): ~0.25 s
 const BALANCE_SMOOTHING: f32 = 15.0;
@@ -152,6 +154,8 @@ pub struct Tracker {
     lap_refuel: bool,
     /// The current lap was seen from the line (not joined mid-lap): its fuel figure is complete
     lap_full: bool,
+    /// Standing still since (pit stop detection)
+    still_since: Option<Instant>,
 }
 
 impl Tracker {
@@ -179,6 +183,7 @@ impl Tracker {
             lap_burn: 0.0,
             lap_refuel: false,
             lap_full: false,
+            still_since: None,
         }
     }
 
@@ -281,6 +286,19 @@ impl Tracker {
             }
         }
         self.prev_fuel = Some(p.fuel_level);
+
+        // Pit stop without refuelling: standing still in a race lap for a while. A spin stops the
+        // car for a second or two, a stop for new tyres takes 15 s or more.
+        if on_track && !paused && !loading && p.current_lap > 0 && p.speed_ms < 0.2 {
+            let since = *self.still_since.get_or_insert(now);
+            if now.duration_since(since) >= PIT_STILL {
+                let lap = p.current_lap;
+                self.lap_refuel = true; // this lap's fuel figure is not a racing lap
+                self.with_strategy(|s| s.stopped(lap));
+            }
+        } else {
+            self.still_since = None;
+        }
 
         // Time spent paused must not count towards the lap time
         if let (true, Some(start), Some(last)) = (paused, self.lap_start_tick.as_mut(), self.last_tick) {
@@ -633,6 +651,45 @@ mod tests {
         // 12.99 laps driven, fuel 100 − 13 × 7.16 + 60 ≈ 66.9: 10 laps left need ~74 → one more stop
         assert_eq!(plan.stops_needed, 1);
         assert_eq!(plan.total_laps, Some(23));
+    }
+
+    #[test]
+    fn tyre_only_stop_is_detected_but_not_a_spin() {
+        let st = strategy::Strategy::load(None).shared();
+        st.lock().unwrap().set_race(strategy::Race { name: "Test".into(), laps: Some(10), pit_required: true, ..Default::default() });
+        let mut t = Tracker::new(None, None);
+        t.set_strategy(st.clone());
+        let mut now = Instant::now();
+        let mut id = 0;
+        let mut step = |t: &mut Tracker, lap: i16, speed: f32, secs: u32| {
+            for _ in 0..secs * 60 {
+                id += 1;
+                now += Duration::from_micros(16_667);
+                let p = Packet {
+                    car_code: 1,
+                    flags: flags::ON_TRACK,
+                    current_lap: lap,
+                    total_laps: 10,
+                    fuel_level: 70.0,
+                    fuel_capacity: 100.0,
+                    speed_ms: speed,
+                    packet_id: id,
+                    ..Default::default()
+                };
+                t.update_at(&p, now);
+            }
+        };
+        step(&mut t, 4, 50.0, 3);
+        step(&mut t, 4, 0.0, 2); // spin: 2 s standing
+        step(&mut t, 4, 50.0, 3);
+        assert!(st.lock().unwrap().saved.stops.is_empty());
+        step(&mut t, 5, 50.0, 3);
+        step(&mut t, 5, 0.0, 18); // tyre change
+        step(&mut t, 5, 20.0, 3);
+        let s = st.lock().unwrap();
+        assert_eq!(s.saved.stops.len(), 1);
+        assert_eq!(s.saved.stops[0].lap, 5);
+        assert!(s.plan().pit_done && s.plan().tyre_question);
     }
 
     #[test]
