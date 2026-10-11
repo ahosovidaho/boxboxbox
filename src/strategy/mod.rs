@@ -130,6 +130,11 @@ pub struct Plan {
     pub one_stop_fpl: Option<f32>,
     /// Next stop: enter the pit at the end of one of these laps
     pub window: Option<[i16; 2]>,
+    /// Suggested lap for the next stop (end of that lap): inside the window, splitting the rest of
+    /// the race into equal stints
+    pub target_lap: Option<i16>,
+    /// Laps until that stop (0 = box at the end of this lap)
+    pub laps_to_box: Option<i16>,
     /// Refuel amount when boxing at the end of this lap
     pub add_now: Option<f32>,
     pub refuel_s: Option<f32>,
@@ -459,6 +464,17 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
         } else if race.pit_required && !p.pit_done {
             p.window = Some([live.lap.max(1), (total as i16 - 1).max(live.lap.max(1))]);
         }
+        // Suggested stop: equal stints, inside the window
+        if let Some([a, b]) = p.window {
+            let lap = live.lap.max(1);
+            // Equal stints over the whole race: next stop after stint (done + 1) of (done + needed + 1)
+            let done = saved.stops.len() as f32;
+            let parts = done + p.stops_needed.max(1) as f32 + 1.0;
+            let ideal = (total * (done + 1.0) / parts).round() as i16;
+            let target = if b < lap { lap } else { ideal.clamp(a.max(lap), b.max(lap)) };
+            p.target_lap = Some(target);
+            p.laps_to_box = Some((target - lap).max(0));
+        }
         // Boxing at the end of this lap
         let fuel_at_box = (live.fuel - fpl * (1.0 - live.frac)).max(0.0);
         let after = (total - live.lap.max(1) as f32 + p.reserve_laps) * fpl;
@@ -489,8 +505,12 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             } else if (a..=b).contains(&lap) {
                 calls.push(call("box", format!("Okno otevřené: box na konci tohoto kola{add}")));
             } else {
-                let laps = if a == b { format!("{a}") } else { format!("{a}–{b}") };
-                calls.push(call("info", format!("Box v kole {laps}")));
+                let text = match p.target_lap {
+                    Some(t) if a != b => format!("Box v kole {t} (okno {a}–{b})"),
+                    _ if a == b => format!("Box v kole {a}"),
+                    _ => format!("Box v kole {a}–{b}"),
+                };
+                calls.push(call("info", text));
             }
             if p.stops_needed > 1 {
                 calls.push(call("warn", format!("Palivo vyžaduje {} zastávky", p.stops_needed)));
@@ -557,7 +577,7 @@ mod tests {
         assert_eq!(p.stops_needed, 1);
         // earliest: 23 + 0.3 − 100/7.16 = 9.33 → 10; latest: 100/7.16 − 0.15 = 13.8 → 13
         assert_eq!(p.window, Some([10, 13]));
-        assert!(p.calls.iter().any(|c| c.text == "Box v kole 10–13"));
+        assert!(p.calls.iter().any(|c| c.text == "Box v kole 12 (okno 10–13)"));
     }
 
     #[test]
@@ -730,6 +750,21 @@ mod tests {
         // A later detection does not overwrite the answer
         s.tyres_detected(false);
         assert_eq!(s.saved.stops[0].tyres, Some(true));
+    }
+
+    #[test]
+    fn suggested_stop_splits_the_race() {
+        // 23 laps, one stop, window 10–13: halfway would be 11.5 → 12
+        let p = plan(&barcelona(23), &live(1, 0.0, 100.0), Some(7.16), None);
+        assert_eq!(p.target_lap, Some(12));
+        assert_eq!(p.laps_to_box, Some(11));
+        // Mandatory stop only (10 laps, enough fuel): halfway
+        let p = plan(&barcelona(10), &live(3, 0.0, 85.0), Some(7.16), None);
+        assert_eq!(p.target_lap, Some(5));
+        assert_eq!(p.laps_to_box, Some(2));
+        // Out of fuel: box now
+        let p = plan(&barcelona(23), &live(14, 0.5, 4.0), Some(7.16), None);
+        assert_eq!(p.laps_to_box, Some(0));
     }
 
     #[test]

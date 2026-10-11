@@ -135,6 +135,12 @@
   #fuelbar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 3px 0; }
   #fuelbar b { display: block; height: 100%; width: 0; background: var(--dim); border-radius: 3px; transition: width .5s; }
   #fuelcard #fuellaps { font-size: min(24px, 12cqw, 5vh); font-weight: 600; }
+  #boxbig { font-size: min(24px, 9.5cqw, 5.5vh); font-weight: 800; letter-spacing: .02em; text-align: center; border-radius: 8px;
+    padding: 2px 6px; white-space: nowrap; overflow: hidden; }
+  #boxbig[hidden] { display: none; }
+  #boxbig.soon { color: #000; background: var(--yellow); }
+  #boxbig.now { color: #000; background: var(--red); animation: flash .5s steps(1) infinite alternate; }
+  #boxbig.done { color: var(--green); font-size: min(18px, 10cqw, 4vh); }
 
   #strip { grid-area: strip; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--dim); overflow: hidden; white-space: nowrap; }
   #strip .num { color: var(--text); }
@@ -401,6 +407,7 @@
     <div class="card" id="fuelcard">
       <div class="row"><span class="label" data-t>Sprit</span><span id="fuel" class="num">–</span></div>
       <div id="fuelbar"><b></b></div>
+      <div id="boxbig" class="num" hidden></div>
       <div class="row"><span class="label" data-t>Ø/Runde</span><span id="fpl" class="num">–</span></div>
       <div class="row"><span class="label" data-t>Reicht für</span><span id="fuellaps" class="num">–</span></div>
     </div>
@@ -615,6 +622,7 @@
     <div class="card"><h2>Palivo</h2>
       <div class="stbig" id="stFuelBig">–</div>
       <div class="kvs">
+        <span>Okno zastávky</span><span id="stWindow">–</span>
         <span>Kolo</span><span id="stLap">–</span>
         <span>Zbývá kol</span><span id="stLeft">–</span>
         <span>Spotřeba / kolo</span><span id="stFpl">–</span>
@@ -1132,6 +1140,7 @@
     if (page === 1) renderMain(d, tireVals); else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
     else if (page === 5) renderStrategy(d);
     renderBoxCall(d);
+    renderBoxBig(d);
   }
 
   function renderMain(d, tireVals) {
@@ -1663,6 +1672,27 @@
   }
   const stAction = (action, extra = {}) => stPost('api/strategy/action', { action, ...extra });
 
+
+  // Page 1: laps to the suggested pit stop, readable at a glance
+  const kol = n => n === 1 ? 'kolo' : n >= 2 && n <= 4 ? 'kola' : 'kol';
+  function renderBoxBig(d) {
+    const el = $('boxbig'), st = d.strategy;
+    let txt = '', cls = '';
+    if (st && st.race) {
+      if (st.laps_to_box != null) {
+        const n = st.laps_to_box;
+        txt = n === 0 ? 'BOX TOTO KOLO' : n === 1 ? 'BOX PŘÍŠTÍ KOLO' : `BOX ZA ${n} ${kol(n).toUpperCase()}`;
+        cls = n === 0 ? 'now' : n === 1 ? 'soon' : '';
+      } else if (st.fuel_margin_laps != null) {
+        txt = st.pit_done ? 'DO CÍLE ✓' : 'BEZ ZASTÁVKY ✓';
+        cls = 'done';
+      }
+    }
+    el.hidden = !txt;
+    if (el.textContent !== txt) el.textContent = txt;
+    if (el.className !== cls) el.className = cls;
+  }
+
   function renderBoxCall(d) {
     const el = $('boxcall');
     const c = d.live && d.strategy && d.strategy.calls.find(c => c.level !== 'info' || c.text.startsWith('Box v kole'));
@@ -1689,9 +1719,10 @@
     if ($('stCalls').innerHTML !== calls) $('stCalls').innerHTML = calls;
     // Fuel
     const m = st.fuel_margin_laps;
-    setText('stFuelBig', st.window && st.stops_needed > 0 ? 'BOX ' + (st.window[0] === st.window[1] ? st.window[0] : `${st.window[0]}–${st.window[1]}`) : m == null ? '–' : (m >= 0 ? '+' : '') + nf(m) + ' kola');
+    setText('stFuelBig', st.target_lap != null && st.window ? `BOX ${st.target_lap}` : m == null ? '–' : (m >= 0 ? '+' : '') + nf(m) + ' kola');
     setText('stLap', st.total_laps ? `${Math.max(d.lap, 0)} / ${st.total_laps}` : `${Math.max(d.lap, 0)}`);
     setText('stLeft', nf(st.laps_left));
+    setText('stWindow', st.window ? (st.window[0] === st.window[1] ? `${st.window[0]}` : `${st.window[0]}–${st.window[1]}`) + (st.laps_to_box != null ? ` · za ${st.laps_to_box}` : '') : '–');
     setText('stFpl', st.fuel_per_lap == null ? '–' : nf(st.fuel_per_lap, 2) + ({ manual: ' (zadaný odhad)', so_far: ' (z dosavadní spotřeby)' }[st.fuel_source] || ''));
     setText('stNeed', nf(st.fuel_needed));
     setText('stFuel', d.fuel_capacity > 0 ? `${nf(d.fuel)} / ${nf(d.fuel_capacity, 0)}` : nf(d.fuel));
