@@ -1,0 +1,21 @@
+# BOXBOXBOX na Mac mini (Docker Desktop)
+#   1) cp .env.example .env   a doplň PS5_IP
+#   2) docker compose up -d --build
+#   3) dashboard: http://<IP Mac mini>:8099
+#
+# PS5 v Dockeru nejde najít broadcastem, proto je IP povinná.
+# Port 33740/udp nesmí současně používat jiný program (GT7Dashboard, nativní Apexline).
+services:
+  boxboxbox:
+    build: .
+    image: boxboxbox:local
+    container_name: boxboxbox
+    restart: unless-stopped
+    command: ["--ps5", "${PS5_IP:?Doplň PS5_IP do souboru .env}"]
+    ports:
+      - "${DASHBOARD_PORT:-8099}:8080/tcp"
+      - "33740:33740/udp"
+    volumes:
+      - ./telemetry-data:/data
+    environment:
+      - TZ=Europe/Prague

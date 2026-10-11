@@ -1,4 +1,32 @@
-# Apexline
+# BOXBOXBOX
+
+Fork projektu [Apexline](https://github.com/Pflegusch/apexline) od Pflegusch (MIT/Apache-2.0).
+Cíl forku: živý dashboard + **závodní strategie** (palivo, okno zastávky, pneumatiky, povinná měkká směs)
+pro šampionát na [tamayo.cz](https://www.tamayo.cz/GranTurismo/sezona2026.html). Projekt není spojen
+se Sony Interactive Entertainment ani Polyphony Digital.
+
+## Spuštění v Dockeru (Mac mini)
+
+```bash
+git clone https://github.com/ahosovidaho/boxboxbox.git ~/src/boxboxbox
+cd ~/src/boxboxbox
+cp .env.example .env          # doplň PS5_IP
+mkdir -p telemetry-data
+docker compose up -d --build
+docker compose logs -f        # PASS: "Receiving telemetry from <IP PS5>"
+```
+
+Dashboard: `http://<IP Mac mini>:8099`. Data (kola, coach, konfigurace) jsou ve složce `telemetry-data/`.
+
+- PS5 v Dockeru nejde najít broadcastem, IP v `.env` je povinná.
+- UDP port 33740 smí používat jen jeden program: GT7Dashboard nebo nativní Apexline předtím zastav.
+- Dashboard nevystavuj do internetu (Caddy), patří jen do LAN / VPN.
+
+Analýza stintu: `BOXBOX_DATA=./telemetry-data python3 tools/stint_analyza.py`
+
+---
+
+## Původní README (Apexline)
 
 Live telemetry dashboard and driving coach for **Gran Turismo 7** on PS5.
 Runs on your computer, shows on your phone.

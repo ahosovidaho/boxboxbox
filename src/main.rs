@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 
 #[derive(Parser)]
-#[command(name = "apexline", version, about = "Telemetry dashboard and driving coach for Gran Turismo 7")]
+#[command(name = "boxboxbox", version, about = "Telemetry dashboard, race strategy and driving coach for Gran Turismo 7")]
 struct Args {
     #[command(subcommand)]
     command: Option<Command>,
