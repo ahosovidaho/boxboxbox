@@ -1689,7 +1689,7 @@
     setText('stFuelBig', st.window && st.stops_needed > 0 ? `BOX ${st.window[0]}–${st.window[1]}` : m == null ? '–' : (m >= 0 ? '+' : '') + nf(m) + ' kola');
     setText('stLap', st.total_laps ? `${Math.max(d.lap, 0)} / ${st.total_laps}` : `${Math.max(d.lap, 0)}`);
     setText('stLeft', nf(st.laps_left));
-    setText('stFpl', st.fuel_per_lap == null ? '–' : nf(st.fuel_per_lap, 2) + (st.fuel_source === 'manual' ? ' (odhad)' : ''));
+    setText('stFpl', st.fuel_per_lap == null ? '–' : nf(st.fuel_per_lap, 2) + ({ manual: ' (zadaný odhad)', so_far: ' (z dosavadní spotřeby)' }[st.fuel_source] || ''));
     setText('stNeed', nf(st.fuel_needed));
     setText('stFuel', d.fuel_capacity > 0 ? `${nf(d.fuel)} / ${nf(d.fuel_capacity, 0)}` : nf(d.fuel));
     setText('stAdd', st.add_now == null ? '–' : '+' + nf(st.add_now));

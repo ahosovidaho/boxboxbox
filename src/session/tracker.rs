@@ -150,6 +150,8 @@ pub struct Tracker {
     /// Fuel burnt in the current lap (refuelling not counted)
     lap_burn: f32,
     lap_refuel: bool,
+    /// The current lap was seen from the line (not joined mid-lap): its fuel figure is complete
+    lap_full: bool,
 }
 
 impl Tracker {
@@ -176,6 +178,7 @@ impl Tracker {
             prev_fuel: None,
             lap_burn: 0.0,
             lap_refuel: false,
+            lap_full: false,
         }
     }
 
@@ -241,22 +244,21 @@ impl Tracker {
                     self.snap.laps.remove(0);
                 }
             }
-            if let Some(start) = self.fuel_at_lap_start {
-                let used = start - p.fuel_level;
-                // Refuelling in the pit gives negative consumption -> ignore
-                if used > 0.0 {
-                    self.fuel_used.push(used);
-                    if self.fuel_used.len() > FUEL_HISTORY {
-                        self.fuel_used.remove(0);
-                    }
+            // Only complete laps without refuelling (a lap joined midway, e.g. after a server
+            // restart, or with a pit stop would distort the average)
+            if self.fuel_at_lap_start.is_some() && self.lap_full && !self.lap_refuel && self.lap_burn > 0.0 {
+                self.fuel_used.push(self.lap_burn);
+                if self.fuel_used.len() > FUEL_HISTORY {
+                    self.fuel_used.remove(0);
                 }
             }
-            if self.lap > 0 && crossed_line {
+            if self.lap > 0 && crossed_line && self.lap_full {
                 let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
                 self.with_strategy(|s| s.lap_done(lap, burn, refuel));
             }
             self.lap_burn = 0.0;
             self.lap_refuel = false;
+            self.lap_full = crossed_line;
             self.track.lap_started(finished, crossed_line && p.current_lap > 0);
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));

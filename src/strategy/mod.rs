@@ -117,7 +117,7 @@ pub struct Plan {
     pub total_laps: Option<u32>,
     pub laps_left: Option<f32>,
     pub fuel_per_lap: Option<f32>,
-    /// "measured" or "manual"
+    /// "measured", "manual" or "so_far" (estimated from the fuel burnt since the start)
     pub fuel_source: &'static str,
     /// Fuel needed to the finish, reserve included
     pub fuel_needed: Option<f32>,
@@ -194,8 +194,9 @@ impl Strategy {
 
     /// New race settings; a different race starts from scratch.
     pub fn set_race(&mut self, race: Race) {
-        let same = self.saved.race.as_ref().is_some_and(|r| r.id == race.id && r.name == race.name);
-        if !same {
+        // Picking the race during the session keeps what was measured so far
+        let other = self.saved.race.as_ref().is_some_and(|r| r.id != race.id || r.name != race.name);
+        if other {
             self.reset_progress();
         }
         self.saved.race = Some(race);
@@ -329,9 +330,13 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
     let laps_left = total.map(|t| (t as f32 - driven).max(0.0));
     p.laps_left = laps_left;
 
-    let (fpl, source) = match (measured_fpl, race.fuel_per_lap) {
-        (Some(f), _) => (Some(f), "measured"),
-        (None, Some(f)) => (Some(f), "manual"),
+    // Without a measured lap (e.g. the server started mid-race): fuel burnt so far, assuming a
+    // full tank at the start and no refuelling yet
+    let so_far = (driven >= 1.0 && saved.stops.is_empty() && live.capacity > live.fuel).then(|| (live.capacity - live.fuel) / driven);
+    let (fpl, source) = match (measured_fpl, race.fuel_per_lap, so_far) {
+        (Some(f), ..) => (Some(f), "measured"),
+        (None, Some(f), _) => (Some(f), "manual"),
+        (None, None, Some(f)) => (Some(f), "so_far"),
         _ => (None, ""),
     };
     p.fuel_per_lap = fpl;
@@ -535,6 +540,29 @@ mod tests {
         assert!(!p.tyre_question && p.pit_done && p.mandatory_done);
         assert_eq!(p.compound.as_deref(), Some("RS"));
         assert_eq!(p.wear_per_lap, None);
+    }
+
+    #[test]
+    fn estimate_from_fuel_burnt_when_started_mid_race() {
+        // Server started in lap 11 of 27: nothing measured, 22.3 left after 10.8 laps
+        let mut l = live(11, 0.8, 22.3);
+        l.total_laps = 27;
+        let p = plan(&barcelona(27), &l, None, None);
+        assert_eq!(p.fuel_source, "so_far");
+        assert!((p.fuel_per_lap.unwrap() - 7.194).abs() < 0.01);
+        assert!(p.stops_needed >= 1 && p.window.is_some());
+    }
+
+    #[test]
+    fn picking_the_race_keeps_measured_laps() {
+        let mut s = Strategy::load(None);
+        s.lap_done(2, 7.1, false);
+        s.set_race(barcelona(23).race.unwrap());
+        assert_eq!(s.saved.fuel_laps.len(), 1);
+        let mut other = barcelona(23).race.unwrap();
+        other.id = "y".into();
+        s.set_race(other);
+        assert!(s.saved.fuel_laps.is_empty());
     }
 
     #[test]
