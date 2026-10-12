@@ -85,7 +85,7 @@ impl Coach {
     /// Runs forever: one pass now, then on every wake-up or poll interval.
     pub fn run(mut self, wake: mpsc::Receiver<()>) {
         let dir = self.record_dir.display();
-        log(tr!("gestartet ({dir})", "started ({dir})"));
+        log(tr!("gestartet ({dir})", "started ({dir})", "spuštěno ({dir})"));
         loop {
             self.tick();
             match wake.recv_timeout(POLL) {
@@ -119,7 +119,7 @@ impl Coach {
             }
             if let Err(e) = self.analyze_session(session, &mut state, fin) {
                 let s = session.display();
-                log(tr!("Fehler in {s}: {e}", "error in {s}: {e}"));
+                log(tr!("Fehler in {s}: {e}", "error in {s}: {e}", "chyba v {s}: {e}"));
             }
             if fin && !is_newest {
                 state.closed = true;
@@ -156,17 +156,22 @@ impl Coach {
                 state.laps.push(name.clone());
                 self.write_feed(session, Some(&item), feedback::focus_for(&res, lap), corners.clone())?;
                 let (n, title) = (lap.lap, item["title"].as_str().unwrap_or_default());
-                log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}"));
+                log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}", "kolo {n} vyhodnoceno: {title}"));
             }
             state.processed.push(name);
         }
         if fin && !res.laps.is_empty() && state.summarized_laps < state.laps.len() {
             let item = feedback::summary(session, &dir, &res, &state.metrics)?;
             let first = item["points"][0].as_str().unwrap_or_default().to_string();
-            self.write_feed(session, Some(&item), Some(json!({"title": tr!("Session beendet", "Session ended"), "text": first})), corners)?;
+            self.write_feed(
+                session,
+                Some(&item),
+                Some(json!({"title": tr!("Session beendet", "Session ended", "Session skončila"), "text": first})),
+                corners,
+            )?;
             state.summarized_laps = state.laps.len();
             let s = session.display();
-            log(tr!("Zusammenfassung geschrieben: {s}", "summary written: {s}"));
+            log(tr!("Zusammenfassung geschrieben: {s}", "summary written: {s}", "souhrn zapsán: {s}"));
         }
         save_state(session, state);
         Ok(())

@@ -28,12 +28,13 @@ pub enum Language {
     Auto,
     De,
     En,
+    Cs,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Units {
-    /// German → metric, English → imperial
+    /// German, Czech → metric, English → imperial
     #[default]
     Auto,
     Metric,
@@ -72,7 +73,11 @@ impl Config {
     pub fn validate(&self) -> Result<(), String> {
         if !self.ps5_ip.trim().is_empty() && self.ps5().is_none() {
             let ip = &self.ps5_ip;
-            return Err(crate::tr!("ps5_ip: \"{ip}\" ist keine IPv4-Adresse", "ps5_ip: \"{ip}\" is not an IPv4 address"));
+            return Err(crate::tr!(
+                "ps5_ip: \"{ip}\" ist keine IPv4-Adresse",
+                "ps5_ip: \"{ip}\" is not an IPv4 address",
+                "ps5_ip: \"{ip}\" není adresa IPv4"
+            ));
         }
         if self.http_port == 0 {
             return Err("http_port: 1–65535".into());
@@ -128,11 +133,11 @@ impl Config {
             line("http_port", self.http_port.to_string(), self.http_port == d.http_port),
         );
         add(
-            "Language of dashboard and coach: \"de\", \"en\" or \"auto\" (dashboard: browser language,\ncoach and console: system language)",
+            "Language of dashboard and coach: \"cs\", \"de\", \"en\" or \"auto\" (dashboard: browser language,\ncoach and console: system language)",
             line("language", quote(self.language.as_str()), self.language == d.language),
         );
         add(
-            "\"auto\" (follows the language – German: km/h, °C, L, bar; English: mph, °F, gal, psi),\n\"metric\" or \"imperial\"",
+            "\"auto\" (follows the language – Czech, German: km/h, °C, L, bar; English: mph, °F, gal, psi),\n\"metric\" or \"imperial\"",
             line("units", quote(self.units.as_str()), self.units == d.units),
         );
         add(
@@ -149,6 +154,7 @@ impl Language {
             Language::Auto => "auto",
             Language::De => "de",
             Language::En => "en",
+            Language::Cs => "cs",
         }
     }
 }

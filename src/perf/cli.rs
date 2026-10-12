@@ -25,7 +25,7 @@ fn shown(m: &Mark) -> bool {
 }
 
 pub fn label(key: &str) -> String {
-    let mile = tr!("Meile", "mile");
+    let mile = tr!("Meile", "mile", "míle");
     match key {
         "1/8mi" => format!("1/8 {mile}"),
         "1/4mi" => format!("1/4 {mile}"),
@@ -47,11 +47,11 @@ pub fn headline(r: &Run) -> String {
                 keys.iter().filter_map(|k| r.mark(k)).map(|m| format!("{} {} s", label(&m.key), num(m.t as f64, 2))).collect();
             parts.push(format!("max. {}", i18n::speed(r.v_max as f64)));
             let parts = parts.join(" · ");
-            tr!("Beschleunigung – {parts}", "Acceleration – {parts}")
+            tr!("Beschleunigung – {parts}", "Acceleration – {parts}", "Zrychlení – {parts}")
         }
         Kind::Brake => {
             let (v, d, t) = (i18n::speed(r.v_start as f64), i18n::dist_prec(r.dist_m as f64, 1), num(r.duration_s as f64, 2));
-            tr!("Bremsung aus {v} – {d} in {t} s", "Braking from {v} – {d} in {t} s")
+            tr!("Bremsung aus {v} – {d} in {t} s", "Braking from {v} – {d} in {t} s", "Brzdění z {v} – {d} za {t} s")
         }
     }
 }
@@ -83,29 +83,37 @@ fn details(r: &Run) -> Vec<String> {
     }
     if let Some(d) = &r.dyno {
         let (rpm, unit) = (d.peak[0], i18n::rpm_unit());
-        lines.push(tr!("Leistungsspitze bei {rpm:.0} {unit}", "Peak power at {rpm:.0} {unit}"));
+        lines.push(tr!("Leistungsspitze bei {rpm:.0} {unit}", "Peak power at {rpm:.0} {unit}", "Nejvyšší výkon při {rpm:.0} {unit}"));
         let shifts: Vec<String> = d
             .shifts
             .iter()
             .map(|s| {
                 let (g, n, rpm) = (s.gear, s.gear + 1, s.rpm);
-                let best = if s.late { tr!("spät (Begrenzer)", "late (limiter)") } else { format!("{rpm:.0}") };
+                let best = if s.late { tr!("spät (Begrenzer)", "late (limiter)", "pozdě (omezovač)") } else { format!("{rpm:.0}") };
                 match s.actual {
-                    Some(a) => tr!("{g}→{n} {best} (gefahren {a:.0})", "{g}→{n} {best} (driven {a:.0})"),
+                    Some(a) => tr!("{g}→{n} {best} (gefahren {a:.0})", "{g}→{n} {best} (driven {a:.0})", "{g}→{n} {best} (jeto {a:.0})"),
                     None => format!("{g}→{n} {best}"),
                 }
             })
             .collect();
         if !shifts.is_empty() {
             let shifts = shifts.join(" · ");
-            lines.push(tr!("Beste Schaltpunkte ({unit}): {shifts}", "Best shift points ({unit}): {shifts}"));
+            lines.push(tr!(
+                "Beste Schaltpunkte ({unit}): {shifts}",
+                "Best shift points ({unit}): {shifts}",
+                "Nejlepší body řazení ({unit}): {shifts}"
+            ));
         }
     }
     let sloped: Vec<String> =
         marks.iter().filter(|m| m.g.abs() > 2.0).map(|m| format!("{} {} %", label(&m.key), num(m.g as f64, 1))).collect();
     if !sloped.is_empty() {
         let sloped = sloped.join(" · ");
-        lines.push(tr!("Steigung/Gefälle (zählt nicht als Bestwert): {sloped}", "Slope (does not count as a best value): {sloped}"));
+        lines.push(tr!(
+            "Steigung/Gefälle (zählt nicht als Bestwert): {sloped}",
+            "Slope (does not count as a best value): {sloped}",
+            "Svah (nepočítá se jako nejlepší hodnota): {sloped}"
+        ));
     }
     lines
 }
@@ -122,7 +130,11 @@ fn samples(path: &Path) -> io::Result<Vec<Sample>> {
     let [Some(tick), Some(flags), Some(speed), Some(rpm), Some(gear), Some(thr), Some(brk), Some(y)] = cols else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            tr!("alte Aufzeichnung ohne die nötigen Spalten", "old recording without the required columns"),
+            tr!(
+                "alte Aufzeichnung ohne die nötigen Spalten",
+                "old recording without the required columns",
+                "starý záznam bez potřebných sloupců"
+            ),
         ));
     };
     Ok(lines
@@ -190,7 +202,7 @@ pub fn run(paths: &[PathBuf], store: Option<&Store>) {
         }
         runs.extend(det.flush());
         if runs.is_empty() {
-            println!("  {}", tr!("keine Messläufe gefunden", "no measurement runs found"));
+            println!("  {}", tr!("keine Messläufe gefunden", "no measurement runs found", "nenalezeny žádné měřicí jízdy"));
         }
 
         for mut run in runs {
@@ -209,13 +221,17 @@ pub fn run(paths: &[PathBuf], store: Option<&Store>) {
                 (Some(store), Some(_)) => match store.save(&store.dedupe(run)) {
                     Ok(p) => {
                         let p = p.display();
-                        println!("            {}", tr!("gespeichert: {p}", "saved: {p}"));
+                        println!("            {}", tr!("gespeichert: {p}", "saved: {p}", "uloženo: {p}"));
                     }
-                    Err(e) => eprintln!("            {}", tr!("nicht gespeichert: {e}", "not saved: {e}")),
+                    Err(e) => eprintln!("            {}", tr!("nicht gespeichert: {e}", "not saved: {e}", "neuloženo: {e}")),
                 },
                 (Some(_), None) => eprintln!(
                     "            {}",
-                    tr!("nicht gespeichert: session.json fehlt (Auto unbekannt)", "not saved: session.json missing (car unknown)")
+                    tr!(
+                        "nicht gespeichert: session.json fehlt (Auto unbekannt)",
+                        "not saved: session.json missing (car unknown)",
+                        "neuloženo: chybí session.json (auto neznámé)"
+                    )
                 ),
                 _ => {}
             }

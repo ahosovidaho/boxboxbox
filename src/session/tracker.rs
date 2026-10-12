@@ -497,7 +497,7 @@ impl Tracker {
         let start = chrono::Local::now() - chrono::TimeDelta::milliseconds((run.duration_s * 1000.0) as i64);
         run.stamp(car_code, &car, start);
         let h = perf::cli::headline(&run);
-        println!("{}", tr!("Messung: {h}", "Measurement: {h}"));
+        println!("{}", tr!("Messung: {h}", "Measurement: {h}", "Měření: {h}"));
         if let Some(store) = &self.perf_store {
             store.save_in_background(run);
         }
@@ -558,9 +558,9 @@ impl Tracker {
         println!(
             "{}",
             if resume {
-                tr!("Session fortgesetzt ({car})", "Session continued ({car})")
+                tr!("Session fortgesetzt ({car})", "Session continued ({car})", "Session pokračuje ({car})")
             } else {
-                tr!("Session gestartet ({car})", "Session started ({car})")
+                tr!("Session gestartet ({car})", "Session started ({car})", "Session začala ({car})")
             }
         );
     }
@@ -571,13 +571,13 @@ impl Tracker {
             r.send(Msg::End { reason });
         }
         let why = match reason {
-            "pause" => tr!("Pause oder Menü", "pause or menu"),
-            "off_track" => tr!("Strecke verlassen", "left the track"),
-            "no_data" => tr!("keine Daten mehr", "no more data"),
-            "car_change" => tr!("Autowechsel", "car changed"),
+            "pause" => tr!("Pause oder Menü", "pause or menu", "pauza nebo menu"),
+            "off_track" => tr!("Strecke verlassen", "left the track", "opuštění trati"),
+            "no_data" => tr!("keine Daten mehr", "no more data", "žádná další data"),
+            "car_change" => tr!("Autowechsel", "car changed", "změna auta"),
             other => other.to_string(),
         };
-        println!("{}", tr!("Session beendet: {why}", "Session ended: {why}"));
+        println!("{}", tr!("Session beendet: {why}", "Session ended: {why}", "Session skončila: {why}"));
     }
 
     /// Restart: `full = false` (race/time trial restarted) keeps map, best lap and steering ratio;

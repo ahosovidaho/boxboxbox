@@ -305,9 +305,9 @@ pub fn fmt_t(ms: f64) -> String {
     format!("{}:{:06.3}", min as i64, (ms - min * 60000.0) / 1000.0)
 }
 
-/// Lap time with the decimal separator of the language (German: comma).
+/// Lap time with the decimal separator of the language (German, Czech: comma).
 pub fn t_loc(ms: f64) -> String {
-    if crate::i18n::german() {
+    if crate::i18n::decimal_comma() {
         fmt_t(ms).replace('.', ",")
     } else {
         fmt_t(ms)

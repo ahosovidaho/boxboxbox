@@ -429,7 +429,7 @@
     <span><span data-t>Wasser</span> <span id="water" class="num">–</span>°</span>
     <span><span data-t>Öl</span> <span id="oil" class="num">–</span>°</span>
     <span id="boostwrap" hidden><span data-t>Ladedruck</span> <span id="boost" class="num">–</span> <span data-u="press">bar</span></span>
-    <span id="poswrap" hidden>Pos <span id="pos" class="num">–</span></span>
+    <span id="poswrap" hidden><span data-t>Pos</span> <span id="pos" class="num">–</span></span>
     <span class="pill" id="tcs">TCS</span>
     <span class="pill" id="asm">ASM</span>
     <span id="boxcall" hidden></span>
@@ -481,7 +481,7 @@
           <tr><td data-u="speed">km/h</td><td id="w_v0"></td><td id="w_v1"></td><td id="w_v2"></td><td id="w_v3"></td></tr>
           <tr><td data-t>Schlupf %</td><td id="w_s0"></td><td id="w_s1"></td><td id="w_s2"></td><td id="w_s3"></td></tr>
           <tr><td><span data-t>Federweg</span> <span data-u="travel">mm</span></td><td id="w_h0"></td><td id="w_h1"></td><td id="w_h2"></td><td id="w_h3"></td></tr>
-          <tr><td>Radius <span data-u="radius">cm</span></td><td id="w_r0"></td><td id="w_r1"></td><td id="w_r2"></td><td id="w_r3"></td></tr>
+          <tr><td><span data-t>Radius</span> <span data-u="radius">cm</span></td><td id="w_r0"></td><td id="w_r1"></td><td id="w_r2"></td><td id="w_r3"></td></tr>
         </tbody>
       </table>
     </div>
@@ -525,7 +525,7 @@
 
     <div class="card"><h2 data-t>Lage &amp; Position</h2>
       <div class="kvs">
-        <span>Position x / y / z</span><span id="d_pos">–</span>
+        <span data-t>Position x / y / z</span><span id="d_pos">–</span>
         <span data-t>Kurs</span><span id="d_head">–</span>
         <span data-t>Nicken / Rollen</span><span id="d_pr">–</span>
         <span data-t>Fahrzeughöhe</span><span id="d_bh">–</span>
@@ -543,7 +543,7 @@
       <div id="laplist"></div>
     </div>
 
-    <div class="card"><h2>Status</h2>
+    <div class="card"><h2 data-t>Status</h2>
       <div class="flags" id="flags"></div>
       <div class="kvs" style="margin-top:8px">
         <span data-t>Tageszeit (Spiel)</span><span id="d_tod">–</span>
@@ -557,7 +557,7 @@
 <!-- ======================= Page 3: coach ======================= -->
 <section class="page" id="p3" hidden>
   <div id="p3head">
-    <b>Coach</b>
+    <b data-t>Coach</b>
     <span id="coachUpdated"></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"><i></i><i></i><i class="on"></i><i></i><i></i></span>
@@ -707,7 +707,7 @@
     <label><span data-t>Helligkeit</span> <input type="range" id="sBright" min="0.35" max="1" step="0.05"></label>
     <label><span data-t>Burn-in-Schutz (Pixel-Shift)</span> <input type="checkbox" id="sShift"></label>
     <h2 class="sect">Server</h2>
-    <label><span data-t>Sprache</span> <select id="sLang"><option value="auto" data-t>Automatisch</option><option value="de">Deutsch</option><option value="en">English</option></select></label>
+    <label><span data-t>Sprache</span> <select id="sLang"><option value="auto" data-t>Automatisch</option><option value="cs">Čeština</option><option value="de">Deutsch</option><option value="en">English</option></select></label>
     <label><span data-t>Einheiten</span> <select id="sUnits"><option value="auto" data-t>Automatisch</option><option value="metric" data-t>Metrisch (km/h, °C)</option><option value="imperial" data-t>Imperial (mph, °F)</option></select></label>
     <label><span data-t>PS5-IP</span> <input type="text" id="sPs5" inputmode="decimal" data-t-ph="automatisch" placeholder="automatisch" autocomplete="off" spellcheck="false"></label>
     <div class="sinfo" id="sLink"></div>
@@ -1173,7 +1173,7 @@
   function render(d) {
     lastData = d;
     $$('.conn').forEach(el => el.classList.toggle('live', d.live));
-    const ct = d.live ? (d.paused ? t('Pause') : 'live') : 'offline';
+    const ct = d.live ? (d.paused ? t('Pause') : t('live')) : t('offline');
     $$('.connText').forEach(el => { if (el.textContent !== ct) el.textContent = ct; });
     $$('.rec').forEach(el => { el.hidden = !(d.live && d.recording); });
     if (d.live && d.on_track && !d.paused && !d.loading) lastActive = Date.now();

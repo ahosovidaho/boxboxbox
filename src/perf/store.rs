@@ -104,7 +104,7 @@ impl Store {
         let store = self.clone();
         std::thread::spawn(move || {
             if let Err(e) = store.save(&run) {
-                eprintln!("{}", crate::tr!("Messung nicht gespeichert: {e}", "Measurement not saved: {e}"));
+                eprintln!("{}", crate::tr!("Messung nicht gespeichert: {e}", "Measurement not saved: {e}", "Měření neuloženo: {e}"));
             }
         });
     }

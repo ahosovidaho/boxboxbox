@@ -1,5 +1,14 @@
 # Changelog
 
+## BOXBOXBOX 0.5.0-fork1 – 2026-10-13
+
+- **Čeština**: celý dashboard (stránky 1–4, start, nastavení, stav spojení) i texty serveru
+  (kouč, souhrny session, analýzy, konzole a log) jsou česky. Jazyk `cs` v nastavení
+  a v `config.toml`; „Automaticky“ = jazyk prohlížeče (dashboard) a `LANG` (server).
+  Docker má `LANG=cs_CZ.UTF-8`. Čeština píše desetinnou čárku v textech kouče, zatáčky
+  značí Z1, Z2 …, kola LP/PP/LZ/PZ. Strategie zůstává jen česky.
+- `tr!` má teď tři texty (DE, EN, CS) – chybějící překlad neprojde překladem.
+
 ## BOXBOXBOX 0.4.0-fork1 – 2026-10-13
 
 - **Barevné úseky na mapě** (stránka 1): trať se po prvním celém kole rozdělí na 20 stejně

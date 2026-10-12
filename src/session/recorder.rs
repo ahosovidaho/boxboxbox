@@ -211,7 +211,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                     seq = last_seq(&dir);
                     write_meta(&dir, &meta);
                     let d = dir.display();
-                    println!("{}", tr!("Aufzeichnung fortgesetzt: {d}", "Recording continued: {d}"));
+                    println!("{}", tr!("Aufzeichnung fortgesetzt: {d}", "Recording continued: {d}", "Záznam pokračuje: {d}"));
                     session = Some(dir);
                     continue;
                 }
@@ -220,7 +220,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                 match fs::create_dir_all(&dir) {
                     Ok(()) => {
                         let d = dir.display();
-                        println!("{}", tr!("Aufzeichnung: {d}", "Recording: {d}"));
+                        println!("{}", tr!("Aufzeichnung: {d}", "Recording: {d}", "Záznam: {d}"));
                         meta = serde_json::json!({ "car": car, "car_code": car_code, "started": now_iso(),
                                                    "ended": null, "end_reason": null, "resumed": 0 });
                         write_meta(&dir, &meta);
@@ -229,7 +229,14 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                     }
                     Err(e) => {
                         let d = dir.display();
-                        eprintln!("{}", tr!("Aufzeichnung nicht möglich ({d}): {e}", "Recording not possible ({d}): {e}"));
+                        eprintln!(
+                            "{}",
+                            tr!(
+                                "Aufzeichnung nicht möglich ({d}): {e}",
+                                "Recording not possible ({d}): {e}",
+                                "Záznam není možný ({d}): {e}"
+                            )
+                        );
                         session = None;
                     }
                 }
@@ -261,7 +268,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                         }
                         Err(e) => {
                             let p = path.display();
-                            eprintln!("{}", tr!("Kann {p} nicht anlegen: {e}", "Cannot create {p}: {e}"));
+                            eprintln!("{}", tr!("Kann {p} nicht anlegen: {e}", "Cannot create {p}: {e}", "Nelze vytvořit {p}: {e}"));
                         }
                     }
                 }

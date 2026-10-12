@@ -144,40 +144,81 @@ fn evaluate_zone(rows: &[Row], s: usize, turn: usize, e: usize, apex: usize) -> 
     if trail < 0.15 && gap_before > 0.15 {
         score -= 30.0;
         let g = i18n::num(gap_before, 1);
-        issue("kein Trail-Braking", tr!("Bremse {g} s vor dem Einlenken gelöst", "brake released {g} s before turn-in"));
+        issue(
+            "kein Trail-Braking",
+            tr!("Bremse {g} s vor dem Einlenken gelöst", "brake released {g} s before turn-in", "brzda puštěná {g} s před zatočením"),
+        );
     } else if brake_at_turn > 85.0 && trail > 0.3 {
         score -= 10.0;
-        issue("zu viel Druck beim Einlenken", tr!("{brake_at_turn:.0} % Bremse beim Einlenken", "{brake_at_turn:.0} % brake on turn-in"));
+        issue(
+            "zu viel Druck beim Einlenken",
+            tr!(
+                "{brake_at_turn:.0} % Bremse beim Einlenken",
+                "{brake_at_turn:.0} % brake on turn-in",
+                "{brake_at_turn:.0} % brzdy při zatočení"
+            ),
+        );
     }
     if coast > 0.3 {
         score -= (coast * 35.0).min(25.0);
         let c = i18n::num(coast, 1);
-        issue("Rollphase", tr!("{c} s weder Bremse noch Gas", "{c} s neither brake nor throttle"));
+        issue("Rollphase", tr!("{c} s weder Bremse noch Gas", "{c} s neither brake nor throttle", "{c} s bez brzdy i plynu"));
     }
     if dip < 0.75 {
         score -= ((0.75 - dip) * 100.0).min(25.0);
         let d = dip * 100.0;
-        issue("G-Loch", tr!("Haftung im Übergang nur zu {d:.0} % genutzt", "only {d:.0} % of the grip used in the transition"));
+        issue(
+            "G-Loch",
+            tr!(
+                "Haftung im Übergang nur zu {d:.0} % genutzt",
+                "only {d:.0} % of the grip used in the transition",
+                "v přechodu využito jen {d:.0} % gripu"
+            ),
+        );
     }
     if lock > 10.0 {
         score -= (lock * 0.5).min(25.0);
-        issue("Blockieren", tr!("Vorderräder {lock:.0} % der Trail-Phase blockiert", "front wheels locked {lock:.0} % of the trail phase"));
+        issue(
+            "Blockieren",
+            tr!(
+                "Vorderräder {lock:.0} % der Trail-Phase blockiert",
+                "front wheels locked {lock:.0} % of the trail phase",
+                "přední kola blokovala {lock:.0} % trail fáze"
+            ),
+        );
     }
     if under > 30.0 {
         score -= 15.0;
-        issue("Untersteuern", tr!("{under:.0} % Untersteuern beim Einlenken", "{under:.0} % understeer on turn-in"));
+        issue(
+            "Untersteuern",
+            tr!("{under:.0} % Untersteuern beim Einlenken", "{under:.0} % understeer on turn-in", "{under:.0} % nedotáčivost při zatočení"),
+        );
     }
     if rear > 20.0 {
         score -= 15.0;
-        issue("Heck kommt", tr!("Hinterachse rutscht {rear:.0} % der Trail-Phase", "rear axle sliding {rear:.0} % of the trail phase"));
+        issue(
+            "Heck kommt",
+            tr!(
+                "Hinterachse rutscht {rear:.0} % der Trail-Phase",
+                "rear axle sliding {rear:.0} % of the trail phase",
+                "zadní náprava klouzala {rear:.0} % trail fáze"
+            ),
+        );
     }
     if abrupt {
         score -= 10.0;
-        issue("abrupt gelöst", tr!("Bremse schlagartig losgelassen", "brake let go abruptly"));
+        issue("abrupt gelöst", tr!("Bremse schlagartig losgelassen", "brake let go abruptly", "brzda puštěná prudce"));
     }
     if reapply > 0 {
         score -= 5.0 * reapply.min(3) as f64;
-        issue("nachgetreten", tr!("Bremsdruck beim Einlenken wieder erhöht", "brake pressure increased again on turn-in"));
+        issue(
+            "nachgetreten",
+            tr!(
+                "Bremsdruck beim Einlenken wieder erhöht",
+                "brake pressure increased again on turn-in",
+                "při zatočení znovu přidán tlak na brzdu"
+            ),
+        );
     }
 
     Zone {
@@ -220,9 +261,9 @@ pub fn evaluate(rows: &[Row]) -> TrailBraking {
 pub fn verdict(score: Option<i64>) -> String {
     match score {
         None => "–".into(),
-        Some(s) if s >= 85 => tr!("sehr gut", "very good"),
-        Some(s) if s >= 70 => tr!("gut", "good"),
-        Some(s) if s >= 50 => tr!("ausbaufähig", "room to improve"),
-        Some(_) => tr!("schwach", "weak"),
+        Some(s) if s >= 85 => tr!("sehr gut", "very good", "velmi dobré"),
+        Some(s) if s >= 70 => tr!("gut", "good", "dobré"),
+        Some(s) if s >= 50 => tr!("ausbaufähig", "room to improve", "je co zlepšovat"),
+        Some(_) => tr!("schwach", "weak", "slabé"),
     }
 }

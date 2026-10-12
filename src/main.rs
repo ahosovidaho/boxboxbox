@@ -93,7 +93,7 @@ fn main() {
     let cfg = match Config::load(&config_file) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", tr!("Fehler in der Konfiguration: {e}", "Error in the configuration: {e}"));
+            eprintln!("{}", tr!("Fehler in der Konfiguration: {e}", "Error in the configuration: {e}", "Chyba v konfiguraci: {e}"));
             std::process::exit(2);
         }
     };
@@ -138,19 +138,34 @@ fn print_config(file: &Path, cfg: &Config, data: &DataPaths) {
     let state = config::State::load(&data.state);
     let (f, missing) = (
         file.display(),
-        if file.exists() { String::new() } else { tr!(" (noch nicht angelegt, Standardwerte)", " (not created yet, defaults)") },
+        if file.exists() {
+            String::new()
+        } else {
+            tr!(" (noch nicht angelegt, Standardwerte)", " (not created yet, defaults)", " (zatím nevytvořena, výchozí hodnoty)")
+        },
     );
     let ps5 = match (cfg.ps5(), state.ps5_found) {
-        (Some(ip), _) => tr!("{ip} (fest eingestellt)", "{ip} (fixed)"),
-        (None, Some(ip)) => tr!("automatische Suche, zuletzt gefunden: {ip}", "automatic search, last found: {ip}"),
-        (None, None) => tr!("automatische Suche", "automatic search"),
+        (Some(ip), _) => tr!("{ip} (fest eingestellt)", "{ip} (fixed)", "{ip} (pevná)"),
+        (None, Some(ip)) => tr!(
+            "automatische Suche, zuletzt gefunden: {ip}",
+            "automatic search, last found: {ip}",
+            "automatické hledání, naposledy nalezena: {ip}"
+        ),
+        (None, None) => tr!("automatische Suche", "automatic search", "automatické hledání"),
     };
     let (d, port, lang, units) = (data.root.display(), cfg.http_port, cfg.language.as_str(), cfg.units.as_str());
-    println!("{}", tr!("Konfiguration: {f}{missing}", "Configuration: {f}{missing}"));
-    println!("{}", tr!("Datenordner:   {d}", "Data folder:   {d}"));
+    println!("{}", tr!("Konfiguration: {f}{missing}", "Configuration: {f}{missing}", "Konfigurace: {f}{missing}"));
+    println!("{}", tr!("Datenordner:   {d}", "Data folder:   {d}", "Složka dat:    {d}"));
     println!("PS5:           {ps5}");
     println!("Port:          {port}");
-    println!("{}", tr!("Sprache:       {lang}, Einheiten: {units}", "Language:      {lang}, units: {units}"));
+    println!(
+        "{}",
+        tr!(
+            "Sprache:       {lang}, Einheiten: {units}",
+            "Language:      {lang}, units: {units}",
+            "Jazyk:         {lang}, jednotky: {units}"
+        )
+    );
 }
 
 #[tokio::main]
@@ -166,19 +181,26 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
         match cfg.save(config_file) {
             Ok(()) => {
                 let f = config_file.display();
-                println!("{}", tr!("Konfiguration angelegt: {f}", "Configuration created: {f}"));
+                println!("{}", tr!("Konfiguration angelegt: {f}", "Configuration created: {f}", "Konfigurace vytvořena: {f}"));
             }
             Err(e) => {
                 let f = config_file.display();
-                eprintln!("{}", tr!("Konfiguration nicht angelegt ({f}): {e}", "Configuration not created ({f}): {e}"));
+                eprintln!(
+                    "{}",
+                    tr!(
+                        "Konfiguration nicht angelegt ({f}): {e}",
+                        "Configuration not created ({f}): {e}",
+                        "Konfigurace nevytvořena ({f}): {e}"
+                    )
+                );
             }
         }
     } else {
         let f = config_file.display();
-        println!("{}", tr!("Konfiguration: {f}", "Configuration: {f}"));
+        println!("{}", tr!("Konfiguration: {f}", "Configuration: {f}", "Konfigurace: {f}"));
     }
     let d = data.root.display();
-    println!("{}", tr!("Daten: {d}", "Data: {d}"));
+    println!("{}", tr!("Daten: {d}", "Data: {d}", "Data: {d}"));
 
     let port = args.port.unwrap_or(cfg.http_port);
     let (ps5_tx, ps5_rx) = watch::channel(args.ps5.or(cfg.ps5()));
@@ -200,7 +222,7 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
     tracker.set_strategy(strategy.clone());
 
     if demo {
-        println!("{}", tr!("Demo-Modus: simulierte Telemetrie", "Demo mode: simulated telemetry"));
+        println!("{}", tr!("Demo-Modus: simulierte Telemetrie", "Demo mode: simulated telemetry", "Demo režim: simulovaná telemetrie"));
         tokio::spawn(demo::run(tracker, publisher));
     } else {
         let sock = telemetry::bind().await?;

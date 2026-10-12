@@ -12,8 +12,8 @@ use std::path::Path;
 /// Corner direction as stored in `corners.json` ("links"/"rechts") in the display language.
 fn dir_label(dir: &str) -> String {
     match dir {
-        "links" => tr!("links", "left"),
-        "rechts" => tr!("rechts", "right"),
+        "links" => tr!("links", "left", "levá"),
+        "rechts" => tr!("rechts", "right", "pravá"),
         other => other.to_string(),
     }
 }
@@ -33,23 +33,37 @@ pub fn session(path: &Path) -> std::io::Result<()> {
         lap::add_dynamics(&mut rows, ratio);
         let tb = trailbrake::evaluate(&rows);
         let (n, score, verdict) = (lap.lap, tb.score.map_or("–".into(), |s| s.to_string()), trailbrake::verdict(tb.score));
-        println!("{}", tr!("R{n} Trail-Braking: {score} / 100 ({verdict})", "L{n} trail braking: {score} / 100 ({verdict})"));
+        println!(
+            "{}",
+            tr!(
+                "R{n} Trail-Braking: {score} / 100 ({verdict})",
+                "L{n} trail braking: {score} / 100 ({verdict})",
+                "K{n} trail braking: {score} / 100 ({verdict})"
+            )
+        );
     }
     Ok(())
 }
 
 fn print_comparison(res: &Comparison) {
     let Some(reference) = &res.reference else {
-        println!("{}", tr!("Noch keine vollständige Runde.", "No complete lap yet."));
+        println!("{}", tr!("Noch keine vollständige Runde.", "No complete lap yet.", "Zatím žádné celé kolo."));
         return;
     };
     let (n, t, ratio) = (reference.lap, fmt_t(reference.ms as f64), res.steer_ratio);
-    println!("{}", tr!("Referenz: Runde {n} ({t}), Lenkübersetzung {ratio:.1}:1", "Reference: lap {n} ({t}), steering ratio {ratio:.1}:1"));
-    let lap_tag = tr!("R", "L");
+    println!(
+        "{}",
+        tr!(
+            "Referenz: Runde {n} ({t}), Lenkübersetzung {ratio:.1}:1",
+            "Reference: lap {n} ({t}), steering ratio {ratio:.1}:1",
+            "Reference: kolo {n} ({t}), převod řízení {ratio:.1}:1"
+        )
+    );
+    let lap_tag = tr!("R", "L", "K");
     let laps: Vec<String> =
         res.laps.iter().map(|l| format!("{lap_tag}{} {} ({:+.3})", l.lap, fmt_t(l.ms as f64), l.delta_ms as f64 / 1000.0)).collect();
     let laps = laps.join(", ");
-    println!("{}\n", tr!("Runden: {laps}", "Laps: {laps}"));
+    println!("{}\n", tr!("Runden: {laps}", "Laps: {laps}", "Kola: {laps}"));
     let m = |v: Option<f64>| v.map_or("–".into(), dist);
     let u = speed_unit();
     for c in &res.corners {
@@ -61,7 +75,7 @@ fn print_comparison(res: &Comparison) {
             "{}",
             tr!(
                 "{k} ({dir}, {at}): Referenz Bremse bei {brake}, {v0:.0}→{v1:.0}→{v2:.0} {u}, Gang {gear}, Vollgas bei {full}, {glat:.1} g, unter {under:.0}% / über {over:.0}%",
-                "{k} ({dir}, {at}): reference brake at {brake}, {v0:.0}→{v1:.0}→{v2:.0} {u}, gear {gear}, full throttle at {full}, {glat:.1} g, under {under:.0}% / over {over:.0}%"
+                "{k} ({dir}, {at}): reference brake at {brake}, {v0:.0}→{v1:.0}→{v2:.0} {u}, gear {gear}, full throttle at {full}, {glat:.1} g, under {under:.0}% / over {over:.0}%", "{k} ({dir}, {at}): reference brzdí v {brake}, {v0:.0}→{v1:.0}→{v2:.0} {u}, rychlost {gear}, plný plyn v {full}, {glat:.1} g, nedotáč. {under:.0}% / přetáč. {over:.0}%"
             )
         );
         for l in &res.laps {
@@ -76,7 +90,7 @@ fn print_comparison(res: &Comparison) {
                 "{}",
                 tr!(
                     "    R{n}: {dt:+.3} s | Bremse {db} | Scheitel {dapex:+.0} {u} | Ausgang {dexit:+.0} {u} | Vollgas {dfull} | Gang {gear} | unter {under:.0}% über {over:.0}% Heck {rear:.1}° TCS {tcs:.0}%",
-                    "    L{n}: {dt:+.3} s | brake {db} | apex {dapex:+.0} {u} | exit {dexit:+.0} {u} | full throttle {dfull} | gear {gear} | under {under:.0}% over {over:.0}% rear {rear:.1}° TCS {tcs:.0}%"
+                    "    L{n}: {dt:+.3} s | brake {db} | apex {dapex:+.0} {u} | exit {dexit:+.0} {u} | full throttle {dfull} | gear {gear} | under {under:.0}% over {over:.0}% rear {rear:.1}° TCS {tcs:.0}%", "    K{n}: {dt:+.3} s | brzda {db} | vrchol {dapex:+.0} {u} | výjezd {dexit:+.0} {u} | plný plyn {dfull} | rychlost {gear} | nedotáč. {under:.0}% přetáč. {over:.0}% záď {rear:.1}° TCS {tcs:.0}%"
                 )
             );
         }
@@ -85,7 +99,14 @@ fn print_comparison(res: &Comparison) {
     let mut pot: Vec<(f64, usize)> = res.corners.iter().map(|c| (lap::mean(res.laps.iter().map(|l| l.corner(c.n).dt)), c.n)).collect();
     pot.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
     let pot = pot.iter().map(|(v, n)| format!("{} {v:+.2}s", corner(*n))).collect::<Vec<_>>().join(", ");
-    println!("{}", tr!("Ø Zeitverlust zur Referenz je Kurve: {pot}", "Avg time lost to the reference per corner: {pot}"));
+    println!(
+        "{}",
+        tr!(
+            "Ø Zeitverlust zur Referenz je Kurve: {pot}",
+            "Avg time lost to the reference per corner: {pot}",
+            "Prům. ztráta na referenci po zatáčkách: {pot}"
+        )
+    );
     let mut better = Vec::new();
     for c in &res.corners {
         if let Some(l) = res.laps.iter().min_by(|a, b| a.corner(c.n).dt.total_cmp(&b.corner(c.n).dt)) {
@@ -99,12 +120,16 @@ fn print_comparison(res: &Comparison) {
         let suffix = if better.is_empty() {
             String::new()
         } else {
-            tr!(" – besser als Referenz in: {better}", " – better than the reference in: {better}")
+            tr!(" – besser als Referenz in: {better}", " – better than the reference in: {better}", " – lepší než reference v: {better}")
         };
         let t = fmt_t(th);
         println!(
             "{}",
-            tr!("Theoretische Bestzeit (schnellste Runde je Kurve): {t}{suffix}", "Theoretical best (fastest lap per corner): {t}{suffix}")
+            tr!(
+                "Theoretische Bestzeit (schnellste Runde je Kurve): {t}{suffix}",
+                "Theoretical best (fastest lap per corner): {t}{suffix}",
+                "Teoretické nejlepší (nejrychlejší kolo v každé zatáčce): {t}{suffix}"
+            )
         );
     }
 }
@@ -114,7 +139,7 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
     let mut rows = lap::load(path)?;
     if rows.is_empty() {
         let p = path.display();
-        println!("{}", tr!("{p}: keine Daten", "{p}: no data"));
+        println!("{}", tr!("{p}: keine Daten", "{p}: no data", "{p}: žádná data"));
         return Ok(());
     }
     let (ratio, n_cal) = lap::steer_ratio(&rows);
@@ -129,7 +154,8 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
         "{}",
         tr!(
             "Runde {lap_no}: {n} Pakete, {dur} aufgezeichnet, Lenkübersetzung ≈ {ratio:.1}:1 ({n_cal} Kalibrierpunkte)",
-            "Lap {lap_no}: {n} packets, {dur} recorded, steering ratio ≈ {ratio:.1}:1 ({n_cal} calibration points)"
+            "Lap {lap_no}: {n} packets, {dur} recorded, steering ratio ≈ {ratio:.1}:1 ({n_cal} calibration points)",
+            "Kolo {lap_no}: {n} paketů, nahráno {dur}, převod řízení ≈ {ratio:.1}:1 ({n_cal} kalibračních bodů)"
         )
     );
     let v_max = sv(rows.iter().map(|r| r.speed_kmh).fold(f64::MIN, f64::max));
@@ -139,7 +165,8 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
         "{}",
         tr!(
             "Tempo: max {v_max:.0} {u}, Ø {avg:.0} {u} (Ø in Fahrt {moving:.0})",
-            "Speed: max {v_max:.0} {u}, avg {avg:.0} {u} (avg while moving {moving:.0})"
+            "Speed: max {v_max:.0} {u}, avg {avg:.0} {u} (avg while moving {moving:.0})",
+            "Rychlost: max {v_max:.0} {u}, prům. {avg:.0} {u} (prům. za jízdy {moving:.0})"
         )
     );
     let (full, part, brake) =
@@ -151,7 +178,7 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
         "{}",
         tr!(
             "Vollgas {full:.0} %, Teilgas {part:.0} %, Bremse {brake:.0} %, Rollen (>{v30}, kein Pedal) {coast:.0} %, Gas+Bremse gleichzeitig {both:.1} %",
-            "Full throttle {full:.0} %, part throttle {part:.0} %, brake {brake:.0} %, coasting (>{v30}, no pedal) {coast:.0} %, throttle+brake together {both:.1} %"
+            "Full throttle {full:.0} %, part throttle {part:.0} %, brake {brake:.0} %, coasting (>{v30}, no pedal) {coast:.0} %, throttle+brake together {both:.1} %", "Plný plyn {full:.0} %, částečný plyn {part:.0} %, brzda {brake:.0} %, bez pedálu (>{v30}) {coast:.0} %, plyn+brzda současně {both:.1} %"
         )
     );
 
@@ -162,7 +189,8 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
         "{}",
         tr!(
             "Zwischenfälle: {n_spins} Dreher/große Rutscher (Schwimmwinkel > 20°), {n_stops}× unter {v15} (> 0,5 s)",
-            "Incidents: {n_spins} spins/big slides (body slip > 20°), {n_stops}× below {v15} (> 0.5 s)"
+            "Incidents: {n_spins} spins/big slides (body slip > 20°), {n_stops}× below {v15} (> 0.5 s)",
+            "Incidenty: {n_spins}× hodiny/velký smyk (úhel smyku > 20°), {n_stops}× pod {v15} (> 0,5 s)"
         )
     );
     for (s, _) in &spins {
@@ -173,18 +201,19 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
             "{}",
             tr!(
                 "   Dreher bei {at}: {v}, Gang {gear}, Gas {thr:.0} %, Bremse {brk:.0} %, Lenkung {steer:.0}°",
-                "   Spin at {at}: {v}, gear {gear}, throttle {thr:.0} %, brake {brk:.0} %, steering {steer:.0}°"
+                "   Spin at {at}: {v}, gear {gear}, throttle {thr:.0} %, brake {brk:.0} %, steering {steer:.0}°",
+                "   Hodiny v {at}: {v}, rychlost {gear}, plyn {thr:.0} %, brzda {brk:.0} %, volant {steer:.0}°"
             )
         );
     }
     if !stops.is_empty() {
         let t = i18n::num(stops.iter().map(|(s, e)| e - s + 1).sum::<usize>() as f64 / HZ, 1);
-        println!("{}", tr!("   Zeit unter {v15}: {t} s", "   Time below {v15}: {t} s"));
+        println!("{}", tr!("   Zeit unter {v15}: {t} s", "   Time below {v15}: {t} s", "   Čas pod {v15}: {t} s"));
     }
 
     let zones = lap::segments(&rows, |r| r.brake_pct() > 20.0, 10, 10);
     let nz = zones.len();
-    println!("\n{}", tr!("Bremszonen: {nz}", "Braking zones: {nz}"));
+    println!("\n{}", tr!("Bremszonen: {nz}", "Braking zones: {nz}", "Brzdné zóny: {nz}"));
     for &(s, e) in &zones {
         let seg = &rows[s..=e];
         let peak = (s..=e).fold(s, |b, i| if rows[i].brake > rows[b].brake { i } else { b });
@@ -207,14 +236,14 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
             "{}",
             tr!(
                 "   {at}: {v0:.0} → {v1:.0} {u} in {dur:.1} s, Spitze {pk:.0} % nach {pk_t:.2} s, max {decel:.1} g, Trail-Braking {trail:.0} %, Blockieren {lock:.0} %",
-                "   {at}: {v0:.0} → {v1:.0} {u} in {dur:.1} s, peak {pk:.0} % after {pk_t:.2} s, max {decel:.1} g, trail braking {trail:.0} %, locking {lock:.0} %"
+                "   {at}: {v0:.0} → {v1:.0} {u} in {dur:.1} s, peak {pk:.0} % after {pk_t:.2} s, max {decel:.1} g, trail braking {trail:.0} %, locking {lock:.0} %", "   {at}: {v0:.0} → {v1:.0} {u} za {dur:.1} s, špička {pk:.0} % po {pk_t:.2} s, max {decel:.1} g, trail braking {trail:.0} %, blokování {lock:.0} %"
             )
         );
     }
 
     let corners = lap::segments(&rows, |r| r.vf > 8.0 && r.sway.abs() > 6.0, 20, 15);
     let nc = corners.len();
-    println!("\n{}", tr!("Kurven: {nc}", "Corners: {nc}"));
+    println!("\n{}", tr!("Kurven: {nc}", "Corners: {nc}", "Zatáčky: {nc}"));
     for &(s, e) in &corners {
         let seg = &rows[s..=e];
         let imin = (s..=e).fold(s, |b, i| if rows[i].speed_kmh < rows[b].speed_kmh { i } else { b });
@@ -247,7 +276,7 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
                 "   {at} ({dir}): Einlenken {v0:.0} → Scheitel {v1:.0} → Ausgang {v2:.0} {u}, {glat:.1} g quer, Untersteuern {under:.0} % / Übersteuern {over:.0} %, \
                  Vollgas {full} nach Scheitel, Radschlupf hinten {spin_rear:.0} %, Lenkkorrekturen {corrections:.1}/s",
                 "   {at} ({dir}): turn-in {v0:.0} → apex {v1:.0} → exit {v2:.0} {u}, {glat:.1} g lateral, understeer {under:.0} % / oversteer {over:.0} %, \
-                 full throttle {full} after the apex, rear wheel slip {spin_rear:.0} %, steering corrections {corrections:.1}/s"
+                 full throttle {full} after the apex, rear wheel slip {spin_rear:.0} %, steering corrections {corrections:.1}/s", "   {at} ({dir}): nájezd {v0:.0} → vrchol {v1:.0} → výjezd {v2:.0} {u}, {glat:.1} g bočně, nedotáčivost {under:.0} % / přetáčivost {over:.0} %, plný plyn {full} po vrcholu, prokluz zadních kol {spin_rear:.0} %, korekce volantu {corrections:.1}/s"
             )
         );
     }
@@ -268,11 +297,16 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
             "\n{}",
             tr!(
                 "Hochschalten: {k}×, Drehzahl Ø {avg:.0}, min {min:.0}, max {max:.0}",
-                "Upshifts: {k}×, rpm avg {avg:.0}, min {min:.0}, max {max:.0}"
+                "Upshifts: {k}×, rpm avg {avg:.0}, min {min:.0}, max {max:.0}",
+                "Řazení nahoru: {k}×, otáčky prům. {avg:.0}, min {min:.0}, max {max:.0}"
             )
         );
     }
-    let wheels = if i18n::german() { ["VL", "VR", "HL", "HR"] } else { ["FL", "FR", "RL", "RR"] };
+    let wheels = match i18n::lang() {
+        i18n::Lang::De => ["VL", "VR", "HL", "HR"],
+        i18n::Lang::En => ["FL", "FR", "RL", "RR"],
+        i18n::Lang::Cs => ["LP", "PP", "LZ", "PZ"],
+    };
     for (w, name) in wheels.iter().enumerate() {
         let temps: Vec<f64> = rows.iter().filter(|r| r.speed_kmh > 30.0).map(|r| r.tire_temp[w]).collect();
         if !temps.is_empty() {
@@ -283,14 +317,22 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
                 "{}",
                 tr!(
                     "Reifen {name}: Ø {avg}, max {max}, über {t100}: {hot:.0} %; ",
-                    "Tyre {name}: avg {avg}, max {max}, above {t100}: {hot:.0} %; "
+                    "Tyre {name}: avg {avg}, max {max}, above {t100}: {hot:.0} %; ",
+                    "Pneu {name}: prům. {avg}, max {max}, nad {t100}: {hot:.0} %; "
                 )
             );
         }
     }
     println!();
     let (tcs, asm) = (share(&|r| r.has_flag(11)), share(&|r| r.has_flag(10)));
-    println!("{}", tr!("TCS aktiv {tcs:.1} %, ASM aktiv {asm:.1} %", "TCS active {tcs:.1} %, ASM active {asm:.1} %"));
+    println!(
+        "{}",
+        tr!(
+            "TCS aktiv {tcs:.1} %, ASM aktiv {asm:.1} %",
+            "TCS active {tcs:.1} %, ASM active {asm:.1} %",
+            "TCS aktivní {tcs:.1} %, ASM aktivní {asm:.1} %"
+        )
+    );
     let mut bals: Vec<f64> = rows.iter().filter(|r| r.sway.abs() > 6.0).filter_map(|r| r.bal).collect();
     if !bals.is_empty() {
         let k = bals.len() as f64;
@@ -301,24 +343,32 @@ pub fn lap_file(path: &Path) -> std::io::Result<()> {
             "{}",
             tr!(
                 "Balance in Kurven: Median {med:+.1}°, Untersteuern {under:.0} %, Übersteuern {over:.0} %",
-                "Balance in corners: median {med:+.1}°, understeer {under:.0} %, oversteer {over:.0} %"
+                "Balance in corners: median {med:+.1}°, understeer {under:.0} %, oversteer {over:.0} %",
+                "Balance v zatáčkách: medián {med:+.1}°, nedotáčivost {under:.0} %, přetáčivost {over:.0} %"
             )
         );
     }
 
     let tb = trailbrake::evaluate(&rows);
     let (score, verdict) = (tb.score.map_or("–".into(), |s| s.to_string()), trailbrake::verdict(tb.score));
-    println!("\n{}", tr!("Trail-Braking {score} / 100 ({verdict})", "Trail braking {score} / 100 ({verdict})"));
+    println!(
+        "\n{}",
+        tr!(
+            "Trail-Braking {score} / 100 ({verdict})",
+            "Trail braking {score} / 100 ({verdict})",
+            "Trail braking {score} / 100 ({verdict})"
+        )
+    );
     for z in &tb.zones {
         let iss = z.issues.iter().map(|(a, b)| format!("{} ({b})", issue_label(a))).collect::<Vec<_>>().join("; ");
-        let iss = if iss.is_empty() { tr!("sauber", "clean") } else { iss };
+        let iss = if iss.is_empty() { tr!("sauber", "clean", "čisté") } else { iss };
         let (at, v0, v1, score, bt, trail, coast, gd) =
             (fmt_t(z.lap_ms.unwrap_or(0.0)), sv(z.v_start), sv(z.v_apex), z.score, z.brake_at_turn, z.trail_s, z.coast_s, z.g_dip * 100.0);
         println!(
             "{}",
             tr!(
                 "  {at} {v0:.0}→{v1:.0} {u}: {score:3} | Einlenken mit {bt}% Bremse, Trail {trail} s, Rollen {coast} s, G-Nutzung {gd:.0}% | {iss}",
-                "  {at} {v0:.0}→{v1:.0} {u}: {score:3} | turn-in with {bt}% brake, trail {trail} s, coasting {coast} s, grip use {gd:.0}% | {iss}"
+                "  {at} {v0:.0}→{v1:.0} {u}: {score:3} | turn-in with {bt}% brake, trail {trail} s, coasting {coast} s, grip use {gd:.0}% | {iss}", "  {at} {v0:.0}→{v1:.0} {u}: {score:3} | nájezd s {bt}% brzdy, trail {trail} s, bez pedálu {coast} s, využití gripu {gd:.0}% | {iss}"
             )
         );
     }

@@ -65,13 +65,17 @@ pub async fn run(
     let mut silent_until: Option<Instant> = None;
 
     match fixed {
-        Some(ip) => println!("{}", tr!("Sende Heartbeat an PS5 {ip}", "Sending heartbeat to PS5 {ip}")),
+        Some(ip) => println!("{}", tr!("Sende Heartbeat an PS5 {ip}", "Sending heartbeat to PS5 {ip}", "Posílám heartbeat na PS5 {ip}")),
         None => match state.ps5_found {
             Some(ip) => println!(
                 "{}",
-                tr!("Suche PS5 (zuletzt {ip}, außerdem per Broadcast) …", "Searching for the PS5 (last {ip}, also by broadcast) …")
+                tr!(
+                    "Suche PS5 (zuletzt {ip}, außerdem per Broadcast) …",
+                    "Searching for the PS5 (last {ip}, also by broadcast) …",
+                    "Hledám PS5 (naposledy {ip}, i broadcastem) …"
+                )
             ),
-            None => println!("{}", tr!("Suche PS5 per Broadcast …", "Searching for the PS5 by broadcast …")),
+            None => println!("{}", tr!("Suche PS5 per Broadcast …", "Searching for the PS5 by broadcast …", "Hledám PS5 broadcastem …")),
         },
     }
 
@@ -88,7 +92,7 @@ pub async fn run(
                     for ip in &targets {
                         if let Err(e) = sock.send_to(packet::HEARTBEAT, (*ip, SEND_PORT)).await {
                             // Report each new error once instead of every second
-                            let msg = tr!("Heartbeat an {ip} fehlgeschlagen: {e}", "Heartbeat to {ip} failed: {e}");
+                            let msg = tr!("Heartbeat an {ip} fehlgeschlagen: {e}", "Heartbeat to {ip} failed: {e}", "Heartbeat na {ip} selhal: {e}");
                             if msg != send_error {
                                 eprintln!("{msg}");
                                 send_error = msg;
@@ -105,7 +109,7 @@ pub async fn run(
                 tracker.set_link(link);
                 if !receiving {
                     if last_packet.take().is_some() {
-                        println!("{}", tr!("Keine Daten mehr – warte auf GT7 …", "No more data – waiting for GT7 …"));
+                        println!("{}", tr!("Keine Daten mehr – warte auf GT7 …", "No more data – waiting for GT7 …", "Žádná další data – čekám na GT7 …"));
                     }
                     // Every second, so the dashboard shows the search status
                     let snap = tracker.mark_offline().clone();
@@ -115,8 +119,8 @@ pub async fn run(
             Ok(()) = configured.changed() => {
                 fixed = *configured.borrow_and_update();
                 match fixed {
-                    Some(ip) => println!("{}", tr!("PS5-Adresse geändert: {ip}", "PS5 address changed: {ip}")),
-                    None => println!("{}", tr!("PS5-Adresse gelöscht: automatische Suche", "PS5 address cleared: automatic search")),
+                    Some(ip) => println!("{}", tr!("PS5-Adresse geändert: {ip}", "PS5 address changed: {ip}", "Adresa PS5 změněna: {ip}")),
+                    None => println!("{}", tr!("PS5-Adresse gelöscht: automatische Suche", "PS5 address cleared: automatic search", "Adresa PS5 smazána: automatické hledání")),
                 }
                 last_packet = None;
                 source = None;
@@ -133,16 +137,16 @@ pub async fn run(
                     let ip = if behind_nat { fixed.unwrap_or(sender) } else { sender };
                     let Some(p) = packet::parse(&buf[..n]) else { continue };
                     if last_packet.is_none() || source != Some(ip) {
-                        println!("{}", tr!("Telemetrie empfangen von {ip} ({n} Bytes)", "Receiving telemetry from {ip} ({n} bytes)"));
+                        println!("{}", tr!("Telemetrie empfangen von {ip} ({n} Bytes)", "Receiving telemetry from {ip} ({n} bytes)", "Přijímám telemetrii z {ip} ({n} bajtů)"));
                         if sender != ip {
-                            println!("{}", tr!("  (über NAT, Absender {sender})", "  (through NAT, sender {sender})"));
+                            println!("{}", tr!("  (über NAT, Absender {sender})", "  (through NAT, sender {sender})", "  (přes NAT, odesílatel {sender})"));
                         }
                     }
                     if fixed.is_none() && state.ps5_found != Some(ip) {
                         state.ps5_found = Some(ip);
                         match state.save(&state_file) {
-                            Ok(()) => println!("{}", tr!("PS5 gefunden: {ip} (gemerkt)", "PS5 found: {ip} (remembered)")),
-                            Err(e) => eprintln!("{}", tr!("PS5 gefunden: {ip}, aber nicht gespeichert: {e}", "PS5 found: {ip}, but not saved: {e}")),
+                            Ok(()) => println!("{}", tr!("PS5 gefunden: {ip} (gemerkt)", "PS5 found: {ip} (remembered)", "PS5 nalezena: {ip} (zapamatováno)")),
+                            Err(e) => eprintln!("{}", tr!("PS5 gefunden: {ip}, aber nicht gespeichert: {e}", "PS5 found: {ip}, but not saved: {e}", "PS5 nalezena: {ip}, ale neuloženo: {e}")),
                         }
                     }
                     let was_receiving = last_packet.is_some();
@@ -156,14 +160,14 @@ pub async fn run(
                     } else {
                         short_packets += 1;
                         if short_packets == 180 {
-                            println!("{}", tr!("Kurzes Paketformat – fordere erweitertes Format neu an …", "Short packet format – requesting the extended format again …"));
+                            println!("{}", tr!("Kurzes Paketformat – fordere erweitertes Format neu an …", "Short packet format – requesting the extended format again …", "Krátký formát paketů – znovu žádám o rozšířený formát …"));
                             silent_until = Some(Instant::now() + Duration::from_secs(8));
                         }
                     }
                     let snap = tracker.update(&p).clone();
                     out.publish(&tracker, &snap);
                 }
-                Err(e) => eprintln!("{}", tr!("UDP-Fehler: {e}", "UDP error: {e}")),
+                Err(e) => eprintln!("{}", tr!("UDP-Fehler: {e}", "UDP error: {e}", "Chyba UDP: {e}")),
             }
         }
     }
@@ -177,7 +181,8 @@ pub async fn bind() -> std::io::Result<UdpSocket> {
             e.kind(),
             tr!(
                 "UDP-Port {port} nicht verfügbar ({e}) – läuft Apexline oder ein anderes Telemetrie-Programm schon?",
-                "UDP port {port} not available ({e}) – is Apexline or another telemetry program already running?"
+                "UDP port {port} not available ({e}) – is Apexline or another telemetry program already running?",
+                "UDP port {port} není volný ({e}) – neběží už Apexline nebo jiný telemetrický program?"
             ),
         )
     })?;
