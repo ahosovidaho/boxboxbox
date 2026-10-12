@@ -1,5 +1,16 @@
 # Changelog
 
+## BOXBOXBOX 0.3.0-fork1 – 2026-10-12
+
+- **Plánovač strategie**: v „Závod…“ se zadá, kolik kol vydrží každá směs (a volitelně tempo),
+  aplikace spočítá doporučenou a alternativní strategii (směsi, délky stintů, kola zastávek,
+  kolik dotankovat). Během závodu se plán přepočítává a „BOX ZA N KOL“ se řídí jím.
+- Ztráta zastávkou se měří pro každou trať (in-lap + out-lap − 2 × běžné kolo − tankování);
+  do první zastávky na trati se počítá s 25 s nebo s ručně zadanou hodnotou.
+- Při stání v boxu ukazuje první stránka „DOTANKUJ +X“ (přesně na zbytek závodu / další stint).
+- Oprava: zastávka přes přelom kola (GT7 přičte kolo při stání v boxu) se počítala dvakrát.
+- Průběh závodu se při novém závodu nepřepisuje, ukládá se do `strategy-history/`.
+
 ## BOXBOXBOX 0.2.0-fork1 – 2026-10-11
 
 - **Strategie** (stránka 5, přejetím doprava): palivo do cíle, okno zastávky („Box v kole A–B“),

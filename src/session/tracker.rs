@@ -278,7 +278,7 @@ impl Tracker {
             }
             if self.lap > 0 && crossed_line && self.lap_full {
                 let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
-                self.with_strategy(|s| s.lap_done(lap, burn, refuel));
+                self.with_strategy(|s| s.lap_done(lap, burn, refuel, finished));
             }
             self.lap_burn = 0.0;
             self.lap_refuel = false;
@@ -473,6 +473,7 @@ impl Tracker {
                 fuel: p.fuel_level,
                 capacity: p.fuel_capacity,
                 car_code: p.car_code,
+                standing: p.speed_ms < 0.3,
             };
             let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
             st.update_live(live);
@@ -726,7 +727,7 @@ mod tests {
         step(&mut t, 5, 50.0, 3);
         step(&mut t, 5, 0.0, 18); // tyre change
         step(&mut t, 5, 20.0, 3);
-        let s = st.lock().unwrap();
+        let mut s = st.lock().unwrap();
         assert_eq!(s.saved.stops.len(), 1);
         assert_eq!(s.saved.stops[0].lap, 5);
         assert!(s.plan().pit_done && s.plan().tyre_question);
@@ -767,7 +768,7 @@ mod tests {
             step(&mut t, 7, 50.0, 81.0, 5);
             step(&mut t, 7, 0.0, 80.0, 18); // in the box
             step(&mut t, 8, 20.0, after, 35); // pit exit and the first part of the lap
-            let s = st.lock().unwrap();
+            let mut s = st.lock().unwrap();
             assert_eq!(s.saved.stops[0].tyres, Some(changed), "after {after} °C");
             assert_eq!(s.saved.stints.len(), if changed { 2 } else { 0 });
             assert!(!s.plan().tyre_question);

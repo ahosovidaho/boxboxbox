@@ -8,6 +8,7 @@
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
 //! | GET | `/api/strategy` | race, stints, stops and calibration |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
+//! | POST | `/api/strategy/preview` | recommended + alternative strategy for race settings |
 //! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
 
 use super::Feeds;
@@ -59,6 +60,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/strategy", get(strategy_state))
         .route("/api/strategy/race", axum::routing::post(strategy_race))
+        .route("/api/strategy/preview", axum::routing::post(strategy_preview))
         .route("/api/strategy/action", axum::routing::post(strategy_action))
 }
 
@@ -70,6 +72,21 @@ async fn strategy_race(State(s): State<AppState>, Json(race): Json<strategy::Rac
     let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
     st.set_race(race);
     json_body(st.json())
+}
+
+/// Recommended and alternative strategy for race settings that are not saved yet.
+async fn strategy_preview(State(s): State<AppState>, Json(race): Json<strategy::Race>) -> impl IntoResponse {
+    let st = s.strategy.clone();
+    let body = tokio::task::spawn_blocking(move || {
+        let st = st.lock().unwrap_or_else(|e| e.into_inner());
+        let (options, plan) = st.preview(&race);
+        json!({ "options": options, "fuel_per_lap": plan.fuel_per_lap, "fuel_source": plan.fuel_source,
+                "pit_loss": plan.pit_loss, "pit_loss_source": plan.pit_loss_source, "total_laps": plan.total_laps })
+        .to_string()
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
 }
 
 #[derive(Deserialize)]

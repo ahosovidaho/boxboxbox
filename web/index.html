@@ -342,6 +342,18 @@
   #raceList button { text-align: left; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 10px; padding: 8px 12px; font: 14px -apple-system, system-ui, sans-serif; }
   #raceList button small { display: block; color: var(--dim); font-size: 12px; margin-top: 2px; }
   #raceSheet input[type=text].wide { width: 220px; }
+  .tyretab { width: 100%; border-collapse: collapse; margin: 4px 0 2px; font-size: 14px; }
+  .tyretab th { color: var(--label); font-weight: 500; font-size: 11px; text-align: right; padding: 2px 4px; }
+  .tyretab th:first-child, .tyretab td:first-child { text-align: left; }
+  .tyretab td { padding: 3px 4px; text-align: right; }
+  .tyretab input { width: 64px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 5px 6px; font: inherit; text-align: right; }
+  .planbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 8px 0; font-size: 14px; line-height: 1.45; }
+  .planbox b { font-size: 15px; }
+  .planbox .tag { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); display: block; margin-bottom: 2px; }
+  .planbox.best { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+  .planbox .muted { color: var(--dim); font-size: 13px; }
+  .planbox .over { color: var(--yellow); font-size: 13px; }
+  #boxbig small { display: block; font-size: .62em; font-weight: 700; letter-spacing: 0; }
   /* No data from the PS5: hint at the bottom, a tap hides it */
   #nolink { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%);
     width: min(560px, calc(100% - 32px)); z-index: 5; background: #111114; border: 1px solid color-mix(in srgb, var(--yellow) 45%, #26262c);
@@ -650,6 +662,10 @@
       </div>
     </div>
 
+    <div class="card"><h2>Plán závodu</h2>
+      <div id="stPlan"><span class="muted">Zadej závod a spotřebu – plán se spočítá sám.</span></div>
+    </div>
+
     <div class="card"><h2>Pravidla závodu</h2>
       <div class="kvs">
         <span>Kol celkem</span><span id="stTotal">–</span>
@@ -722,6 +738,16 @@
     <label><span>Startovní směs</span> <select id="rStart">
       <option value="">nevím</option><option>RS</option><option>RM</option><option>RH</option>
       <option>SS</option><option>SM</option><option>SH</option><option>CS</option><option>CM</option><option>CH</option></select></label>
+    <h2 class="sect">Gumy a zastávky</h2>
+    <table class="tyretab">
+      <thead><tr><th>Směs</th><th>Kol na sadě</th><th>Tempo s/kolo (− rychlejší)</th></tr></thead>
+      <tbody id="rTyres"></tbody>
+    </table>
+    <label><span>Ztráta času za každé kolo stáří gum (s)</span> <input type="number" id="rDeg" inputmode="decimal" step="0.05" placeholder="0.2"></label>
+    <label><span>Ztráta zastávkou bez tankování (s)</span> <input type="number" id="rPitLoss" inputmode="decimal" step="0.5"></label>
+    <div class="sinfo" id="rPitInfo"></div>
+    <div id="rPreview"></div>
+    <h2 class="sect">Palivo</h2>
     <label><span>Odhad spotřeby / kolo (než změřím)</span> <input type="number" id="rFpl" inputmode="decimal" step="0.01"></label>
     <label><span>Rezerva paliva v cíli (kola)</span> <input type="number" id="rReserve" inputmode="decimal" step="0.1"></label>
     <label><span>Limit opotřebení gum %</span> <input type="number" id="rLimit" inputmode="numeric"></label>
@@ -1673,23 +1699,47 @@
   const stAction = (action, extra = {}) => stPost('api/strategy/action', { action, ...extra });
 
 
+  // Plans: "RM 11 → RS 10 → RS 6", stops with laps and fuel
+  function planHtml(o, tag, cls) {
+    if (!o) return '';
+    const stints = o.stints.map(s => `${s.compound} ${s.laps}`).join(' → ');
+    const stops = o.stops.length
+      ? o.stops.map(s => `kolo ${s.lap}${s.fuel > 0.05 ? ' (+' + nf(s.fuel, 0) + ')' : ''}`).join(', ')
+      : 'bez zastávky';
+    const n = o.stops.length, word = n === 1 ? 'zastávka' : n >= 2 && n <= 4 ? 'zastávky' : 'zastávek';
+    const delta = o.delta > 0.05 ? ` · o ${nf(o.delta, 1)} s pomalejší` : '';
+    const over = o.over_limit ? '<div class="over">Nevejde se do zadané životnosti gum – nejmenší překročení.</div>' : '';
+    return `<div class="planbox ${cls}"><span class="tag">${tag}</span><b>${stints}</b><div class="muted">${n} ${word}: box ${stops}${delta}</div>${over}</div>`;
+  }
+  function plansHtml(opts) {
+    if (!opts || !opts.best) return '';
+    return planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa', '');
+  }
+
   // Page 1: laps to the suggested pit stop, readable at a glance
   const kol = n => n === 1 ? 'kolo' : n >= 2 && n <= 4 ? 'kola' : 'kol';
   function renderBoxBig(d) {
     const el = $('boxbig'), st = d.strategy;
-    let txt = '', cls = '';
+    let txt = '', cls = '', sub = '';
     if (st && st.race) {
-      if (st.laps_to_box != null) {
+      if (st.stop_add != null) {
+        // Standing in the box: how much to put in
+        txt = st.stop_add > 0.05 ? `DOTANKUJ +${nf(st.stop_add, 1)}` : 'BEZ TANKOVÁNÍ';
+        sub = st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '';
+        cls = 'soon';
+      } else if (st.laps_to_box != null) {
         const n = st.laps_to_box;
         txt = n === 0 ? 'BOX TOTO KOLO' : n === 1 ? 'BOX PŘÍŠTÍ KOLO' : `BOX ZA ${n} ${kol(n).toUpperCase()}`;
         cls = n === 0 ? 'now' : n === 1 ? 'soon' : '';
+        if (n <= 1 && st.next_stop_fuel != null) sub = st.next_stop_fuel > 0.05 ? `dotankovat +${nf(st.next_stop_fuel, 1)}` : 'bez tankování';
       } else if (st.fuel_margin_laps != null) {
         txt = st.pit_done ? 'DO CÍLE ✓' : 'BEZ ZASTÁVKY ✓';
         cls = 'done';
       }
     }
     el.hidden = !txt;
-    if (el.textContent !== txt) el.textContent = txt;
+    const html = txt + (sub ? `<small>${sub}</small>` : '');
+    if (el.innerHTML !== html) el.innerHTML = html;
     if (el.className !== cls) el.className = cls;
   }
 
@@ -1740,6 +1790,9 @@
     setText('stRate', st.wear_per_lap == null ? 'zadej níže' : nf(st.wear_per_lap, 2) + ' %' + (st.wear_source === 'calibration' ? ' (z kalibrace)' : ''));
     setText('stToLimit', st.wear_laps_left == null ? '–' : `${nf(st.wear_laps_left)} kola (limit ${st.wear_limit} %)`);
     setText('stWearEnd', st.wear_at_finish == null ? '–' : nf(st.wear_at_finish, 0) + ' %');
+    // Plan
+    const ph = plansHtml(st.options) || '<span class="muted">Plán se spočítá, až bude známá spotřeba a počet kol.</span>';
+    if ($('stPlan').innerHTML !== ph) $('stPlan').innerHTML = ph;
     // Rules
     setText('stTotal', st.total_laps ?? '–');
     setText('stPit', st.pit_required ? (st.pit_done ? '✓ hotovo' : 'ještě ne') : 'ne');
@@ -1803,6 +1856,10 @@
     $('rLaps').value = r.laps ?? ''; $('rWear').value = r.tyre_wear ?? ''; $('rFuelMult').value = r.fuel_mult ?? '';
     $('rRefuel').value = r.refuel_rate ?? ''; $('rPit').checked = !!r.pit_required; $('rMand').value = r.mandatory || '';
     $('rStart').value = r.start_compound || '';
+    raceTyres = r.tyres || {};
+    $('rDeg').value = r.deg ?? '';
+    $('rPitLoss').value = r.pit_loss ?? '';
+    renderTyreRows();
     $('rFpl').value = r.fuel_per_lap ?? ''; $('rReserve').value = r.reserve_laps ?? 0.3; $('rLimit').value = r.wear_limit ?? 70;
     $('raceSheet').dataset.id = r.id || '';
   }
@@ -1811,6 +1868,7 @@
     fillRaceForm(stRace || {});
     $('rErr').hidden = true;
     $('raceSheet').hidden = false;
+    schedulePreview();
     $('raceList').innerHTML = '<small>Načítám kalendář…</small>';
     try {
       const docs = (await (await fetch(FIRESTORE, { cache: 'no-store' })).json()).documents || [];
@@ -1829,17 +1887,54 @@
     // Values already typed for the same race are kept where the calendar has none
     const keep = stRace && stRace.id === r.id ? stRace : {};
     fillRaceForm({ ...keep, ...Object.fromEntries(Object.entries(r).filter(([, v]) => v != null && v !== '')) });
+    schedulePreview();
   });
-  $('stPick').onclick = openRaceSheet;
-  $('rCancel').onclick = () => { $('raceSheet').hidden = true; };
-  $('rSave').onclick = async () => {
-    const race = {
+  // Tyre table: kind (R/S/C) from the mandatory or starting compound
+  let raceTyres = {};
+  const tyreKind = () => (($('rMand').value || $('rStart').value || 'R').charAt(0));
+  function renderTyreRows() {
+    const k = tyreKind();
+    $('rTyres').innerHTML = ['S', 'M', 'H'].map(c => {
+      const n = k + c, t = raceTyres[n] || {};
+      return `<tr><td>${n}</td><td><input type="number" inputmode="numeric" min="1" data-n="${n}" data-f="life" value="${t.life ?? ''}"></td>`
+        + `<td><input type="number" inputmode="decimal" step="0.1" data-n="${n}" data-f="pace" value="${t.pace ?? ''}"></td></tr>`;
+    }).join('');
+  }
+  function readTyres() {
+    $$('#rTyres input').forEach(inp => {
+      const n = inp.dataset.n, f = inp.dataset.f, v = numIn(inp.value);
+      raceTyres[n] = { ...(raceTyres[n] || {}), [f]: v == null ? null : (f === 'life' ? Math.round(v) : v) };
+    });
+    return raceTyres;
+  }
+  function raceFromForm() {
+    return {
       id: $('raceSheet').dataset.id || '', name: $('rName').value.trim(), track: $('rTrack').value.trim(),
       laps: numIn($('rLaps').value), tyre_wear: numIn($('rWear').value), fuel_mult: numIn($('rFuelMult').value),
       refuel_rate: numIn($('rRefuel').value), pit_required: $('rPit').checked, mandatory: $('rMand').value || null,
-      start_compound: $('rStart').value || null,
+      start_compound: $('rStart').value || null, tyres: readTyres(), deg: numIn($('rDeg').value), pit_loss: numIn($('rPitLoss').value),
       fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), wear_limit: numIn($('rLimit').value),
     };
+  }
+  let previewTimer = null;
+  function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(runPreview, 300); }
+  async function runPreview() {
+    try {
+      const r = await (await fetch('api/strategy/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(raceFromForm()) })).json();
+      const src = { measured: 'změřeno na této trati', manual: 'zadáno ručně', default: 'odhad – trať zatím nezměřena' }[r.pit_loss_source] || '';
+      setText('rPitInfo', `Počítám se ztrátou zastávkou ${nf(r.pit_loss, 1)} s (${src}) + tankování.`);
+      $('rPitLoss').placeholder = nf(r.pit_loss, 1);
+      $('rPreview').innerHTML = plansHtml(r.options)
+        || `<div class="planbox"><span class="muted">${r.total_laps ? 'Doplň odhad spotřeby na kolo – pak spočítám strategii.' : 'Doplň počet kol.'}</span></div>`;
+    } catch { $('rPreview').innerHTML = ''; }
+  }
+  $('raceSheet').addEventListener('input', schedulePreview);
+  $('raceSheet').addEventListener('change', e => { if (e.target.id === 'rMand' || e.target.id === 'rStart') { readTyres(); renderTyreRows(); } schedulePreview(); });
+
+  $('stPick').onclick = openRaceSheet;
+  $('rCancel').onclick = () => { $('raceSheet').hidden = true; };
+  $('rSave').onclick = async () => {
+    const race = raceFromForm();
     if (!race.name) { $('rErr').textContent = 'Vyplň aspoň název závodu.'; $('rErr').hidden = false; return; }
     const saved = await stPost('api/strategy/race', race);
     if (saved) { stRace = saved.race; $('raceSheet').hidden = true; }
