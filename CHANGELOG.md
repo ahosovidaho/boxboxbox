@@ -1,5 +1,12 @@
 # Changelog
 
+## BOXBOXBOX 0.4.0-fork1 – 2026-10-13
+
+- **Barevné úseky na mapě** (stránka 1): trať se po prvním celém kole rozdělí na 20 stejně
+  dlouhých úseků. Úsek projetý v tomto kole: fialová = nejlepší čas v session, zelená = do 0,1 s
+  od nejlepšího, červená = pomalejší. Úseky, které v tomto kole ještě nebyly, ukazují tlumeně
+  výsledek minulého kola. Snapshot posílá `seg_now`, `seg_last`, `seg_delta`.
+
 ## BOXBOXBOX 0.3.0-fork1 – 2026-10-12
 
 - **Plánovač strategie**: v „Závod…“ se zadá, kolik kol vydrží každá směs (a volitelně tempo),

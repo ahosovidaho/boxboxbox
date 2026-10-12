@@ -1012,9 +1012,35 @@
     try {
       const m = await (await fetch('api/map', { cache: 'no-store' })).json();
       mapPts = m.points; mapVersion = version ?? m.version;
+      segLine = m.seg_line || []; segStarts = m.seg_starts || [];
       drawMap(true);
     } catch {} finally { mapFetching = false; }
   }
+  // Track segments (F1 colours): this lap bright, segments not driven yet in the previous lap's colour, dimmed
+  let segLine = [], segStarts = [], segNow = [], segLast = [], segKey = '';
+  const SEG_COLOURS = { 1: '#b25cff', 2: '#2fd36b', 3: '#ff4a3d' };
+  function drawSegments(ctx) {
+    if (segLine.length < 2 || !segStarts.length) return;
+    ctx.lineWidth = 4; ctx.lineJoin = ctx.lineCap = 'round';
+    segStarts.forEach((from, k) => {
+      const to = k + 1 < segStarts.length ? segStarts[k + 1] : segLine.length - 1;
+      const now = segNow[k], last = segLast[k];
+      const code = now || last;
+      if (!code) return;
+      ctx.globalAlpha = now ? 1 : 0.35;
+      ctx.strokeStyle = SEG_COLOURS[code];
+      ctx.beginPath();
+      for (let i = from; i <= to; i++) { const [x, y] = project(segLine[i].x, segLine[i].z); i === from ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+  function updateSegments(d) {
+    segNow = d.seg_now || []; segLast = d.seg_last || [];
+    const key = segNow.join('') + '|' + segLast.join('');
+    if (key !== segKey) { segKey = key; drawMap(true); }
+  }
+
   function project(x, z) {
     const v = mapView;
     let px = cfg.mirror ? -x : x, pz = z;
@@ -1053,6 +1079,7 @@
         bctx.beginPath();
         mapPts.forEach((p, i) => { const [x, y] = project(p.x, p.z); i ? bctx.lineTo(x, y) : bctx.moveTo(x, y); });
         bctx.stroke();
+        drawSegments(bctx);
         const [sx, sy] = project(mapPts[0].x, mapPts[0].z);
         bctx.fillStyle = '#6b6b75'; bctx.fillRect(sx - 1, sy - 6, 3, 12); // start/finish
         bctx.font = '600 9px ui-monospace, monospace'; bctx.textAlign = 'center'; bctx.textBaseline = 'middle';
@@ -1163,7 +1190,7 @@
     });
 
     trackPerf(d);
-    if (page === 1) renderMain(d, tireVals); else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
+    if (page === 1) { updateSegments(d); renderMain(d, tireVals); } else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
     else if (page === 5) renderStrategy(d);
     renderBoxCall(d);
     renderBoxBig(d);

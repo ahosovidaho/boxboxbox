@@ -130,6 +130,11 @@ pub struct Snapshot {
     pub link: Link,
     /// Race strategy (page 5), `null` without a strategy
     pub strategy: Option<strategy::Plan>,
+    /// Track segments: result in the running lap and in the previous one (0 none, 1 purple,
+    /// 2 green, 3 red), and the time to the best per segment (ms)
+    pub seg_now: Vec<u8>,
+    pub seg_last: Vec<u8>,
+    pub seg_delta: Vec<Option<i32>>,
 }
 
 pub struct Tracker {
@@ -358,6 +363,7 @@ impl Tracker {
             self.track.add(x, z, lap_ms.unwrap_or(0));
             if let Some(ms) = lap_ms {
                 delta = self.track.delta(x, z, ms);
+                self.track.segment(x, z, ms);
             }
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Row(Recorder::row(p, &dyn_, lap_ms, delta)));
@@ -442,6 +448,9 @@ impl Tracker {
         s.body_height = p.body_height;
         s.road_plane_distance = p.road_plane_distance;
         s.map_version = self.track.map_version;
+        s.seg_now.clone_from(&self.track.seg_now);
+        s.seg_last.clone_from(&self.track.seg_last);
+        s.seg_delta.clone_from(&self.track.seg_delta);
 
         s.steering_deg = p.steering.to_degrees();
         s.yaw_rate_deg = dyn_.yaw_rate.to_degrees();
