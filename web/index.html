@@ -322,7 +322,7 @@
   #r_leds { flex: 1; display: flex; gap: 5px; min-height: 0; }
   #r_leds i { flex: 1; border-radius: 5px; background: #1c1c1c; }
   #r_leds i.on { background: var(--c); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent); }
-  #r_rev.flash #r_leds i { background: #3d6bff; animation: flash .12s steps(1) infinite alternate; }
+  #r_rev.flash #r_leds i { background: #3d6bff; box-shadow: 0 0 14px #3d6bff99; animation: flash .1s steps(1) infinite alternate; }
   #r_revnum { display: flex; justify-content: center; align-items: baseline; gap: 10px; line-height: 1; }
   #r_rpm { font-size: min(22px, 4.5vh); letter-spacing: -.5px; }
   #r_left { grid-area: left; display: grid; grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr); gap: 8px; min-height: 0; }
@@ -2071,7 +2071,8 @@
     const max = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
     const start = max * 0.55;
     const lit = Math.max(0, Math.min(15, Math.round((d.rpm - start) / (max - start) * 15)));
-    const flash = d.rpm >= max || d.rev_limiter;
+    // Shift now: as soon as the blue LEDs light up, the whole bar flashes blue (like in GT7)
+    const flash = lit > 10 || d.rpm >= max || d.rev_limiter;
     $('r_rev').classList.toggle('flash', flash);
     rLeds.forEach((el, i) => { const on = i < lit; if (el.classList.contains('on') !== on) el.classList.toggle('on', on); });
     setText('r_rpm', Math.round(d.rpm).toLocaleString('cs-CZ'));
