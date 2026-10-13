@@ -305,6 +305,60 @@
   .serr { font-size: 13px; color: var(--red); margin-top: 8px; }
   .serr[hidden] { display: none; }
 
+
+  /* ---------- Race mode: dashboard (p6) and race recap (p7) ---------- */
+  #p6 { display: grid; gap: 8px; grid-template-columns: minmax(0, .9fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+    grid-template-rows: 54px minmax(0, 1fr) 30px; grid-template-areas: "rev rev rev" "drive pace fuel" "strip strip strip"; }
+  #r_rev { grid-area: rev; display: flex; gap: 10px; align-items: stretch; }
+  #r_revbar { flex: 1; display: flex; gap: 3px; }
+  #r_revbar i { flex: 1; border-radius: 4px; background: var(--line); }
+  #r_revbar i.on-g { background: var(--green); } #r_revbar i.on-y { background: var(--yellow); } #r_revbar i.on-r { background: var(--red); }
+  #r_rev.flash #r_revbar i { background: var(--blue) !important; animation: flash .12s steps(1) infinite alternate; }
+  #r_rpm { font: 700 34px/54px var(--mono); min-width: 5.2ch; text-align: right; color: #f0f0f3; }
+  #r_drive { grid-area: drive; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; container-type: size; }
+  #r_gear { font: 700 min(170px, 46cqh, 70cqw)/.9 var(--mono); color: #f0f0f3; }
+  #r_gear.limit { color: var(--red); }
+  #r_speed { font: 600 min(44px, 12cqh)/1 var(--mono); }
+  #r_tyres { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%; margin-top: 6px; }
+  #r_tyres span { border: 1px solid var(--line); border-radius: 8px; text-align: center; font: 600 15px var(--mono); padding: 3px 0; color: var(--c, var(--text)); border-color: var(--c, var(--line)); }
+  #r_pace { grid-area: pace; display: flex; flex-direction: column; gap: 4px; }
+  #r_delta { font: 700 min(76px, 14vh)/1 var(--mono); text-align: center; margin: 4px 0 2px; }
+  #r_lapline { display: flex; justify-content: space-between; align-items: baseline; }
+  #r_lap { font: 700 28px var(--mono); }
+  #r_laptime { font: 500 22px var(--mono); color: var(--dim); }
+  .rkv { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 15px; margin-top: auto; }
+  .rkv span:nth-child(odd) { color: var(--dim); }
+  .rkv span:nth-child(even) { font-family: var(--mono); text-align: right; font-size: 18px; }
+  #r_fuelcol { grid-area: fuel; display: grid; gap: 8px; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  #r_fuelbig { font: 700 min(48px, 8vh)/1 var(--mono); }
+  #r_fuelbar { position: relative; height: 14px; border-radius: 7px; background: var(--line); margin: 8px 0 6px; overflow: hidden; }
+  #r_fuelbar b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); border-radius: 7px; }
+  #r_fuelbar i { position: absolute; top: -2px; bottom: -2px; width: 3px; background: #fff; }
+  #r_margin { font: 700 22px var(--mono); }
+  #r_box { display: flex; flex-direction: column; justify-content: center; text-align: center; }
+  #r_boxbig { font: 800 min(44px, 8vh)/1.05 -apple-system, system-ui, sans-serif; letter-spacing: .02em; }
+  #r_boxsub { font-size: 17px; color: var(--dim); margin-top: 6px; }
+  #r_box.now { background: var(--red); border-color: var(--red); } #r_box.now * { color: #000 !important; }
+  #r_box.soon { border-color: var(--yellow); } #r_box.soon #r_boxbig { color: var(--yellow); }
+  #r_box.done #r_boxbig { color: var(--green); }
+  #r_strip { grid-area: strip; display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; }
+  #r_strip #r_call { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 600; }
+  #p7 { display: flex; flex-direction: column; gap: 8px; }
+  #p7head { display: flex; align-items: center; gap: 12px; height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); white-space: nowrap; }
+  #p7head b { color: var(--text); font-weight: 600; }
+  #p7head #rcName { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #p7body { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); grid-auto-rows: max-content; align-content: start; padding-bottom: 8px; }
+  #p7body .card h2, #p6 .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 6px; }
+  #p7body .wide { grid-column: 1 / -1; }
+  .rcbig { font: 700 30px var(--mono); }
+  .rclist { font-size: 14px; line-height: 1.5; padding-left: 16px; }
+  .rclist li.good::marker { color: var(--green); } .rclist li.bad::marker { color: var(--red); }
+  #rcChart svg { width: 100%; height: 170px; display: block; }
+  .modechip { background: none; border: 1px solid #2c2c33; color: var(--dim); border-radius: 7px; padding: 1px 7px; font: 600 11px -apple-system, system-ui, sans-serif; letter-spacing: .06em; }
+  .modechip.race { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, #2c2c33); }
+  #p6[hidden], #p7[hidden] { transform: translateX(24px); }
+
   /* ---------- Page 5: strategy ---------- */
   #boxcall { font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 6px; }
   #boxcall.box { background: var(--red); color: #000; }
@@ -460,7 +514,7 @@
     <span id="carname"></span>
     <span class="coachpill" hidden>COACH ●</span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
-    <span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></span>
+    <span class="dots"></span>
   </div>
 </section>
 
@@ -470,7 +524,7 @@
     <b id="carname2">–</b>
     <span class="coachpill" hidden>COACH ●</span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
-    <span class="dots"><i></i><i class="on"></i><i></i><i></i><i></i></span>
+    <span class="dots"></span>
   </div>
   <div id="p2body">
     <div class="card"><h2 data-t>G-Kräfte</h2>
@@ -584,7 +638,7 @@
     <b data-t>Coach</b>
     <span id="coachUpdated"></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
-    <span class="dots"><i></i><i></i><i class="on"></i><i></i><i></i></span>
+    <span class="dots"></span>
   </div>
   <div id="p3body">
     <div class="card" id="focus" hidden><h2 id="focusTitle" data-t>Fokus</h2><div id="focusText"></div></div>
@@ -599,7 +653,7 @@
     <span id="perfCar"></span>
     <span class="coachpill" hidden>COACH ●</span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
-    <span class="dots"><i></i><i></i><i></i><i class="on"></i><i></i></span>
+    <span class="dots"></span>
   </div>
   <div id="p4body">
     <div class="card" id="perfLive">
@@ -651,7 +705,7 @@
     <span id="stRace">–</span>
     <button class="stbtn small" id="stPick">Závod…</button>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
-    <span class="dots"><i></i><i></i><i></i><i></i><i class="on"></i></span>
+    <span class="dots"></span>
   </div>
   <div id="p5body">
     <div id="stCalls" class="race-only"></div>
@@ -729,6 +783,68 @@
         <button id="stReset">Nový start</button>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ======================= Race mode: dashboard ======================= -->
+<section class="page" id="p6" hidden>
+  <div id="r_rev"><div id="r_revbar"></div><div id="r_rpm">0</div></div>
+  <div class="card" id="r_drive">
+    <div id="r_gear">N</div>
+    <div id="r_speed">0</div>
+    <div class="label" data-u="speed">km/h</div>
+    <div id="r_tyres"><span id="r_t0">–</span><span id="r_t1">–</span><span id="r_t2">–</span><span id="r_t3">–</span></div>
+  </div>
+  <div class="card" id="r_pace">
+    <h2>Tempo</h2>
+    <div id="r_lapline"><span id="r_lap">–</span><span id="r_laptime">–</span></div>
+    <div id="r_delta">–</div>
+    <div class="rkv">
+      <span>Poslední</span><span id="r_last">–</span>
+      <span>Průměr 3 kol</span><span id="r_avg3">–</span>
+      <span>Nejlepší</span><span id="r_best">–</span>
+      <span>Poslední vs průměr</span><span id="r_trend">–</span>
+      <span>Pozice</span><span id="r_pos">–</span>
+    </div>
+  </div>
+  <div id="r_fuelcol">
+    <div class="card" id="r_fuel">
+      <h2>Palivo</h2>
+      <div class="row"><span id="r_fuelbig">–</span><span id="r_margin">–</span></div>
+      <div id="r_fuelbar"><b></b><i hidden></i></div>
+      <div class="rkv">
+        <span>Vystačí na</span><span id="r_fuellaps">–</span>
+        <span>Spotřeba / kolo</span><span id="r_fpl">–</span>
+      </div>
+    </div>
+    <div class="card" id="r_box">
+      <div id="r_boxbig">–</div>
+      <div id="r_boxsub"></div>
+    </div>
+  </div>
+  <div id="r_strip">
+    <span>Voda <span id="r_water" class="num">–</span>°</span>
+    <span>Olej <span id="r_oil" class="num">–</span>°</span>
+    <span id="r_call"></span>
+    <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+    <span class="dots"></span>
+  </div>
+</section>
+
+<!-- ======================= Race mode: recap ======================= -->
+<section class="page" id="p7" hidden>
+  <div id="p7head">
+    <b>Rekapitulace</b>
+    <span id="rcName">–</span>
+    <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+    <span class="dots"></span>
+  </div>
+  <div id="p7body">
+    <div class="card"><h2>Výsledek</h2><div id="rcResult"><span class="muted">Zatím žádné kolo závodu.</span></div></div>
+    <div class="card wide"><h2>Časy kol</h2><div id="rcChart"></div></div>
+    <div class="card"><h2>Stinty a zastávky</h2><div id="rcStints">–</div></div>
+    <div class="card"><h2>Kde jsem ztrácel / co šlo dobře</h2><div id="rcCoach"><span class="muted">Kouč zatím nic nevyhodnotil.</span></div></div>
+    <div class="card"><h2>Strategie</h2><div id="rcStrategy">–</div></div>
   </div>
 </section>
 </div>
@@ -930,13 +1046,40 @@
   // ---------- Pages & gestures ----------
   // Swiping left/right changes the page; a long press (600 ms) opens the settings.
   // A short tap does nothing, so accidental touches in the rig change nothing.
-  let page = 1;
-  const PAGES = 5;
-  { const p = +load('page'); if (p >= 1 && p <= PAGES) page = p; }
+  // Two modes with their own pages: practice (driving view, coach, measurements, practice
+  // strategy, all data) and race (race dashboard, race recap, strategy). The mode lives on the
+  // server (practice mode of the strategy), so all devices show the same.
+  const ORDER = { practice: [1, 3, 4, 5, 2], race: [6, 7, 5] };
+  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7];
+  let appMode = load('mode') === 'practice' ? 'practice' : 'race';
+  let page = ORDER[appMode][0];
+  { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
+  function updateDots() {
+    const html = ORDER[appMode].map(p => `<i class="${p === page ? 'on' : ''}"></i>`).join('')
+      + `<button class="modechip ${appMode}">${appMode === 'race' ? 'ZÁVOD' : 'TRÉNINK'}</button>`;
+    $$('.dots').forEach(el => { if (el.innerHTML !== html) el.innerHTML = html; });
+  }
+  function setMode(m) {
+    if (m === appMode) return;
+    appMode = m;
+    store('mode', m);
+    showPage(ORDER[m][0]);
+  }
+  // The chip next to the page dots switches the mode
+  document.addEventListener('click', async e => {
+    if (!e.target.closest('.modechip')) return;
+    const next = appMode === 'race' ? 'practice' : 'race';
+    if (!confirm(next === 'race' ? 'Přepnout na ZÁVOD?' : 'Přepnout na TRÉNINK? Kola se budou ukládat do tréninku, ne do závodu.')) return;
+    await stAction('practice', { value: next === 'practice' ? '1' : '0' });
+    setMode(next);
+  });
   function showPage(n) {
+    if (!ORDER[appMode].includes(n)) n = ORDER[appMode][0];
     page = n;
-    for (let i = 1; i <= PAGES; i++) $('p' + i).hidden = n !== i;
+    for (const i of ALL_PAGES) $('p' + i).hidden = n !== i;
     store('page', n);
+    updateDots();
+    if (n === 7) loadRecap();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
@@ -945,7 +1088,7 @@
   let press = null;
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
-    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, button, input, select');
+    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, button, input, select');
     // Horizontal drags on a chart move its cursor instead of switching pages
     press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
@@ -957,7 +1100,10 @@
     if (!press) return;
     clearTimeout(press.timer);
     const dx = e.clientX - press.x, dy = e.clientY - press.y;
-    if (!press.chart && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) showPage(Math.max(1, Math.min(PAGES, page + (dx < 0 ? 1 : -1))));
+    if (!press.chart && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      const o = ORDER[appMode], i = o.indexOf(page);
+      showPage(o[Math.max(0, Math.min(o.length - 1, i + (dx < 0 ? 1 : -1)))]);
+    }
     press = null;
   };
   pagesEl.addEventListener('pointerup', endPress);
@@ -1240,7 +1386,10 @@
     });
 
     trackPerf(d);
-    if (page === 1) { updateSegments(d); renderMain(d, tireVals); } else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
+    const mode = d.strategy && d.strategy.practice && d.strategy.practice.active ? 'practice' : 'race';
+    if (mode !== appMode) setMode(mode);
+    if (page === 6) renderRace(d, tireVals);
+    else if (page === 1) { updateSegments(d); renderMain(d, tireVals); } else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
     else if (page === 5) renderStrategy(d);
     renderBoxCall(d);
     renderBoxBig(d);
@@ -1446,9 +1595,11 @@
     }));
     setText('coachUpdated', c.updated ? t('Stand {time}', { time: new Date(c.updated).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) }) : '');
   }
+  let coachData = null;
   async function pollCoach() {
     try {
       const c = await (await fetch('api/coach', { cache: 'no-store' })).json();
+      coachData = c;
       const updated = c.updated || '';
       if (updated !== coachUpdated) {
         coachUpdated = updated;
@@ -1845,6 +1996,222 @@
       .map(c => c.laps ? `${c.compound} ${c.laps} ${kol(c.laps)}${c.life ? ` (vydrží ${c.life})` : ''}` : `${c.compound} bez kol – tempo neznámé${c.life ? ` (vydrží ${c.life})` : ''}`);
     if (u.fuel_per_lap != null) parts.push(`spotřeba ${nf(u.fuel_per_lap, 2)}`);
     return `Z tréninku (${car}): ${parts.join(' · ')}.`;
+  }
+
+
+  // ---------- Race dashboard (race mode) ----------
+  const rRev = $('r_revbar');
+  rRev.innerHTML = '<i></i>'.repeat(SEGMENTS);
+  const rSegs = [...rRev.children];
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  function boxCall(st) {
+    // Same logic as page 1, plus the compound of the next stop
+    let txt = '', cls = '', sub = '';
+    if (!st || !st.race) return { txt: 'Vyber závod', sub: 'stránka Strategie → Závod…', cls: '' };
+    const next = st.options && st.options.best && st.options.best.stops[0];
+    if (st.stop_add != null) {
+      txt = st.stop_add > 0.05 ? `DOTANKUJ +${nf(st.stop_add, 1)}` : 'BEZ TANKOVÁNÍ';
+      sub = (st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '') + (next ? ` · ${next.compound}` : '');
+      cls = 'now';
+    } else if (st.laps_to_box != null) {
+      const n = st.laps_to_box;
+      txt = n === 0 ? 'BOX TOTO KOLO' : n === 1 ? 'BOX PŘÍŠTÍ KOLO' : `BOX ZA ${n} ${kol(n).toUpperCase()}`;
+      cls = n === 0 ? 'now' : n === 1 ? 'soon' : '';
+      const fuel = st.next_stop_fuel != null ? (st.next_stop_fuel > 0.05 ? `dotankovat +${nf(st.next_stop_fuel, 1)}` : 'bez tankování') : '';
+      sub = [st.target_lap != null ? `v kole ${st.target_lap}` : '', fuel, next ? next.compound : ''].filter(Boolean).join(' · ');
+    } else if (st.fuel_margin_laps != null) {
+      txt = st.pit_done ? 'DO CÍLE ✓' : 'BEZ ZASTÁVKY ✓';
+      cls = 'done';
+    } else {
+      txt = '–';
+      sub = 'čekám na spotřebu';
+    }
+    return { txt, sub, cls };
+  }
+  function renderRace(d, tireVals) {
+    const st = d.strategy;
+    // Rev meter
+    const max = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
+    const min = d.rpm_alert_min > 0 ? d.rpm_alert_min : max * 0.9;
+    const start = max * 0.45;
+    const lit = Math.max(0, Math.min(SEGMENTS, Math.round((d.rpm - start) / (max - start) * SEGMENTS)));
+    const flash = d.rpm >= max || d.rev_limiter;
+    $('r_rev').classList.toggle('flash', flash);
+    for (let i = 0; i < SEGMENTS; i++) {
+      const frac = (i + 1) / SEGMENTS, segRpm = start + frac * (max - start);
+      const cls = i < lit ? (segRpm >= min ? 'on-r' : frac > 0.6 ? 'on-y' : 'on-g') : '';
+      if (rSegs[i].className !== cls) rSegs[i].className = cls;
+    }
+    setText('r_rpm', String(Math.round(d.rpm)));
+    setText('r_gear', gearText(d.gear));
+    $('r_gear').classList.toggle('limit', flash);
+    setText('r_speed', String(Math.round(U.spd(d.speed_kmh))));
+    tireVals.forEach(({ t: temp }, i) => {
+      const el = $('r_t' + i), c = tireColor(temp);
+      setText('r_t' + i, temp != null ? `${Math.round(U.tmp(temp))}°` : '–');
+      c ? el.style.setProperty('--c', c) : el.style.removeProperty('--c');
+    });
+    // Pace
+    const total = d.total_laps > 0 ? d.total_laps : st && st.total_laps;
+    setText('r_lap', d.lap > 0 ? (total ? `${d.lap}/${total}` : String(d.lap)) : '–');
+    setText('r_laptime', d.current_lap_ms != null ? fmt(d.current_lap_ms) : '');
+    const de = $('r_delta');
+    setText('r_delta', d.live_delta_ms != null ? sgn(d.live_delta_ms / 1000, 2) : '–');
+    de.className = d.live_delta_ms > 0 ? 'delta-pos' : d.live_delta_ms < 0 ? 'delta-neg' : '';
+    const laps = (d.laps || []).filter(ms => ms > 0);
+    const a3 = avg(laps.slice(-3));
+    setText('r_last', fmt(d.last_lap_ms));
+    setText('r_avg3', a3 != null ? fmt(Math.round(a3)) : '–');
+    setText('r_best', fmt(d.best_lap_ms));
+    const tr = laps.length >= 2 && a3 != null ? (laps[laps.length - 1] - a3) / 1000 : null;
+    setText('r_trend', tr == null ? '–' : sgn(tr, 2) + ' s');
+    $('r_trend').className = tr == null ? '' : tr > 0.05 ? 'delta-pos' : tr < -0.05 ? 'delta-neg' : '';
+    setText('r_pos', d.position != null ? (d.cars ? `${d.position}/${d.cars}` : String(d.position)) : '–');
+    // Fuel
+    const cap = d.fuel_capacity;
+    setText('r_fuelbig', cap > 0 ? `${U.fl(d.fuel).toFixed(1)} ${U.fuel}` : '–');
+    const m = st && st.fuel_margin_laps;
+    setText('r_margin', m == null ? '' : (m >= 0 ? '+' : '') + nf(m) + ' ' + kol(Math.abs(Math.round(m))));
+    $('r_margin').style.color = m == null ? '' : m < 0 ? 'var(--red)' : 'var(--green)';
+    const bar = $('r_fuelbar');
+    bar.firstElementChild.style.width = (cap > 0 ? d.fuel / cap * 100 : 0) + '%';
+    bar.firstElementChild.style.background = m != null && m < 0 ? 'var(--red)' : 'var(--dim)';
+    const need = st && st.fuel_needed, mk = bar.lastElementChild;
+    mk.hidden = !(need != null && cap > 0 && need < cap);
+    if (!mk.hidden) mk.style.left = (need / cap * 100) + '%';
+    setText('r_fuellaps', d.fuel_laps_left != null ? nf(d.fuel_laps_left) + ' kola' : '–');
+    const fpl = st && st.fuel_per_lap != null ? st.fuel_per_lap : d.fuel_per_lap;
+    setText('r_fpl', fpl != null ? nf(fpl, 2) : '–');
+    // Box
+    const b = boxCall(st);
+    setText('r_boxbig', b.txt);
+    setText('r_boxsub', b.sub);
+    if ($('r_box').className !== 'card ' + b.cls) $('r_box').className = 'card ' + b.cls;
+    // Strip
+    setText('r_water', String(Math.round(U.tmp(d.water_temp))));
+    setText('r_oil', String(Math.round(U.tmp(d.oil_temp))));
+    const c = st && st.calls.find(c => c.level !== 'info') || (st && st.calls[0]);
+    setText('r_call', c ? c.text : '');
+  }
+
+  // ---------- Race recap (race mode) ----------
+  var recapTimer = null;
+  async function loadRecap() {
+    clearTimeout(recapTimer);
+    try {
+      const saved = await (await fetch('api/strategy', { cache: 'no-store' })).json();
+      renderRecap(saved);
+    } catch {}
+    if (page === 7) recapTimer = setTimeout(loadRecap, 10000);
+  }
+  const fmtS = v => v == null ? '–' : nf(v, 2) + ' s';
+  function slope(pts) {
+    if (pts.length < 3) return null;
+    const mx = avg(pts.map(p => p[0])), my = avg(pts.map(p => p[1]));
+    const sxx = pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+    return sxx > 0 ? pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / sxx : null;
+  }
+  function coachSession() {
+    // Items of the newest session: from the top down to the summary of an older session
+    const items = (coachData && coachData.items) || [];
+    const out = [];
+    for (const it of items) {
+      if (it.kind === 'summary' && out.some(o => o.kind === 'lap')) break;
+      out.push(it);
+      if (it.kind === 'summary' && out.length > 1) break;
+    }
+    return out;
+  }
+  function renderRecap(saved) {
+    const race = saved.race || {};
+    setText('rcName', race.name ? `${race.name}${race.track ? ' · ' + race.track : ''}` : 'žádný závod');
+    const stops = saved.stops || [];
+    const pitLap = l => stops.some(s => s.lap === l || s.lap + 1 === l);
+    const laps = (saved.fuel_laps || []).filter(l => l.ms > 0).sort((a, b) => a.lap - b.lap);
+    if (!laps.length) {
+      $('rcResult').innerHTML = '<span class="muted">Zatím žádné kolo závodu.</span>';
+      $('rcChart').innerHTML = ''; $('rcStints').textContent = '–'; $('rcStrategy').textContent = '–';
+      renderRecapCoach();
+      return;
+    }
+    const clean = laps.filter(l => l.lap > 1 && !pitLap(l.lap) && !l.refuel);
+    const cleanMs = clean.map(l => l.ms);
+    const best = Math.min(...laps.map(l => l.ms)), mean = avg(cleanMs);
+    const sd = cleanMs.length > 1 ? Math.sqrt(avg(cleanMs.map(v => (v - mean) ** 2))) / 1000 : null;
+    const totalMs = laps.reduce((a, l) => a + l.ms, 0);
+    const done = laps[laps.length - 1].lap;
+    $('rcResult').innerHTML = `<div class="rcbig">${fmt(totalMs)}</div>`
+      + `<div class="kvs" style="margin-top:6px"><span>Kola</span><span>${done}${race.laps ? ' / ' + race.laps : ''}</span>`
+      + `<span>Nejlepší kolo</span><span>${fmt(best)}</span>`
+      + `<span>Průměr čistých kol</span><span>${mean != null ? fmt(Math.round(mean)) : '–'}</span>`
+      + `<span>Vyrovnanost (±)</span><span>${fmtS(sd)}</span>`
+      + `<span>Zastávky</span><span>${stops.length}</span></div>`;
+    // Lap chart: bars, best purple, faster than average green, slower red, pit laps grey
+    const lo = best / 1000 - 1, hi = Math.max(lo + 4, Math.min(Math.max(...laps.map(l => l.ms)) / 1000, (mean || best) / 1000 + 8));
+    const W = 1000, H = 170, n = laps.length, bw = W / Math.max(n, 12);
+    const y = v => H - 18 - Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * (H - 30);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+    laps.forEach((l, i) => {
+      const v = l.ms / 1000, col = pitLap(l.lap) || l.refuel ? '#55555e' : l.ms === best ? '#b25cff' : mean != null && l.ms <= mean ? '#2fd36b' : '#ff4a3d';
+      svg += `<rect x="${i * bw + bw * 0.15}" y="${y(v)}" width="${bw * 0.7}" height="${H - 18 - y(v)}" fill="${col}" rx="2"><title>Kolo ${l.lap}: ${fmt(l.ms)}</title></rect>`;
+      if (n <= 40) svg += `<text x="${i * bw + bw / 2}" y="${H - 4}" fill="#8a8a94" font-size="11" text-anchor="middle">${l.lap}</text>`;
+    });
+    if (mean != null) svg += `<line x1="0" x2="${W}" y1="${y(mean / 1000)}" y2="${y(mean / 1000)}" stroke="#d9d9de" stroke-dasharray="6 6" stroke-width="1"/>`;
+    $('rcChart').innerHTML = svg + '</svg><div class="pnote">Fialová = nejlepší kolo, zelená = rychlejší než průměr (čárkovaně), červená = pomalejší, šedá = kolo se zastávkou.</div>';
+    // Stints: split at stops with new tyres
+    const changes = stops.filter(s => s.tyres).map(s => s.lap);
+    const bounds = [0, ...changes, done];
+    const compounds = (saved.stints || []).map(s => s.compound);
+    let rows = '';
+    for (let i = 0; i + 1 < bounds.length; i++) {
+      const a = bounds[i] + 1, b = bounds[i + 1];
+      if (b < a) continue;
+      const sl = clean.filter(l => l.lap >= a && l.lap <= b);
+      const k = slope(sl.map(l => [l.lap, l.ms / 1000]));
+      const comp = compounds[i] || (i === 0 ? race.start_compound : null) || '?';
+      rows += `<tr><td>${comp}</td><td>${a}–${b}</td><td>${sl.length ? fmt(Math.round(avg(sl.map(l => l.ms)))) : '–'}</td><td>${k == null ? '–' : sgn(k, 2) + ' s'}</td></tr>`;
+    }
+    const med = cleanMs.length ? [...cleanMs].sort((x, z) => x - z)[Math.floor(cleanMs.length / 2)] : null;
+    const stopRows = stops.map(s => {
+      const inl = laps.find(l => l.lap === s.lap), out = laps.find(l => l.lap === s.lap + 1);
+      const loss = inl && out && med ? (inl.ms + out.ms - 2 * med) / 1000 : null;
+      return `<li>Kolo ${s.lap}: ${s.fuel_added > 0.05 ? '+' + nf(s.fuel_added, 1) + ' paliva' : 'bez tankování'}, ${s.tyres ? 'nové gumy' : s.tyres === false ? 'stejné gumy' : 'gumy ?'}${loss != null ? ` · ztráta ${nf(loss, 1)} s` : ''}</li>`;
+    }).join('');
+    $('rcStints').innerHTML = `<table class="ptab"><thead><tr><th>Směs</th><th>Kola</th><th>Průměr</th><th>Ztráta / kolo</th></tr></thead><tbody>${rows}</tbody></table>`
+      + (stopRows ? `<ul class="rclist" style="margin-top:8px">${stopRows}</ul>` : '<div class="pnote">Bez zastávky.</div>');
+    // Strategy: rules met, fuel
+    const st = lastData.strategy || {};
+    const used = laps.reduce((a, l) => a + (l.used || 0), 0), added = stops.reduce((a, s) => a + (s.fuel_added || 0), 0);
+    const fl = laps.filter(l => l.lap > 1 && !l.refuel && !pitLap(l.lap)).map(l => l.used);
+    $('rcStrategy').innerHTML = `<div class="kvs">`
+      + (race.pit_required ? `<span>Povinná zastávka</span><span class="${st.pit_done ? 'ok' : 'bad'}">${st.pit_done ? '✓' : '✗'}</span>` : '')
+      + (race.mandatory ? `<span>Povinná směs ${race.mandatory}</span><span class="${st.mandatory_done ? 'ok' : 'bad'}">${st.mandatory_done ? '✓' : '✗'}</span>` : '')
+      + `<span>Spotřebováno</span><span>${nf(used, 1)}</span><span>Dotankováno</span><span>${nf(added, 1)}</span>`
+      + `<span>Spotřeba / kolo</span><span>${fl.length ? nf(avg(fl), 2) : '–'}</span>`
+      + (st.practice_use && st.practice_use.fuel_per_lap != null ? `<span>Spotřeba z tréninku</span><span>${nf(st.practice_use.fuel_per_lap, 2)}</span>` : '')
+      + `</div>`;
+    renderRecapCoach();
+  }
+  function renderRecapCoach() {
+    const items = coachSession();
+    const loss = {}, gain = {};
+    for (const it of items.filter(i => i.kind === 'lap')) {
+      for (const p of it.points || []) {
+        const txt = typeof p === 'string' ? p : (p.text || '');
+        let m = txt.match(/^(Z\d+): ztráta ([\d,]+) s/);
+        if (m) { (loss[m[1]] = loss[m[1]] || []).push(parseFloat(m[2].replace(',', '.'))); continue; }
+        m = txt.match(/^(Z\d+): o ([\d,]+) s rychleji/);
+        if (m) (gain[m[1]] = gain[m[1]] || []).push(parseFloat(m[2].replace(',', '.')));
+      }
+    }
+    const top = (o, k) => Object.entries(o).map(([c, v]) => [c, v.reduce((a, b) => a + b, 0), v.length]).sort((a, b) => b[1] - a[1]).slice(0, k);
+    const summary = items.find(i => i.kind === 'summary');
+    let html = '';
+    const tl = top(loss, 3), tg = top(gain, 3);
+    if (tl.length) html += '<b>Největší ztráty</b><ul class="rclist">' + tl.map(([c, s, k]) => `<li class="bad">${c}: celkem ${nf(s, 2)} s (${k}× v kolech)</li>`).join('') + '</ul>';
+    if (tg.length) html += '<b>Co šlo dobře</b><ul class="rclist">' + tg.map(([c, s, k]) => `<li class="good">${c}: nejlepší kola tu byla o ${nf(s / k, 2)} s rychlejší (${k}×)</li>`).join('') + '</ul>';
+    if (summary) html += `<b>${esc(summary.title)}</b><ul class="rclist">${(summary.points || []).map(p => `<li>${esc(typeof p === 'string' ? p : p.text || '')}</li>`).join('')}</ul>`;
+    $('rcCoach').innerHTML = html || '<span class="muted">Kouč zatím nic nevyhodnotil.</span>';
   }
 
   // ---------- Practice mode ----------

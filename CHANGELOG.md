@@ -1,5 +1,20 @@
 # Changelog
 
+## BOXBOXBOX 0.7.0-fork1 – 2026-10-13
+
+- **Dva módy aplikace: ZÁVOD a TRÉNINK** (přepínač u teček stránek a na stránce Strategie; mód
+  je uložený na serveru, takže iPhone i Mac ukazují totéž).
+  - Trénink: jízdní pohled, kouč, měření, strategie (trénink), všechna data.
+  - Závod: závodní dashboard, rekapitulace závodu, strategie a nastavení závodu.
+- **Závodní dashboard**: velký otáčkoměr s číslem, rychlostní stupeň, rychlost, teploty gum;
+  tempo (kolo X/Y, živá delta, poslední, průměr 3 kol, nejlepší, trend, pozice); palivo
+  (množství, rezerva v kolech, značka potřeby do cíle, vystačí na, spotřeba) a velký pokyn
+  BOX ZA N KOL / DOTANKUJ +X se směsí a kolem zastávky.
+- **Rekapitulace závodu**: celkový čas, nejlepší a průměrné kolo, vyrovnanost, graf časů kol
+  (nejlepší / rychlejší / pomalejší / zastávka), stinty se ztrátou za kolo, zastávky
+  s dotankováním a ztrátou času, splnění pravidel, spotřeba, největší ztráty a silná místa
+  podle kouče a jeho souhrn.
+
 ## BOXBOXBOX 0.6.0-fork1 – 2026-10-13
 
 - **Mód Trénink** (stránka Strategie, přepínač Závod / Trénink): označíš směs, aplikace ukládá
