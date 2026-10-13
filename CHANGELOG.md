@@ -1,5 +1,21 @@
 # Changelog
 
+## BOXBOXBOX 0.6.0-fork1 – 2026-10-13
+
+- **Mód Trénink** (stránka Strategie, přepínač Závod / Trénink): označíš směs, aplikace ukládá
+  čistá kola (celé kolo od čáry, bez boxu, bez out-lapu, bez chyby) zvlášť pro auto, trať,
+  směs a násobiče opotřebení a spotřeby. Trať se pozná podle tvaru mapy (napoprvé ji napíšeš).
+  Výměnu gum v boxu pozná sama. Tlačítko „Počítat kola“ vypne ukládání pro jízdu automatem,
+  jednotlivá kola jde vyřadit. Data: `practice.json` vedle `strategy.json`.
+- **Výsledky tréninku**: pro každou směs nejlepší čas, ztráta času na každé kolo stáří gum
+  (přímka přes kola na sadě, od 4 kol a rozpětí 3 kol), tempo proti nejrychlejší směsi,
+  spotřeba, nejdelší run. „Vydrží kol“ zadáváš ručně podle opotřebení ve hře.
+- **Závod z tréninku**: pro závod na stejné trati se stejným autem a násobiči se doplní
+  životnost, tempo a ztráta stářím každé směsi a spotřeba (co zadáš v nastavení závodu, má
+  přednost). Plánovač počítá s degradací změřenou pro každou směs. V nastavení závodu jsou
+  hodnoty z tréninku vidět jako šedá čísla, v plánu je řádek „Z tréninku …“.
+- Tabulka gum v nastavení závodu má nový sloupec „Ztráta s/kolo stáří“.
+
 ## BOXBOXBOX 0.5.1-fork1 – 2026-10-13
 
 - **Oprava: zkrácené 1. kolo závodu** (Nürburgring GP a další tratě, kde je start jinde než cíl):

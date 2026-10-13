@@ -10,6 +10,8 @@
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
 //! | POST | `/api/strategy/preview` | recommended + alternative strategy for race settings |
 //! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
+//! | POST | `/api/strategy/action` | practice: `"practice"` (value "1"/"0"), `"practice_track"`, `"practice_compound"`, `"practice_new_set"`, `"practice_counting"`, `"practice_mults"`, `"practice_life"`, `"practice_toggle_lap"` |
+//! | GET  | `/api/practice?track=&car=` | practice state, figures per compound, last laps, known tracks |
 
 use super::Feeds;
 use crate::config::{Config, DataPaths, Language, Units};
@@ -62,6 +64,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/strategy/race", axum::routing::post(strategy_race))
         .route("/api/strategy/preview", axum::routing::post(strategy_preview))
         .route("/api/strategy/action", axum::routing::post(strategy_action))
+        .route("/api/practice", get(practice_state))
 }
 
 async fn strategy_state(State(s): State<AppState>) -> impl IntoResponse {
@@ -78,10 +81,11 @@ async fn strategy_race(State(s): State<AppState>, Json(race): Json<strategy::Rac
 async fn strategy_preview(State(s): State<AppState>, Json(race): Json<strategy::Race>) -> impl IntoResponse {
     let st = s.strategy.clone();
     let body = tokio::task::spawn_blocking(move || {
-        let st = st.lock().unwrap_or_else(|e| e.into_inner());
+        let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
         let (options, plan) = st.preview(&race);
         json!({ "options": options, "fuel_per_lap": plan.fuel_per_lap, "fuel_source": plan.fuel_source,
-                "pit_loss": plan.pit_loss, "pit_loss_source": plan.pit_loss_source, "total_laps": plan.total_laps })
+                "pit_loss": plan.pit_loss, "pit_loss_source": plan.pit_loss_source, "total_laps": plan.total_laps,
+                "practice_use": plan.practice_use })
         .to_string()
     })
     .await
@@ -94,6 +98,36 @@ struct StrategyAction {
     action: String,
     compound: Option<String>,
     pct: Option<f32>,
+    /// Practice: track name, "1"/"0"
+    value: Option<String>,
+    wear: Option<f32>,
+    fuel: Option<f32>,
+    life: Option<u32>,
+    index: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct PracticeQuery {
+    track: Option<String>,
+    car: Option<i32>,
+}
+
+/// Practice: state, figures per compound for the car and track, the last laps, known tracks.
+async fn practice_state(State(s): State<AppState>, Query(q): Query<PracticeQuery>) -> impl IntoResponse {
+    let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    json_body(practice_json(&st, q.track, q.car))
+}
+
+fn practice_json(st: &strategy::Strategy, track: Option<String>, car: Option<i32>) -> String {
+    let p = &st.practice.saved;
+    let track = track.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| p.track.clone());
+    let car = car.or_else(|| st.practice_car(&track));
+    let summary = car.map(|c| st.practice.summary(c, &track, p.wear_mult, p.fuel_mult));
+    let laps: Vec<_> = p.laps.iter().enumerate().rev().take(12).map(|(i, l)| json!({ "index": i, "lap": l })).collect();
+    let mut tracks: Vec<String> = p.shapes.iter().map(|s| s.track.clone()).chain(p.laps.iter().map(|l| l.track.clone())).collect();
+    tracks.sort();
+    tracks.dedup();
+    json!({ "state": st.practice_state(), "car": car, "summary": summary, "laps": laps, "tracks": tracks }).to_string()
 }
 
 async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction>) -> impl IntoResponse {
@@ -125,6 +159,53 @@ async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction
             st.save();
             true
         }
+        ("practice", ..) => {
+            st.set_practice(a.value.as_deref() == Some("1"));
+            true
+        }
+        ("practice_track", ..) => {
+            st.practice.saved.track = a.value.clone().unwrap_or_default().trim().to_string();
+            st.practice.save();
+            true
+        }
+        ("practice_compound", Some(c), _) => {
+            // Other tyres marked = a new set; the same compound again just confirms it
+            let c = c.to_uppercase();
+            if st.practice.saved.compound.as_deref() != Some(c.as_str()) {
+                st.practice.new_set(Some(&c));
+            }
+            true
+        }
+        ("practice_new_set", c, _) => {
+            st.practice.new_set(c);
+            true
+        }
+        ("practice_counting", ..) => {
+            st.practice.saved.counting = a.value.as_deref() != Some("0");
+            st.practice.save();
+            true
+        }
+        ("practice_mults", ..) => {
+            let p = &mut st.practice.saved;
+            p.wear_mult = a.wear.filter(|v| *v > 0.0).unwrap_or(p.wear_mult);
+            p.fuel_mult = a.fuel.filter(|v| *v > 0.0).unwrap_or(p.fuel_mult);
+            st.practice.save();
+            true
+        }
+        ("practice_life", Some(c), _) => {
+            let track = st.practice.saved.track.clone();
+            let wear = st.practice.saved.wear_mult;
+            if let Some(car) = st.practice_car(&track) {
+                st.practice.set_life(car, &track, c, wear, a.life);
+            }
+            true
+        }
+        ("practice_toggle_lap", ..) => {
+            if let Some(i) = a.index {
+                st.practice.toggle_lap(i);
+            }
+            true
+        }
         ("clear", ..) => {
             st.saved.race = None;
             st.reset_progress();
@@ -133,7 +214,9 @@ async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction
         }
         _ => false,
     };
-    if ok {
+    if ok && a.action.starts_with("practice") {
+        (StatusCode::OK, json_body(practice_json(&st, None, None))).into_response()
+    } else if ok {
         (StatusCode::OK, json_body(st.json())).into_response()
     } else {
         (StatusCode::BAD_REQUEST, json_body(json!({ "error": "unknown action or missing value" }).to_string())).into_response()

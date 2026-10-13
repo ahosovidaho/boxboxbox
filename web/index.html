@@ -337,6 +337,29 @@
   .wearrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
   .wearrow input { width: 70px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 7px 8px; font: 15px var(--mono); text-align: right; }
   .ok { color: var(--green); } .bad { color: var(--yellow); }
+  .seg { display: inline-flex; border: 1px solid #2c2c33; border-radius: 9px; overflow: hidden; flex-shrink: 0; }
+  .seg button { background: #1c1c21; color: var(--dim); border: 0; padding: 4px 12px; font: 600 13px -apple-system, system-ui, sans-serif; }
+  .seg button.on { background: var(--text); color: #000; }
+  #p5[data-mode="practice"] .race-only, #p5:not([data-mode="practice"]) .practice-only { display: none; }
+  #p5[data-mode="practice"] #stPick { display: none; }
+  .prow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; font-size: 13px; color: var(--dim); }
+  .prow input[type=text], .prow input[type=number] { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 6px 8px; font: 14px -apple-system, system-ui, sans-serif; }
+  .prow input[type=text] { flex: 1 1 160px; min-width: 0; }
+  .prow input[type=number] { width: 56px; text-align: right; font-family: var(--mono); }
+  .prow label { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  #prSummary { overflow-x: auto; scrollbar-width: none; }
+  .chips.tyres9 { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .wide2 { grid-column: span 2; }
+  @media (max-width: 560px) { .wide2 { grid-column: auto; } }
+  .ptab { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ptab th { color: var(--label); font-weight: 500; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; text-align: right; padding: 3px 5px; white-space: nowrap; }
+  .ptab td { padding: 5px; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); white-space: nowrap; }
+  .ptab th:first-child, .ptab td:first-child { text-align: left; font-family: -apple-system, system-ui, sans-serif; font-weight: 600; }
+  .ptab input { width: 52px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; padding: 4px 5px; font: 13px var(--mono); text-align: right; }
+  .ptab tr.off td { color: var(--label); text-decoration: line-through; }
+  .ptab button { background: none; border: 1px solid #2c2c33; color: var(--dim); border-radius: 7px; padding: 2px 7px; font-size: 12px; }
+  .pnote { font-size: 12px; color: var(--label); margin-top: 6px; line-height: 1.4; }
+  .pfrom { font-size: 12px; color: var(--dim); margin-top: 6px; }
   #raceSheet .sheet { max-width: 560px; }
   #raceList { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; max-height: 38vh; overflow: auto; }
   #raceList button { text-align: left; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 10px; padding: 8px 12px; font: 14px -apple-system, system-ui, sans-serif; }
@@ -623,15 +646,40 @@
 <section class="page" id="p5" hidden>
   <div id="p5head">
     <b>Strategie</b>
+    <span class="seg" id="stMode"><button data-m="0" class="on">Závod</button><button data-m="1">Trénink</button></span>
     <span id="stRace">–</span>
     <button class="stbtn small" id="stPick">Závod…</button>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"><i></i><i></i><i></i><i></i><i class="on"></i></span>
   </div>
   <div id="p5body">
-    <div id="stCalls"></div>
+    <div id="stCalls" class="race-only"></div>
 
-    <div class="card"><h2>Palivo</h2>
+    <div class="card practice-only"><h2>Trénink</h2>
+      <div class="stbig" id="prBig">–</div>
+      <div class="prow">Trať <input type="text" id="prTrack" list="prTracks" placeholder="např. Nürburgring GP" autocomplete="off"><datalist id="prTracks"></datalist></div>
+      <div class="pnote" id="prTrackInfo"></div>
+      <div class="prow"><label>Opotřebení × <input type="number" id="prWear" inputmode="decimal" step="0.5" min="0"></label>
+        <label>Spotřeba × <input type="number" id="prFuel" inputmode="decimal" step="0.5" min="0"></label></div>
+      <div class="chips tyres9" id="prChips"></div>
+      <div class="chips">
+        <button id="prNewSet">Nová sada</button>
+        <button id="prCount">Počítat kola</button>
+      </div>
+      <div class="pnote">Označ směs, na které jedeš. Výměnu gum v boxu pozná aplikace sama (stejná směs); jinou směs stačí ťuknout. Kola automatu vypni tlačítkem „Počítat kola“.</div>
+    </div>
+
+    <div class="card practice-only wide2"><h2>Výsledky tréninku</h2>
+      <div id="prSummary"><span class="muted">Zatím žádná čistá kola.</span></div>
+      <div class="pnote">Jen čistá kola: celé kolo od čáry, bez boxu, bez out-lapu a bez chyby (o 2 s nebo 2 % pomalejší než typické kolo).
+        Ztráta / kolo = o kolik je kolo pomalejší s každým dalším kolem na sadě. „Vydrží kol“ zadej podle opotřebení ve hře – použije se v Závodě.</div>
+    </div>
+
+    <div class="card practice-only"><h2>Poslední kola</h2>
+      <div id="prLaps"><span class="muted">–</span></div>
+    </div>
+
+    <div class="card race-only"><h2>Palivo</h2>
       <div class="stbig" id="stFuelBig">–</div>
       <div class="kvs">
         <span>Okno zastávky</span><span id="stWindow">–</span>
@@ -646,7 +694,7 @@
       </div>
     </div>
 
-    <div class="card"><h2>Pneumatiky</h2>
+    <div class="card race-only"><h2>Pneumatiky</h2>
       <div class="stbig" id="stWearBig">–</div>
       <div class="chips" id="stChips"></div>
       <div class="kvs">
@@ -662,11 +710,12 @@
       </div>
     </div>
 
-    <div class="card"><h2>Plán závodu</h2>
+    <div class="card race-only"><h2>Plán závodu</h2>
       <div id="stPlan"><span class="muted">Zadej závod a spotřebu – plán se spočítá sám.</span></div>
+      <div class="pfrom" id="stFrom"></div>
     </div>
 
-    <div class="card"><h2>Pravidla závodu</h2>
+    <div class="card race-only"><h2>Pravidla závodu</h2>
       <div class="kvs">
         <span>Kol celkem</span><span id="stTotal">–</span>
         <span>Povinná zastávka</span><span id="stPit">–</span>
@@ -740,12 +789,12 @@
       <option>SS</option><option>SM</option><option>SH</option><option>CS</option><option>CM</option><option>CH</option></select></label>
     <h2 class="sect">Gumy a zastávky</h2>
     <table class="tyretab">
-      <thead><tr><th>Směs</th><th>Kol na sadě</th><th>Tempo s/kolo (− rychlejší)</th></tr></thead>
+      <thead><tr><th>Směs</th><th>Kol na sadě</th><th>Tempo s/kolo (− rychlejší)</th><th>Ztráta s/kolo stáří</th></tr></thead>
       <tbody id="rTyres"></tbody>
     </table>
     <label><span>Ztráta času za každé kolo stáří gum (s)</span> <input type="number" id="rDeg" inputmode="decimal" step="0.05" placeholder="0.2"></label>
     <label><span>Ztráta zastávkou bez tankování (s)</span> <input type="number" id="rPitLoss" inputmode="decimal" step="0.5"></label>
-    <div class="sinfo" id="rPitInfo"></div>
+    <div class="sinfo" id="rPitInfo" style="word-break: normal"></div>
     <div id="rPreview"></div>
     <h2 class="sect">Palivo</h2>
     <label><span>Odhad spotřeby / kolo (než změřím)</span> <input type="number" id="rFpl" inputmode="decimal" step="0.01"></label>
@@ -1787,6 +1836,86 @@
     return [kind + 'S', kind + 'M', kind + 'H'];
   }
 
+  // "Z tréninku (Mitsubishi …): SS 8 kol (vydrží 8) · SM 10 kol · spotřeba 6,50"
+  function practiceFrom(u) {
+    const car = lastData && lastData.car_code === u.car && lastData.car_name ? lastData.car_name : `auto ${u.car}`;
+    const parts = u.compounds.filter(c => c.laps > 0 || c.life)
+      .map(c => c.laps ? `${c.compound} ${c.laps} ${kol(c.laps)}${c.life ? ` (vydrží ${c.life})` : ''}` : `${c.compound} bez kol – tempo neznámé${c.life ? ` (vydrží ${c.life})` : ''}`);
+    if (u.fuel_per_lap != null) parts.push(`spotřeba ${nf(u.fuel_per_lap, 2)}`);
+    return `Z tréninku (${car}): ${parts.join(' · ')}.`;
+  }
+
+  // ---------- Practice mode ----------
+  let prData = null, prKey = '', prBusy = false;
+  const fmtLap = ms => ms == null ? '–' : `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`.replace('.', ',');
+  async function loadPractice() {
+    if (prBusy) return;
+    prBusy = true;
+    try { prData = await (await fetch('api/practice', { cache: 'no-store' })).json(); } catch { prData = null; }
+    prBusy = false;
+    prKey = '';
+  }
+  async function prAction(action, extra = {}) {
+    const r = await stAction(action, extra);
+    if (r && r.state) { prData = r; prKey = ''; }
+    return r;
+  }
+  function renderPractice(d) {
+    const ps = d.strategy.practice;
+    const key = `${ps.laps}|${ps.track}|${ps.compound}|${ps.set_age}|${ps.counting}|${ps.wear_mult}|${ps.fuel_mult}|${d.car_code}`;
+    if (!prData || (prData.state && prData.state.laps !== ps.laps)) { if (!prBusy) loadPractice(); }
+    const big = ps.compound ? `${ps.compound} <small>${ps.set_age + 1}. kolo na sadě</small>` : 'Vyber směs';
+    if ($('prBig').innerHTML !== big) $('prBig').innerHTML = big;
+    if (key === prKey) return;
+    prKey = key;
+    if (document.activeElement !== $('prTrack')) $('prTrack').value = ps.track;
+    if (document.activeElement !== $('prWear')) $('prWear').value = ps.wear_mult;
+    if (document.activeElement !== $('prFuel')) $('prFuel').value = ps.fuel_mult;
+    setText('prTrackInfo', ps.track ? '' : 'Trať se pozná podle mapy, pokud už jsi na ní trénoval. Jinak ji napiš – stejně jako v nastavení závodu.');
+    $('prChips').innerHTML = ['R', 'S', 'C'].flatMap(k => ['S', 'M', 'H'].map(c => k + c))
+      .map(c => `<button data-c="${c}" class="${c === ps.compound ? 'on' : ''}">${c}</button>`).join('');
+    $('prCount').classList.toggle('on', ps.counting);
+    setText('prCount', ps.counting ? 'Počítat kola ✓' : 'Nepočítat (automat)');
+    if (!prData) return;
+    $('prTracks').innerHTML = (prData.tracks || []).map(t => `<option value="${t}">`).join('');
+    const sm = prData.summary;
+    const rows = sm && sm.compounds.length ? sm.compounds.map(c => `<tr><td>${c.compound}</td>`
+      + `<td><input type="number" inputmode="numeric" min="1" data-life="${c.compound}" value="${c.life ?? ''}"></td>`
+      + `<td>${c.laps}</td><td>${fmtLap(c.best_ms)}</td>`
+      + `<td>${c.deg == null ? (c.laps ? 'málo kol' : '–') : '+' + nf(c.deg, 2) + ' s'}</td>`
+      + `<td>${c.pace == null ? '–' : c.pace < 0.05 ? 'nejrychlejší' : '+' + nf(c.pace, 2) + ' s'}</td>`
+      + `<td>${nf(c.fuel_per_lap, 2)}</td><td>${c.max_age || '–'}</td></tr>`).join('') : '';
+    const car = d.car_code === prData.car ? (d.car_name || '') : prData.car ? `auto ${prData.car}` : '';
+    $('prSummary').innerHTML = rows
+      ? `<table class="ptab"><thead><tr><th>Směs</th><th>Vydrží kol</th><th>Čistá kola</th><th>Nejlepší</th><th>Ztráta / kolo</th><th>Tempo</th><th>Spotřeba</th><th>Nejdelší run</th></tr></thead><tbody>${rows}</tbody></table>`
+        + `<div class="pfrom">${car}${car ? ' · ' : ''}${ps.track || 'trať?'} · opotřebení ${ps.wear_mult}× · spotřeba ${ps.fuel_mult}×${sm.fuel_per_lap != null ? ` · průměrná spotřeba ${nf(sm.fuel_per_lap, 2)} / kolo` : ''}</div>`
+      : '<span class="muted">Zatím žádná čistá kola pro toto auto, trať a násobiče.</span>';
+    const laps = prData.laps || [];
+    $('prLaps').innerHTML = laps.length ? `<table class="ptab"><tbody>${laps.map(({ index, lap: l }) => {
+      const why = !l.clean ? 'neplatné' : !l.counted ? 'nepočítá se' : '';
+      return `<tr class="${why ? 'off' : ''}"><td>${l.compound} ${l.age + 1}.</td><td>${fmtLap(l.ms)}</td><td>${nf(l.fuel, 2)}</td>`
+        + `<td>${l.clean ? `<button data-i="${index}">${l.counted ? 'vyřadit' : 'vrátit'}</button>` : '<small>box / neúplné</small>'}</td></tr>`;
+    }).join('')}</tbody></table>` : '<span class="muted">Zatím žádné kolo.</span>';
+  }
+  $('stMode').addEventListener('click', async e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    await prAction('practice', { value: b.dataset.m });
+    await loadPractice();
+  });
+  $('prChips').addEventListener('click', e => { const b = e.target.closest('button'); if (b) prAction('practice_compound', { compound: b.dataset.c }); });
+  $('prNewSet').onclick = () => prAction('practice_new_set');
+  $('prCount').onclick = () => prAction('practice_counting', { value: lastData.strategy?.practice?.counting ? '0' : '1' });
+  $('prTrack').addEventListener('change', async () => { await prAction('practice_track', { value: $('prTrack').value }); await loadPractice(); });
+  const saveMults = async () => { await prAction('practice_mults', { wear: numIn($('prWear').value), fuel: numIn($('prFuel').value) }); await loadPractice(); };
+  $('prWear').addEventListener('change', saveMults);
+  $('prFuel').addEventListener('change', saveMults);
+  $('prSummary').addEventListener('change', e => {
+    const c = e.target.dataset.life;
+    if (c) { const v = numIn(e.target.value); prAction('practice_life', { compound: c, life: v == null ? null : Math.round(v) }); }
+  });
+  $('prLaps').addEventListener('click', e => { const b = e.target.closest('button'); if (b) prAction('practice_toggle_lap', { index: +b.dataset.i }); });
+
   function renderStrategy(d) {
     const st = d.strategy;
     if (!st) return;
@@ -1800,7 +1929,7 @@
     setText('stLap', st.total_laps ? `${Math.max(d.lap, 0)} / ${st.total_laps}` : `${Math.max(d.lap, 0)}`);
     setText('stLeft', nf(st.laps_left));
     setText('stWindow', st.window ? (st.window[0] === st.window[1] ? `${st.window[0]}` : `${st.window[0]}–${st.window[1]}`) + (st.laps_to_box != null ? ` · za ${st.laps_to_box}` : '') : '–');
-    setText('stFpl', st.fuel_per_lap == null ? '–' : nf(st.fuel_per_lap, 2) + ({ manual: ' (zadaný odhad)', so_far: ' (z dosavadní spotřeby)' }[st.fuel_source] || ''));
+    setText('stFpl', st.fuel_per_lap == null ? '–' : nf(st.fuel_per_lap, 2) + ({ manual: ' (zadaný odhad)', so_far: ' (z dosavadní spotřeby)', practice: ' (z tréninku)' }[st.fuel_source] || ''));
     setText('stNeed', nf(st.fuel_needed));
     setText('stFuel', d.fuel_capacity > 0 ? `${nf(d.fuel)} / ${nf(d.fuel_capacity, 0)}` : nf(d.fuel));
     setText('stAdd', st.add_now == null ? '–' : '+' + nf(st.add_now));
@@ -1820,6 +1949,14 @@
     // Plan
     const ph = plansHtml(st.options) || '<span class="muted">Plán se spočítá, až bude známá spotřeba a počet kol.</span>';
     if ($('stPlan').innerHTML !== ph) $('stPlan').innerHTML = ph;
+    setText('stFrom', st.practice_use ? practiceFrom(st.practice_use) : '');
+    // Practice mode
+    const mode = st.practice && st.practice.active ? 'practice' : 'race';
+    if ($('p5').dataset.mode !== mode) {
+      $('p5').dataset.mode = mode;
+      $$('#stMode button').forEach(b => b.classList.toggle('on', (b.dataset.m === '1') === (mode === 'practice')));
+    }
+    if (mode === 'practice') renderPractice(d);
     // Rules
     setText('stTotal', st.total_laps ?? '–');
     setText('stPit', st.pit_required ? (st.pit_done ? '✓ hotovo' : 'ještě ne') : 'ne');
@@ -1924,7 +2061,8 @@
     $('rTyres').innerHTML = ['S', 'M', 'H'].map(c => {
       const n = k + c, t = raceTyres[n] || {};
       return `<tr><td>${n}</td><td><input type="number" inputmode="numeric" min="1" data-n="${n}" data-f="life" value="${t.life ?? ''}"></td>`
-        + `<td><input type="number" inputmode="decimal" step="0.1" data-n="${n}" data-f="pace" value="${t.pace ?? ''}"></td></tr>`;
+        + `<td><input type="number" inputmode="decimal" step="0.1" data-n="${n}" data-f="pace" value="${t.pace ?? ''}"></td>`
+        + `<td><input type="number" inputmode="decimal" step="0.05" data-n="${n}" data-f="deg" value="${t.deg ?? ''}"></td></tr>`;
     }).join('');
   }
   function readTyres() {
@@ -1949,7 +2087,15 @@
     try {
       const r = await (await fetch('api/strategy/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(raceFromForm()) })).json();
       const src = { measured: 'změřeno na této trati', manual: 'zadáno ručně', default: 'odhad – trať zatím nezměřena' }[r.pit_loss_source] || '';
-      setText('rPitInfo', `Počítám se ztrátou zastávkou ${nf(r.pit_loss, 1)} s (${src}) + tankování.`);
+      setText('rPitInfo', `Počítám se ztrátou zastávkou ${nf(r.pit_loss, 1)} s (${src}) + tankování.`
+        + (r.practice_use ? '\n' + practiceFrom(r.practice_use) + ' Prázdná pole doplní trénink (šedá čísla).' : ''));
+      const pu = {};
+      (r.practice_use?.compounds || []).forEach(c => { pu[c.compound] = c; });
+      $$('#rTyres input').forEach(inp => {
+        const c = pu[inp.dataset.n], v = c && c[inp.dataset.f];
+        inp.placeholder = v == null ? '' : inp.dataset.f === 'life' ? String(v) : nf(v, 2);
+      });
+      $('rFpl').placeholder = r.fuel_source === 'practice' && r.fuel_per_lap != null ? nf(r.fuel_per_lap, 2) : '';
       $('rPitLoss').placeholder = nf(r.pit_loss, 1);
       $('rPreview').innerHTML = plansHtml(r.options)
         || `<div class="planbox"><span class="muted">${r.total_laps ? 'Doplň odhad spotřeby na kolo – pak spočítám strategii.' : 'Doplň počet kol.'}</span></div>`;

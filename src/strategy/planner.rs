@@ -8,7 +8,7 @@
 //! * per lap: the pace difference of the compound,
 //! * tyre degradation: every lap of tyre age costs `deg` seconds (a stint of n laps on new tyres
 //!   costs deg·(0 + 1 + … + n−1)). A compound with a shorter life wears faster: its rate is scaled
-//!   by (average life of the entered compounds / its life).
+//!   by (average life of the entered compounds / its life). A rate measured in practice replaces it.
 //!
 //! The best plan is the recommendation; the alternative is the best plan with other tyres or a
 //! different number of stops. The search is small: 27 laps and 3 stops
@@ -27,11 +27,14 @@ pub struct Compound {
     pub pace: f32,
     /// Degradation relative to the average (set by [`plan`] from the lives)
     pub wear_factor: f32,
+    /// Measured degradation of this compound (practice), s per lap per lap of age; replaces
+    /// `Input::deg × wear_factor`
+    pub deg: Option<f32>,
 }
 
 impl Compound {
     pub fn new(name: &str, life: Option<u32>, pace: f32) -> Self {
-        Compound { name: name.to_string(), life, pace, wear_factor: 1.0 }
+        Compound { name: name.to_string(), life, pace, wear_factor: 1.0, deg: None }
     }
 }
 
@@ -160,7 +163,7 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
         if let Some(life) = t.life {
             over += (age + n).saturating_sub(life) as f32;
         }
-        cost += t.pace * n as f32 + deg_cost(inp.deg * t.wear_factor, age, n);
+        cost += t.pace * n as f32 + deg_cost(t.deg.unwrap_or(inp.deg * t.wear_factor), age, n);
         // Tiny preference for keeping the same compound when everything else is equal
         if i > 0 && tyres[i - 1].name != t.name {
             cost += 0.001;

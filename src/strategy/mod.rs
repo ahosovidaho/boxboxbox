@@ -11,6 +11,7 @@
 //! Saved in `strategy.json` in the data folder, so a restart keeps the race and the calibration.
 
 pub mod planner;
+pub mod practice;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -69,6 +70,8 @@ pub struct TyreSpec {
     pub life: Option<u32>,
     /// Lap time compared with the others, s (negative = faster)
     pub pace: Option<f32>,
+    /// Time lost per lap of tyre age, s (default: [`Race::deg`])
+    pub deg: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -171,6 +174,9 @@ pub struct Plan {
     pub pit_loss: f32,
     /// "manual", "measured" or "default"
     pub pit_loss_source: &'static str,
+    /// Practice figures the plan uses (car, laps per compound), and the practice mode state
+    pub practice_use: Option<PracticeUse>,
+    pub practice: PracticeState,
     /// Refuel amount when boxing at the end of this lap
     pub add_now: Option<f32>,
     pub refuel_s: Option<f32>,
@@ -200,6 +206,38 @@ pub struct Call {
     pub text: String,
 }
 
+/// Which practice figures went into the plan.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct PracticeUse {
+    pub car: i32,
+    pub compounds: Vec<PracticeCompound>,
+    pub fuel_per_lap: Option<f32>,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct PracticeCompound {
+    pub compound: String,
+    /// Clean practice laps
+    pub laps: usize,
+    pub life: Option<u32>,
+    pub pace: Option<f32>,
+    pub deg: Option<f32>,
+}
+
+/// Practice mode as shown on the dashboard.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct PracticeState {
+    pub active: bool,
+    pub track: String,
+    pub compound: Option<String>,
+    pub set_age: u32,
+    pub counting: bool,
+    pub wear_mult: f32,
+    pub fuel_mult: f32,
+    /// Laps stored (changes when a lap was added: the dashboard reloads the figures)
+    pub laps: usize,
+}
+
 fn call(level: &'static str, text: String) -> Call {
     Call { level, text }
 }
@@ -210,6 +248,9 @@ pub struct Strategy {
     live: Live,
     /// Planner result and the input it was computed for (the planner runs once per lap, not per packet)
     cache: Option<(String, planner::Options)>,
+    pub practice: practice::Practice,
+    /// Race with the practice figures filled in, and what it was computed from
+    filled: Option<(String, Race, Option<PracticeUse>)>,
 }
 
 impl Strategy {
@@ -217,7 +258,8 @@ impl Strategy {
     pub fn load(file: Option<PathBuf>) -> Self {
         let saved =
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Strategy { saved, file, live: Live::default(), cache: None }
+        let practice = practice::Practice::load(file.as_ref().map(|f| f.with_file_name("practice.json")));
+        Strategy { saved, file, live: Live::default(), cache: None, practice, filled: None }
     }
 
     pub fn shared(self) -> Shared {
@@ -279,7 +321,18 @@ impl Strategy {
         self.live = live;
     }
 
+    #[cfg(test)]
     pub fn lap_done(&mut self, lap: i16, used: f32, refuel: bool, ms: Option<i32>) {
+        self.lap_finished(lap, used, refuel, ms, true);
+    }
+
+    /// A lap ended at the line. `closed`: it ended where it started (not the short first race lap
+    /// of a track with separate start and finish lines). In practice mode it goes to the practice.
+    pub fn lap_finished(&mut self, lap: i16, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
+        if self.practice.saved.active {
+            self.practice.lap_done(self.live.car_code, used, refuel, ms, closed);
+            return;
+        }
         if lap < 1 || used <= 0.0 {
             return;
         }
@@ -321,6 +374,10 @@ impl Strategy {
     /// GT7 counts the lap while the car stands in the box: a stop that began in the previous lap is
     /// the same stop.
     pub fn refuelled(&mut self, lap: i16, added: f32) {
+        if self.practice.saved.active {
+            self.practice.pit();
+            return;
+        }
         match self.saved.stops.last_mut() {
             Some(s) if s.lap == lap || s.lap == lap - 1 => s.fuel_added += added,
             _ => self.saved.stops.push(Stop { lap, fuel_added: added, tyres: None }),
@@ -329,6 +386,10 @@ impl Strategy {
 
     /// The car stood still in a race lap long enough to be a pit stop (tyres only, no fuel).
     pub fn stopped(&mut self, lap: i16) {
+        if self.practice.saved.active {
+            self.practice.pit();
+            return;
+        }
         if !self.saved.stops.last().is_some_and(|s| s.lap == lap || s.lap == lap - 1) {
             self.saved.stops.push(Stop { lap, fuel_added: 0.0, tyres: None });
             self.save();
@@ -346,6 +407,12 @@ impl Strategy {
     /// After a stop the tracker saw whether the tyres came out cold (new) or not. A choice the
     /// driver made on the dashboard is kept; new tyres are assumed to be the same compound.
     pub fn tyres_detected(&mut self, changed: bool) {
+        if self.practice.saved.active {
+            if changed {
+                self.practice.new_set(None);
+            }
+            return;
+        }
         let Some(stop) = self.saved.stops.last_mut() else { return };
         if stop.tyres.is_some() {
             return;
@@ -429,8 +496,99 @@ impl Strategy {
         (!recent.is_empty()).then(|| recent.iter().sum::<f32>() / recent.len() as f32)
     }
 
+    /// Shape of the last full lap (practice: recognise or remember the track).
+    pub fn lap_shape(&mut self, map: &[(f32, f32)]) {
+        if self.practice.saved.active {
+            self.practice.shape(map);
+        }
+    }
+
+    /// Practice mode on/off. Switching on takes the multipliers and the track of the race set.
+    pub fn set_practice(&mut self, on: bool) {
+        let p = &mut self.practice.saved;
+        if on && !p.active {
+            if let Some(r) = &self.saved.race {
+                p.wear_mult = r.tyre_wear.unwrap_or(1.0);
+                p.fuel_mult = r.fuel_mult.unwrap_or(1.0);
+                if p.track.is_empty() || !r.track.is_empty() {
+                    p.track.clone_from(&r.track);
+                }
+            }
+        }
+        p.active = on;
+        self.practice.save();
+    }
+
+    pub fn practice_state(&self) -> PracticeState {
+        let p = &self.practice.saved;
+        PracticeState {
+            active: p.active,
+            track: p.track.clone(),
+            compound: p.compound.clone(),
+            set_age: p.set_age,
+            counting: p.counting,
+            wear_mult: p.wear_mult,
+            fuel_mult: p.fuel_mult,
+            laps: p.laps.len(),
+        }
+    }
+
+    /// Car the practice figures are taken for: the car driven now if it has practice laps on the
+    /// track, else the car with the most laps there.
+    pub fn practice_car(&self, track: &str) -> Option<i32> {
+        let key = practice::track_key(track);
+        let has = |c: i32| self.practice.saved.laps.iter().any(|l| l.car == c && practice::track_key(&l.track) == key);
+        if self.live.car_code > 0 && has(self.live.car_code) {
+            return Some(self.live.car_code);
+        }
+        self.practice.main_car(track).or((self.live.car_code > 0).then_some(self.live.car_code))
+    }
+
+    /// The race with what is missing taken from practice on the same track with the same car and
+    /// multipliers: laps a set lasts, pace, degradation per compound, fuel per lap.
+    fn race_with_practice(&mut self, race: &Race) -> (Race, Option<PracticeUse>) {
+        let car = self.practice_car(&race.track);
+        let key = format!(
+            "{:?}|{}|{}|{}|{car:?}|{}",
+            race,
+            self.practice.saved.laps.len(),
+            self.practice.saved.life.len(),
+            self.practice.saved.life.values().sum::<u32>(),
+            self.practice.saved.laps.iter().filter(|l| l.counted).count()
+        );
+        if let Some((k, r, u)) = &self.filled {
+            if *k == key {
+                return (r.clone(), u.clone());
+            }
+        }
+        let result = fill_from_practice(&self.practice, race, car);
+        self.filled = Some((key, result.0.clone(), result.1.clone()));
+        result
+    }
+
     pub fn plan(&mut self) -> Plan {
         let fpl = self.fuel_per_lap();
+        let original = self.saved.race.clone();
+        let practice_use = match &original {
+            Some(r) => {
+                let (filled, used) = self.race_with_practice(r);
+                self.saved.race = Some(filled);
+                used
+            }
+            None => None,
+        };
+        let p = self.plan_inner(fpl);
+        self.saved.race = original;
+        let mut p = p;
+        if practice_use.as_ref().is_some_and(|u| u.fuel_per_lap.is_some()) && p.fuel_source == "manual" {
+            p.fuel_source = "practice";
+        }
+        p.practice_use = practice_use;
+        p.practice = self.practice_state();
+        p
+    }
+
+    fn plan_inner(&mut self, fpl: Option<f32>) -> Plan {
         let mut p = plan(&self.saved, &self.live, fpl, self.calibration_key().and_then(|k| self.saved.calibration.get(&k).copied()));
         let (pit_loss, source) = self.pit_loss();
         p.pit_loss = pit_loss;
@@ -469,7 +627,8 @@ impl Strategy {
     }
 
     /// Strategy for a race before the start (race settings dialog).
-    pub fn preview(&self, race: &Race) -> (planner::Options, Plan) {
+    pub fn preview(&mut self, race: &Race) -> (planner::Options, Plan) {
+        let (race, practice_use) = self.race_with_practice(race);
         let saved = Saved { race: Some(race.clone()), calibration: self.saved.calibration.clone(), ..Default::default() };
         let cap = if self.live.capacity > 0.0 { self.live.capacity } else { 100.0 };
         let live = Live { lap: 0, total_laps: 0, frac: 0.0, fuel: cap, capacity: cap, car_code: self.live.car_code, standing: true };
@@ -479,12 +638,49 @@ impl Strategy {
         p.pit_loss = pit_loss;
         p.pit_loss_source = source;
         let options = planner_input(&saved, &live, &p, pit_loss).map(|i| planner::plan(&i)).unwrap_or_default();
+        // Before the race the practice figure is what the plan is based on
+        if practice_use.as_ref().is_some_and(|u| u.fuel_per_lap.is_some()) {
+            p.fuel_source = "practice";
+        }
+        p.practice_use = practice_use;
         (options, p)
     }
 
     fn pit_loss(&self) -> (f32, &'static str) {
         pit_loss_of(&self.saved)
     }
+}
+
+/// See [`Strategy::race_with_practice`]. What the driver entered for the race wins.
+fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i32>) -> (Race, Option<PracticeUse>) {
+    let mut r = race.clone();
+    let Some(car) = car else { return (r, None) };
+    if race.track.trim().is_empty() {
+        return (r, None);
+    }
+    let s = practice.summary(car, &race.track, race.tyre_wear.unwrap_or(1.0), race.fuel_mult.unwrap_or(1.0));
+    if s.compounds.is_empty() && s.fuel_per_lap.is_none() {
+        return (r, None);
+    }
+    for c in &s.compounds {
+        let spec = r.tyres.entry(c.compound.clone()).or_default();
+        spec.life = spec.life.or(c.life);
+        spec.pace = spec.pace.or(c.pace);
+        if race.deg.is_none() {
+            spec.deg = spec.deg.or(c.deg);
+        }
+    }
+    r.fuel_per_lap = r.fuel_per_lap.or(s.fuel_per_lap);
+    let used = PracticeUse {
+        car,
+        compounds: s
+            .compounds
+            .iter()
+            .map(|c| PracticeCompound { compound: c.compound.clone(), laps: c.laps, life: c.life, pace: c.pace, deg: c.deg })
+            .collect(),
+        fuel_per_lap: s.fuel_per_lap.filter(|_| race.fuel_per_lap.is_none()),
+    };
+    (r, Some(used))
 }
 
 /// The stints, with the starting tyres from the race settings when nothing was picked yet.
@@ -521,18 +717,19 @@ fn compounds(race: &Race, current: Option<&str>) -> Vec<planner::Compound> {
         .to_ascii_uppercase();
     let names: Vec<String> = ['S', 'M', 'H'].iter().map(|c| format!("{kind}{c}")).collect();
     let spec = |n: &str| race.tyres.get(n).cloned().unwrap_or_default();
-    let entered = names.iter().any(|n| spec(n).life.is_some() || spec(n).pace.is_some());
+    let entered = names.iter().any(|n| spec(n).life.is_some() || spec(n).pace.is_some() || spec(n).deg.is_some());
     names
         .iter()
         .filter(|n| {
             !entered
                 || spec(n).life.is_some()
                 || spec(n).pace.is_some()
+                || spec(n).deg.is_some()
                 || race.mandatory.as_deref() == Some(n.as_str())
                 || current == Some(n.as_str())
                 || race.start_compound.as_deref() == Some(n.as_str())
         })
-        .map(|n| planner::Compound::new(n, spec(n).life, spec(n).pace.unwrap_or(0.0)))
+        .map(|n| planner::Compound { deg: spec(n).deg, ..planner::Compound::new(n, spec(n).life, spec(n).pace.unwrap_or(0.0)) })
         .collect()
 }
 
@@ -1085,5 +1282,55 @@ mod tests {
     fn running_dry_calls_box_now() {
         let p = plan(&barcelona(23), &live(14, 0.5, 4.0), Some(7.16), None);
         assert_eq!(p.calls[0].text, "BOX TEĎ – palivo nevystačí na další kolo!");
+    }
+
+    #[test]
+    fn practice_laps_feed_the_race_plan() {
+        let mut s = Strategy::load(None);
+        let race = Race {
+            name: "Bazarovky".into(),
+            track: "Nürburgring GP".into(),
+            laps: Some(20),
+            tyre_wear: Some(6.0),
+            fuel_mult: Some(3.0),
+            refuel_rate: Some(3.0),
+            pit_required: true,
+            ..Default::default()
+        };
+        s.set_race(race.clone());
+        s.update_live(Live { car_code: 3475, capacity: 65.0, fuel: 65.0, ..Default::default() });
+        s.set_practice(true);
+        assert!((s.practice.saved.wear_mult - 6.0).abs() < 1e-6);
+        assert_eq!(s.practice.saved.track, "Nürburgring GP");
+        // Practice: soft 8 laps (0.30 s/lap), medium 10 laps (0.10 s/lap, 1 s slower)
+        s.practice.new_set(Some("SS"));
+        for age in 0..8 {
+            s.lap_finished(age as i16 + 1, 6.5, false, Some(160_000 + 300 * age), true);
+        }
+        s.practice.new_set(Some("SM"));
+        for age in 0..10 {
+            s.lap_finished(age as i16 + 9, 6.5, false, Some(161_000 + 100 * age), true);
+        }
+        assert!(s.saved.fuel_laps.is_empty(), "practice laps must not go to the race");
+        s.practice.set_life(3475, "Nürburgring GP", "SS", 6.0, Some(8));
+        s.practice.set_life(3475, "Nürburgring GP", "SM", 6.0, Some(14));
+        s.set_practice(false);
+
+        let (options, plan) = s.preview(&race);
+        assert_eq!(plan.fuel_source, "practice");
+        assert!((plan.fuel_per_lap.unwrap() - 6.5).abs() < 1e-4);
+        let used = plan.practice_use.unwrap();
+        assert_eq!(used.car, 3475);
+        let got: Vec<(&str, usize, Option<u32>)> = used.compounds.iter().map(|c| (c.compound.as_str(), c.laps, c.life)).collect();
+        assert_eq!(got, vec![("SS", 8, Some(8)), ("SM", 10, Some(14))]);
+        let best = options.best.unwrap();
+        assert!(!best.over_limit, "{best:?}");
+        assert!(best.stints.iter().all(|t| t.laps <= if t.compound == "SS" { 8 } else { 14 }), "{best:?}");
+        // What was entered for the race wins over practice
+        let mut manual = race.clone();
+        manual.tyres.insert("SS".into(), TyreSpec { life: Some(20), ..Default::default() });
+        let (filled, _) = fill_from_practice(&s.practice, &manual, Some(3475));
+        assert_eq!(filled.tyres["SS"].life, Some(20));
+        assert!((filled.tyres["SS"].deg.unwrap() - 0.30).abs() < 0.01);
     }
 }
