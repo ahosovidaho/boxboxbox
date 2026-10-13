@@ -1,5 +1,13 @@
 # Changelog
 
+## BOXBOXBOX 0.5.1-fork1 – 2026-10-13
+
+- **Oprava: zkrácené 1. kolo závodu** (Nürburgring GP a další tratě, kde je start jinde než cíl):
+  1. kolo začíná na roštu ~350 m za cílovou čarou, a bylo proto o ~5 s „rychlejší“. Kouč ho bral
+  jako nejlepší kolo (všechna další kola +5 s, nesmyslná ztráta v Z1), živá delta ukazovala +5 s
+  a barevné úseky se řezaly z neúplného kola. Kolo, které nekončí tam, kde začalo (> 80 m),
+  už není referencí pro kouče, živou deltu, úseky ani průměrnou spotřebu na stránce 1.
+
 ## BOXBOXBOX 0.5.0-fork1 – 2026-10-13
 
 - **Čeština**: celý dashboard (stránky 1–4, start, nastavení, stav spojení) i texty serveru

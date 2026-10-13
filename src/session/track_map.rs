@@ -18,6 +18,9 @@ const SEARCH_WINDOW: usize = 60;
 pub const SEGMENTS: usize = 20;
 /// Up to this much slower than the best (ms) still counts as green
 pub const GREEN_MS: i64 = 100;
+/// A lap must end within this distance (m) of where it started to count as a full lap
+/// (the first race lap on Nürburgring GP starts on the grid, ~350 m after the finish line)
+const CLOSED_MAX: f32 = 80.0;
 
 /// Result of a segment in a lap
 pub const SEG_NONE: u8 = 0;
@@ -80,8 +83,9 @@ impl Track {
                 self.seg_result(k, ms as i64 - t0);
             }
         }
+        let closed = self.current_closed();
         let lap = std::mem::take(&mut self.current);
-        if self.seg_line.is_empty() && self.current_complete && finished_ms.is_some() && lap.len() > 20 {
+        if self.seg_line.is_empty() && self.current_complete && closed && finished_ms.is_some() && lap.len() > 20 {
             self.cut_segments(&lap);
         }
         if !self.seg_starts.is_empty() {
@@ -91,7 +95,7 @@ impl Track {
         self.seg_idx = 0;
         self.seg_pos = (from_line && !self.seg_starts.is_empty()).then_some(0);
         self.seg_timing = (from_line && !self.seg_starts.is_empty()).then_some((0, 0));
-        if let (true, Some(ms)) = (self.current_complete, finished_ms) {
+        if let (true, Some(ms)) = (self.current_complete && closed, finished_ms) {
             if lap.len() > 20 {
                 if self.best.as_ref().is_none_or(|(b, _)| ms <= *b) {
                     self.best = Some((ms, lap.clone()));
@@ -102,6 +106,14 @@ impl Track {
         }
         self.current_complete = from_line;
         self.ref_idx = 0;
+    }
+
+    /// Does the running lap end where it started (a full lap, not the short first race lap)?
+    pub fn current_closed(&self) -> bool {
+        match (self.current.first(), self.current.last()) {
+            (Some(a), Some(b)) => dist(a, b.x, b.z) <= CLOSED_MAX,
+            _ => false,
+        }
     }
 
     pub fn add(&mut self, x: f32, z: f32, t_ms: i64) {
@@ -271,5 +283,30 @@ mod tests {
         assert!(now[6..10].iter().all(|s| *s == SEG_GREEN), "{now:?}");
         assert!(t.seg_last[12..].iter().all(|s| *s == SEG_RED), "{:?}", t.seg_last);
         assert!(t.seg_now.iter().all(|s| *s == SEG_NONE));
+    }
+
+    #[test]
+    fn short_first_race_lap_is_no_reference() {
+        // Nürburgring GP: the race starts on the grid, the first lap ends at the finish line
+        // ~350 m earlier – it must not become the reference or the segment geometry.
+        let mut t = Track::default();
+        t.lap_started(None, true);
+        let r = 1000.0 / std::f32::consts::TAU;
+        let mut ms = 0i64;
+        let mut s = 350.0f32;
+        while s < 1000.0 {
+            let a = s / r;
+            t.add(r * a.cos(), r * a.sin(), ms);
+            s += 50.0 / 60.0;
+            ms += 17;
+        }
+        assert!(!t.current_closed());
+        t.lap_started(Some(ms as i32), true);
+        assert!(t.seg_starts.is_empty() && t.best.is_none());
+        let full = lap(&mut t, |_| 50.0);
+        assert!(t.current_closed());
+        t.lap_started(Some(full), true);
+        assert_eq!(t.seg_starts.len(), SEGMENTS);
+        assert_eq!(t.best.as_ref().map(|b| b.0), Some(full));
     }
 }

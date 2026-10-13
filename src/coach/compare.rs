@@ -93,7 +93,13 @@ struct Meta {
     last_ms: Option<f64>,
     /// Official time of the previous lap (sent in the packets of this lap)
     prev_official: Option<f64>,
+    /// Distance (m) between the first and the last position of the lap
+    gap_m: Option<f64>,
 }
+
+/// A lap that does not end where it started (m) is not a full lap: on tracks with separate
+/// start and finish lines (Nürburgring GP) the first race lap starts on the grid, ~350 m short.
+pub const CLOSED_MAX_M: f64 = 80.0;
 
 /// Corner definition stored per session in `corners.json` so numbering stays stable.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -168,6 +174,7 @@ impl Comparer {
         let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
         let col = |n: &str| header.iter().position(|c| *c == n);
         let (c_lap, c_ms, c_last) = (col("lap"), col("lap_ms"), col("last_lap_ms"));
+        let (c_x, c_z) = (col("pos_x"), col("pos_z"));
         let num = |line: &str, c: Option<usize>| -> Option<f64> {
             let cell = line.split(',').nth(c?)?;
             if cell.is_empty() {
@@ -186,14 +193,18 @@ impl Comparer {
             first_ms: first.and_then(|l| num(l, c_ms)),
             last_ms: last.and_then(|l| num(l, c_ms)),
             prev_official: early.and_then(|l| num(l, c_last)),
+            gap_m: match (first, last) {
+                (Some(a), Some(b)) => (|| Some((num(a, c_x)? - num(b, c_x)?).hypot(num(a, c_z)? - num(b, c_z)?)))(),
+                _ => None,
+            },
         };
         self.meta.retain(|k, _| k.0 != path);
         self.meta.insert(key, m.clone());
         m
     }
 
-    /// All complete laps `(file, official ms)`: started at the line and the recorded duration
-    /// matches the official time (sent as `last_lap_ms` in the following lap).
+    /// All complete laps `(file, official ms)`: started at the line, ended where they started and
+    /// the recorded duration matches the official time (sent as `last_lap_ms` in the following lap).
     pub fn complete_laps(&mut self, session: &Path) -> Vec<(PathBuf, i64)> {
         let files = lap_files(session);
         let mut out = Vec::new();
@@ -204,7 +215,8 @@ impl Comparer {
             }
             let recorded = a.last_ms.unwrap_or(0.0);
             if let Some(official) = b.prev_official.filter(|o| *o > 0.0) {
-                if (recorded + 1000.0 / HZ - official).abs() < 400.0 && a.first_ms.unwrap_or(0.0) < 100.0 {
+                let closed = a.gap_m.is_none_or(|g| g < CLOSED_MAX_M);
+                if (recorded + 1000.0 / HZ - official).abs() < 400.0 && a.first_ms.unwrap_or(0.0) < 100.0 && closed {
                     out.push((pair[0].clone(), official as i64));
                 }
             }

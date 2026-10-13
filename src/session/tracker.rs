@@ -274,8 +274,9 @@ impl Tracker {
                 }
             }
             // Only complete laps without refuelling (a lap joined midway, e.g. after a server
-            // restart, or with a pit stop would distort the average)
-            if self.fuel_at_lap_start.is_some() && self.lap_full && !self.lap_refuel && self.lap_burn > 0.0 {
+            // restart, or with a pit stop would distort the average; so would the short first race
+            // lap on tracks with separate start and finish lines)
+            if self.fuel_at_lap_start.is_some() && self.lap_full && !self.lap_refuel && self.lap_burn > 0.0 && self.track.current_closed() {
                 self.fuel_used.push(self.lap_burn);
                 if self.fuel_used.len() > FUEL_HISTORY {
                     self.fuel_used.remove(0);
