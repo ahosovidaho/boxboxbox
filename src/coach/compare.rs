@@ -58,6 +58,9 @@ pub struct CornerInfo {
     pub s: i64,
     #[serde(rename = "ref")]
     pub reference: Option<CornerStats>,
+    /// Where the reference lap starts braking for this corner (x, z)
+    #[serde(default)]
+    pub brake_pos: Option<[f64; 2]>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -255,13 +258,18 @@ impl Comparer {
             ..Default::default()
         };
         for c in &corners {
+            let stats = corner_stats(&reference, s_of(&reference, c.from), s_of(&reference, c.to), c.s);
+            let brake_pos = stats.as_ref().and_then(|st| st.brake_at).and_then(|b| {
+                reference.iter().find(|r| r.s.is_some_and(|s| s >= b)).map(|r| [lap::round_to(r.pos_x, 1), lap::round_to(r.pos_z, 1)])
+            });
             result.corners.push(CornerInfo {
                 n: c.n,
                 dir: c.dir.clone(),
                 x: lap::round_to(c.x, 1),
                 z: lap::round_to(c.z, 1),
                 s: lap::round_i(c.s),
-                reference: corner_stats(&reference, s_of(&reference, c.from), s_of(&reference, c.to), c.s),
+                reference: stats,
+                brake_pos,
             });
         }
         for (path, ms) in &laps {

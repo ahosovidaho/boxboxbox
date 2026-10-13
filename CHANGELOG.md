@@ -1,5 +1,14 @@
 # Changelog
 
+## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
+
+- **Živý kouč v Tréninku** (stránka 1): dole na mapě rada pro příští zatáčku podle toho, jak
+  minulé vyhodnocené kolo dopadlo proti nejlepšímu: „brzdi o 12 m dřív / později“, „víc
+  rychlosti do vrcholu“, „dřív na plyn“ nebo „✓ drž to“, a ztráta v sekundách. Rámeček zežloutne
+  250 m před brzdným bodem. Na mapě jsou kroužky, kde nejlepší kolo začíná brzdit.
+- Kouč posílá dashboardu pro každou zatáčku brzdný bod nejlepšího kola a rozdíly posledního
+  kola (čas, brzdění, rychlost ve vrcholu, plný plyn).
+
 ## BOXBOXBOX 0.7.2-fork1 – 2026-10-14
 
 - **Řazení podle naměřeného optima**: modré LED závodního dashboardu se rozsvítí a blikají

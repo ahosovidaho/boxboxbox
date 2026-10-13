@@ -142,8 +142,7 @@ impl Coach {
             return Ok(());
         }
         let res: Comparison = self.comparer.compare(session)?;
-        let corners: Option<Value> =
-            (!res.corners.is_empty()).then(|| json!(res.corners.iter().map(|c| json!({"n": c.n, "x": c.x, "z": c.z})).collect::<Vec<_>>()));
+        let corners: Option<Value> = (!res.corners.is_empty()).then(|| corners_json(&res, None));
         let dir = session.join("analysis");
         fs::create_dir_all(&dir)?;
         for name in new {
@@ -154,7 +153,7 @@ impl Coach {
                 feedback::save_lap(&dir, lap, &m, &item)?;
                 state.metrics.insert(name.clone(), m);
                 state.laps.push(name.clone());
-                self.write_feed(session, Some(&item), feedback::focus_for(&res, lap), corners.clone())?;
+                self.write_feed(session, Some(&item), feedback::focus_for(&res, lap), Some(corners_json(&res, Some(lap))))?;
                 let (n, title) = (lap.lap, item["title"].as_str().unwrap_or_default());
                 log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}", "kolo {n} vyhodnoceno: {title}"));
             }
@@ -224,4 +223,36 @@ fn save_state(session: &Path, state: &State) {
     if fs::create_dir_all(&dir).is_ok() {
         let _ = fs::write(dir.join("state.json"), serde_json::to_string_pretty(state).unwrap_or_default());
     }
+}
+
+/// Corners for the dashboard map: position, where the best lap brakes, and how the given lap
+/// compared in that corner (live coach hints in practice: time lost, braking point, apex speed,
+/// full throttle; positive `db`/`dfull` = later than the best lap, m).
+fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::LapResult>) -> Value {
+    let r = |v: f64, d: i32| (v * 10f64.powi(d)).round() / 10f64.powi(d);
+    json!(res
+        .corners
+        .iter()
+        .map(|c| {
+            let mut o = json!({"n": c.n, "x": c.x, "z": c.z});
+            if let Some(b) = c.brake_pos {
+                o["bx"] = json!(b[0]);
+                o["bz"] = json!(b[1]);
+            }
+            if let Some(l) = lap.and_then(|l| l.corners.iter().find(|x| x.n == c.n)) {
+                o["dt"] = json!(r(l.dt, 2));
+                o["lap"] = json!(lap.map(|l| l.lap));
+                if let (Some(st), Some(rf)) = (&l.stats, &c.reference) {
+                    if let (Some(a), Some(b)) = (st.brake_at, rf.brake_at) {
+                        o["db"] = json!(r(a - b, 0));
+                    }
+                    o["dv"] = json!(r(st.v_min - rf.v_min, 0));
+                    if let (Some(a), Some(b)) = (st.full_at, rf.full_at) {
+                        o["dfull"] = json!(r(a - b, 0));
+                    }
+                }
+            }
+            o
+        })
+        .collect::<Vec<_>>())
 }

@@ -117,6 +117,15 @@
   #map { position: absolute; inset: 0; width: 100%; height: 100%; }
   #mapcard .label { position: absolute; top: 7px; left: 10px; }
   #maphint[hidden] { display: none; }
+  /* Practice: live coach hint for the next corner, at the bottom of the map */
+  #coachhint { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    background: rgba(10,10,12,.88); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; }
+  #coachhint[hidden] { display: none; }
+  #coachhint b { font: 700 15px var(--mono); color: #f2c230; }
+  #coachhint span { font-size: 16px; font-weight: 600; }
+  #coachhint small { font-size: 12px; color: var(--dim); margin-left: auto; }
+  #coachhint.ok span { color: var(--green); } #coachhint.bad span { color: #ff8a2a; }
+  #coachhint.near { border-color: #f2c230; }
   #maphint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; font-size: 12px; color: var(--label); }
   #balcard { flex: 0 0 auto; padding: 7px 10px 6px; }
   #balcard .row { align-items: center; }
@@ -505,6 +514,7 @@
       <canvas id="map"></canvas>
       <span class="label" data-t>Strecke</span>
       <div id="maphint" data-t>Karte entsteht beim Fahren</div>
+      <div id="coachhint" hidden><b id="chCorner"></b><span id="chText"></span><small id="chSub"></small></div>
     </div>
     <div class="card" id="balcard">
       <div class="row"><span class="label" data-t>Balance</span><span id="balText">–</span></div>
@@ -1313,6 +1323,15 @@
         const [sx, sy] = project(mapPts[0].x, mapPts[0].z);
         bctx.fillStyle = '#6b6b75'; bctx.fillRect(sx - 1, sy - 6, 3, 12); // start/finish
         bctx.font = '600 9px ui-monospace, monospace'; bctx.textAlign = 'center'; bctx.textBaseline = 'middle';
+        // Practice: where the best lap starts braking, a short white bar
+        if (appMode === 'practice') {
+          bctx.strokeStyle = '#d9d9de'; bctx.lineWidth = 2;
+          for (const c of coachCorners) {
+            if (c.bx == null) continue;
+            const [bx, by] = project(c.bx, c.bz);
+            bctx.beginPath(); bctx.arc(bx, by, 3, 0, Math.PI * 2); bctx.stroke();
+          }
+        }
         for (const c of coachCorners) {
           const [cx, cy] = project(c.x, c.z);
           if (c.n === focusCorner) {
@@ -1423,7 +1442,8 @@
     const mode = d.strategy && d.strategy.practice && d.strategy.practice.active ? 'practice' : 'race';
     if (mode !== appMode) setMode(mode);
     if (page === 6) renderRace(d, tireVals);
-    else if (page === 1) { updateSegments(d); renderMain(d, tireVals); } else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
+    else if (page === 1) {
+      renderCoachHint(d); updateSegments(d); renderMain(d, tireVals); } else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
     else if (page === 5) renderStrategy(d);
     renderBoxCall(d);
     renderBoxBig(d);
@@ -2077,6 +2097,41 @@
     if (s.late) return { rpm: Math.min(game, (dy.max_rpm || game) - 100), src: 'OPTIMUM' };
     return { rpm: s.rpm, src: 'OPTIMUM' };
   }
+  // ---------- Live coach (practice, page 1) ----------
+  // The corner just passed is the one whose apex the car came near; the hint is for the next
+  // corner, from how the last analysed lap did there against the best lap.
+  let chLast = null;
+  function cornerHint(c) {
+    if (c.dt == null) return { text: 'čekám na vyhodnocené kolo', cls: '' };
+    const dt = c.dt, db = c.db, dv = c.dv, df = c.dfull;
+    if (dt <= 0.05) return { text: '✓ drž to', cls: 'ok' };
+    if (db != null && db >= 5) return { text: `brzdi o ${Math.round(db)} m dřív`, cls: 'bad' };
+    if (db != null && db <= -5) return { text: `brzdi o ${Math.round(-db)} m později`, cls: 'bad' };
+    if (dv != null && dv <= -3) return { text: `víc rychlosti do vrcholu (+${Math.round(-dv)} km/h)`, cls: 'bad' };
+    if (df != null && df >= 10) return { text: `dřív na plyn (o ${Math.round(df)} m)`, cls: 'bad' };
+    return { text: `ztráta ${nf(dt, 2)} s – drž stopu nejlepšího kola`, cls: 'bad' };
+  }
+  function renderCoachHint(d) {
+    const el = $('coachhint');
+    const show = appMode === 'practice' && page === 1 && coachCorners.length > 1 && d.pos;
+    el.hidden = !show;
+    if (!show) return;
+    const x = d.pos[0], z = d.pos[2];
+    const dist = (a, b) => Math.hypot(a - x, b - z);
+    for (const c of coachCorners) if (dist(c.x, c.z) < 35) chLast = c.n;
+    const sorted = [...coachCorners].sort((a, b) => a.n - b.n);
+    const next = chLast == null
+      ? sorted.reduce((a, b) => (dist(a.x, a.z) < dist(b.x, b.z) ? a : b))
+      : (sorted.find(c => c.n > chLast) || sorted[0]);
+    const h = cornerHint(next);
+    setText('chCorner', `Z${next.n}`);
+    setText('chText', h.text);
+    setText('chSub', next.dt != null ? `minule ${next.dt > 0 ? '+' : ''}${nf(next.dt, 2)} s · kolo ${next.lap}` : '');
+    const near = next.bx != null && dist(next.bx, next.bz) < 250;
+    const cls = [h.cls, near ? 'near' : ''].join(' ').trim();
+    if (el.className !== cls) el.className = cls;
+  }
+
   function renderRace(d, tireVals) {
     const st = d.strategy;
     // Rev LEDs
