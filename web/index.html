@@ -2065,18 +2065,31 @@
     }
     return { txt, sub, cls };
   }
+  // Where to upshift in the current gear. From the power curve measured at full throttle (page 4,
+  // same car): the rpm where the next gear starts to pull harder; "late" = rev up to the highest rpm
+  // measured, minus a little so the light comes before the limiter. Without a measurement, or in
+  // the top gear: the shift light of the game.
+  function shiftPoint(d) {
+    const game = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
+    const dy = perf && perf.dyno;
+    const s = dy && (dy.shifts || []).find(x => x.gear === d.gear);
+    if (!s) return { rpm: game, src: 'HRA' };
+    if (s.late) return { rpm: Math.min(game, (dy.max_rpm || game) - 100), src: 'OPTIMUM' };
+    return { rpm: s.rpm, src: 'OPTIMUM' };
+  }
   function renderRace(d, tireVals) {
     const st = d.strategy;
     // Rev LEDs
-    const max = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
-    const start = max * 0.55;
-    const lit = Math.max(0, Math.min(15, Math.round((d.rpm - start) / (max - start) * 15)));
-    // Shift now: as soon as the blue LEDs light up, the whole bar flashes blue (like in GT7)
-    const flash = lit > 10 || d.rpm >= max || d.rev_limiter;
+    // Shift point: the best upshift of this gear from the measured power curve (page 4), else the
+    // shift light of the game. 10 LEDs (green, red) lead up to it, the blue ones flash at it.
+    const sp = shiftPoint(d);
+    const start = sp.rpm * 0.6;
+    const lit = d.rpm >= sp.rpm ? 15 : Math.max(0, Math.min(10, Math.round((d.rpm - start) / (sp.rpm - start) * 10)));
+    const flash = d.rpm >= sp.rpm || d.rev_limiter;
     $('r_rev').classList.toggle('flash', flash);
     rLeds.forEach((el, i) => { const on = i < lit; if (el.classList.contains('on') !== on) el.classList.toggle('on', on); });
     setText('r_rpm', Math.round(d.rpm).toLocaleString('cs-CZ'));
-    setText('r_shift', d.rpm_alert_max > 0 ? `OT/MIN · SHIFT ${d.rpm_alert_max.toLocaleString('cs-CZ')}` : 'OT/MIN');
+    setText('r_shift', `OT/MIN · ŘADIT ${Math.round(sp.rpm).toLocaleString('cs-CZ')} · ${sp.src}`);
     // Tyres
     tireVals.forEach(({ t: temp }, i) => {
       const el = $('r_t' + i), c = tireColor(temp);

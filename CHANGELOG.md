@@ -1,5 +1,13 @@
 # Changelog
 
+## BOXBOXBOX 0.7.2-fork1 – 2026-10-14
+
+- **Řazení podle naměřeného optima**: modré LED závodního dashboardu se rozsvítí a blikají
+  v otáčkách nejlepšího přeřazení pro aktuální stupeň, spočítaných z výkonové křivky
+  (stránka Měření, totéž auto). Když je optimum „pozdě“, svítí 100 ot/min před nejvyššími
+  naměřenými otáčkami. Bez měření a na nejvyšší stupeň platí kontrolka hry. Pod LED je
+  „ŘADIT 7 190 · OPTIMUM“ nebo „· HRA“.
+
 ## BOXBOXBOX 0.7.1-fork1 – 2026-10-13
 
 - **Závodní dashboard „Rosso“** podle vybraného návrhu: 15 LED otáčkoměru (5 zelených,
