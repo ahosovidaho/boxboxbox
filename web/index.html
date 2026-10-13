@@ -313,21 +313,23 @@
   #p6 { --rf: 'Saira Condensed', 'Arial Narrow', -apple-system, sans-serif; --rm: 'JetBrains Mono', var(--mono); --acc: #ff2a1a;
     font-family: var(--rf); display: grid; gap: 8px;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .95fr);
-    grid-template-rows: minmax(48px, 12%) minmax(0, 1fr) minmax(70px, 17%) 18px;
+    grid-template-rows: minmax(62px, 15%) minmax(0, 1fr) minmax(70px, 17%) 18px;
     grid-template-areas: "rev rev rev" "left mid map" "fuel fuel fuel" "strip strip strip"; }
   #p6 .rc { background: #0d0d0d; border: 1px solid #1f1f1f; border-radius: 10px; min-height: 0; min-width: 0; overflow: hidden; }
   #p6 .rl { font-size: 12px; letter-spacing: .2em; color: #8c8c8c; text-transform: uppercase; }
   #p6 .rn { font-family: var(--rm); font-weight: 700; font-variant-numeric: tabular-nums; }
-  #r_rev { grid-area: rev; display: flex; align-items: center; gap: 12px; padding: 7px 12px; }
-  #r_leds { flex: 1; display: flex; gap: 5px; height: 100%; }
+  #r_rev { grid-area: rev; display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 7px 12px 4px; }
+  #r_leds { flex: 1; display: flex; gap: 5px; min-height: 0; }
   #r_leds i { flex: 1; border-radius: 5px; background: #1c1c1c; }
   #r_leds i.on { background: var(--c); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent); }
   #r_rev.flash #r_leds i { background: #3d6bff; animation: flash .12s steps(1) infinite alternate; }
-  #r_revnum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
-  #r_rpm { font-size: min(32px, 6vh); letter-spacing: -1px; }
+  #r_revnum { display: flex; justify-content: center; align-items: baseline; gap: 10px; line-height: 1; }
+  #r_rpm { font-size: min(22px, 4.5vh); letter-spacing: -.5px; }
   #r_left { grid-area: left; display: grid; grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr); gap: 8px; min-height: 0; }
   #r_tyrecard { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
   #r_tyrecard .row { color: #8c8c8c; }
+  /* Tablet / Mac: compound and set age readable from a distance */
+  @media (min-width: 1000px) { #r_set { font-size: 18px; font-weight: 700; letter-spacing: .14em; } }
   #r_tyres { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
   #r_tyres div { border-radius: 8px; border: 2px solid var(--c, #2a2a2a); background: color-mix(in srgb, var(--c, #2a2a2a) 10%, transparent);
     display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; container-type: size; }
