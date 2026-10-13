@@ -4,7 +4,9 @@
 //!
 //! The telemetry knows neither the track nor the compound: the driver marks the compound, and the
 //! track is recognised by the shape of the driven lap (GT7 positions are fixed per layout) or
-//! typed in once. Laps driven by the AI ("automat") can be left out with `counting = false`.
+//! typed in once. The name stands for one layout ("Nürburgring GP", "Nürburgring Nordschleife"):
+//! a lap whose shape does not fit the shape stored for the name is not used, so two layouts are
+//! never mixed. Laps driven by the AI ("automat") can be left out with `counting = false`.
 //!
 //! Saved in `practice.json` next to `strategy.json`.
 
@@ -43,12 +45,17 @@ pub struct PracticeLap {
     pub clean: bool,
     /// Counted for the figures (false: AI driving, or excluded by the driver)
     pub counted: bool,
+    /// The lap was driven on another layout than the track name says
+    pub wrong_layout: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Shape {
+    /// Track and layout, e.g. "Nürburgring GP"
     pub track: String,
     pub pts: Vec<[f32; 2]>,
+    #[serde(default)]
+    pub length_m: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -176,13 +183,17 @@ pub struct Practice {
     /// The lap running now had a pit stop / the previous one ended in the pit
     pit_this_lap: bool,
     pit_last_lap: bool,
+    /// The lap just finished fits the layout of the track name (set by [`Practice::shape`])
+    layout_ok: bool,
+    /// Why the last lap did not fit the track name
+    pub layout_warning: Option<String>,
 }
 
 impl Practice {
     pub fn load(file: Option<PathBuf>) -> Self {
         let saved =
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Practice { saved, file, pit_this_lap: false, pit_last_lap: false }
+        Practice { saved, file, pit_this_lap: false, pit_last_lap: false, layout_ok: true, layout_warning: None }
     }
 
     pub fn save(&self) {
@@ -214,6 +225,7 @@ impl Practice {
     pub fn lap_done(&mut self, car: i32, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
         let pit = self.pit_this_lap || refuel;
         let out_lap = self.pit_last_lap;
+        let wrong_layout = !std::mem::replace(&mut self.layout_ok, true);
         self.pit_last_lap = pit;
         self.pit_this_lap = false;
         let (Some(ms), Some(compound)) = (ms.filter(|m| *m > 0), self.saved.compound.clone()) else { return };
@@ -231,8 +243,9 @@ impl Practice {
             fuel: used.max(0.0),
             wear_mult: s.wear_mult,
             fuel_mult: s.fuel_mult,
-            clean: closed && !pit && !out_lap,
+            clean: closed && !pit && !out_lap && !wrong_layout,
             counted: s.counting,
+            wrong_layout,
         });
         if s.laps.len() > MAX_LAPS {
             s.laps.remove(0);
@@ -241,26 +254,52 @@ impl Practice {
         self.save();
     }
 
-    /// Shape of the last full lap: recognise the track, or remember the shape of the track set.
-    pub fn shape(&mut self, map: &[(f32, f32)]) {
-        if map.len() < 50 {
+    /// Shape of the lap that just ended (called before [`Practice::lap_done`]): recognise the
+    /// track when none is set, remember the shape of a new track name, and check that the lap
+    /// fits the layout stored for the name.
+    pub fn shape(&mut self, lap: &[(f32, f32)]) {
+        if lap.len() < 50 {
             return;
         }
-        let pts: Vec<[f32; 2]> = map.iter().step_by(SHAPE_STEP).map(|(x, z)| [*x, *z]).collect();
-        let found = self.saved.shapes.iter().find(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M).map(|s| s.track.clone());
-        match found {
-            Some(t) if self.saved.track.is_empty() => {
+        let pts: Vec<[f32; 2]> = lap.iter().step_by(SHAPE_STEP).map(|(x, z)| [*x, *z]).collect();
+        let length_m: f32 = lap.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
+        let matching = self.saved.shapes.iter().find(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M).map(|s| s.track.clone());
+        let name = self.saved.track.clone();
+        if name.is_empty() {
+            if let Some(t) = matching {
                 self.saved.track = t;
+                self.layout_warning = None;
                 self.save();
             }
-            None if !self.saved.track.is_empty() => {
-                let key = track_key(&self.saved.track);
-                self.saved.shapes.retain(|s| track_key(&s.track) != key);
-                self.saved.shapes.push(Shape { track: self.saved.track.clone(), pts });
-                self.save();
-            }
-            _ => {}
+            return;
         }
+        let key = track_key(&name);
+        let stored = self.saved.shapes.iter().find(|s| track_key(&s.track) == key);
+        let fits = stored.map(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M);
+        self.layout_warning = match (fits, matching) {
+            (Some(true), _) => None,
+            (Some(false), Some(other)) => {
+                Some(format!("Kolo odpovídá trati „{other}“, ne „{name}“. Oprav název trati – kolo se nepočítá."))
+            }
+            (Some(false), None) => Some(format!(
+                "Kolo má jiný tvar než uložená trať „{name}“ – jiná varianta? Pojmenuj ji jinak (např. „{name} – varianta 2“). Kolo se nepočítá."
+            )),
+            (None, Some(other)) => {
+                Some(format!("Kolo odpovídá už uložené trati „{other}“. Vyber ji, ať se data nerozdělí. Kolo se nepočítá."))
+            }
+            (None, None) => {
+                self.saved.shapes.push(Shape { track: name, pts, length_m });
+                self.save();
+                None
+            }
+        };
+        self.layout_ok = self.layout_warning.is_none();
+    }
+
+    /// Length (m) of the layout stored for the track name.
+    pub fn track_length(&self, track: &str) -> Option<f32> {
+        let key = track_key(track);
+        self.saved.shapes.iter().find(|s| track_key(&s.track) == key).map(|s| s.length_m).filter(|l| *l > 0.0)
     }
 
     pub fn set_life(&mut self, car: i32, track: &str, compound: &str, wear_mult: f32, life: Option<u32>) {
@@ -457,6 +496,7 @@ mod tests {
         let mut p = practice();
         p.shape(&circle(500.0, 0.0));
         assert_eq!(p.saved.shapes.len(), 1);
+        assert!((p.track_length("nurburgring gp").unwrap() - 3141.0).abs() < 5.0);
         p.saved.track.clear();
         p.shape(&circle(500.0, 3.0)); // same layout, slightly different line
         assert_eq!(p.saved.track, "Nürburgring GP");
@@ -473,5 +513,30 @@ mod tests {
         assert_eq!(s.compounds.len(), 1);
         assert_eq!((s.compounds[0].compound.as_str(), s.compounds[0].life), ("SS", Some(9)));
         assert!(p.summary(7, "Nürburgring GP", 1.0, 3.0).compounds.is_empty());
+    }
+
+    #[test]
+    fn another_layout_under_the_same_name_is_not_mixed() {
+        let circle = |r: f32| -> Vec<(f32, f32)> {
+            (0..1000).map(|i| i as f32 / 1000.0 * std::f32::consts::TAU).map(|a| (r * a.cos(), r * a.sin())).collect()
+        };
+        let mut p = practice();
+        p.new_set(Some("SS"));
+        p.shape(&circle(500.0)); // GP layout, stored
+        p.lap_done(1, 7.0, false, Some(100_000), true);
+        p.shape(&circle(900.0)); // other layout, same name
+        p.lap_done(1, 7.0, false, Some(200_000), true);
+        assert!(p.layout_warning.as_deref().unwrap().contains("jiný tvar"));
+        let flags: Vec<(bool, bool)> = p.saved.laps.iter().map(|l| (l.clean, l.wrong_layout)).collect();
+        assert_eq!(flags, [(true, false), (false, true)]);
+        // Named as its own layout: stored separately, laps count again
+        p.saved.track = "Nürburgring Nordschleife".into();
+        p.shape(&circle(900.0));
+        p.lap_done(1, 7.0, false, Some(200_000), true);
+        assert_eq!(p.saved.shapes.len(), 2);
+        assert!(p.layout_warning.is_none() && p.saved.laps[2].clean);
+        // Back on GP but still named Nordschleife: the lap belongs to the other name
+        p.shape(&circle(500.0));
+        assert!(p.layout_warning.as_deref().unwrap().contains("„Nürburgring GP“"));
     }
 }

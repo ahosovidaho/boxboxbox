@@ -5,7 +5,8 @@
 - **Mód Trénink** (stránka Strategie, přepínač Závod / Trénink): označíš směs, aplikace ukládá
   čistá kola (celé kolo od čáry, bez boxu, bez out-lapu, bez chyby) zvlášť pro auto, trať,
   směs a násobiče opotřebení a spotřeby. Trať se pozná podle tvaru mapy (napoprvé ji napíšeš).
-  Výměnu gum v boxu pozná sama. Tlačítko „Počítat kola“ vypne ukládání pro jízdu automatem,
+  Výměnu gum v boxu pozná sama. Název trati = trať a varianta („Nürburgring GP“); kolo, které
+  tvarem neodpovídá uložené variantě, se nepočítá a aplikace upozorní – varianty se nemíchají. Tlačítko „Počítat kola“ vypne ukládání pro jízdu automatem,
   jednotlivá kola jde vyřadit. Data: `practice.json` vedle `strategy.json`.
 - **Výsledky tréninku**: pro každou směs nejlepší čas, ztráta času na každé kolo stáří gum
   (přímka přes kola na sadě, od 4 kol a rozpětí 3 kol), tempo proti nejrychlejší směsi,

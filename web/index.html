@@ -657,7 +657,7 @@
 
     <div class="card practice-only"><h2>Trénink</h2>
       <div class="stbig" id="prBig">–</div>
-      <div class="prow">Trať <input type="text" id="prTrack" list="prTracks" placeholder="např. Nürburgring GP" autocomplete="off"><datalist id="prTracks"></datalist></div>
+      <div class="prow">Trať <input type="text" id="prTrack" list="prTracks" placeholder="trať a varianta, např. Nürburgring GP" autocomplete="off"><datalist id="prTracks"></datalist></div>
       <div class="pnote" id="prTrackInfo"></div>
       <div class="prow"><label>Opotřebení × <input type="number" id="prWear" inputmode="decimal" step="0.5" min="0"></label>
         <label>Spotřeba × <input type="number" id="prFuel" inputmode="decimal" step="0.5" min="0"></label></div>
@@ -1862,7 +1862,7 @@
   }
   function renderPractice(d) {
     const ps = d.strategy.practice;
-    const key = `${ps.laps}|${ps.track}|${ps.compound}|${ps.set_age}|${ps.counting}|${ps.wear_mult}|${ps.fuel_mult}|${d.car_code}`;
+    const key = `${ps.laps}|${ps.track}|${ps.compound}|${ps.set_age}|${ps.counting}|${ps.wear_mult}|${ps.fuel_mult}|${d.car_code}|${ps.layout_warning}|${ps.track_length_m}`;
     if (!prData || (prData.state && prData.state.laps !== ps.laps)) { if (!prBusy) loadPractice(); }
     const big = ps.compound ? `${ps.compound} <small>${ps.set_age + 1}. kolo na sadě</small>` : 'Vyber směs';
     if ($('prBig').innerHTML !== big) $('prBig').innerHTML = big;
@@ -1871,7 +1871,11 @@
     if (document.activeElement !== $('prTrack')) $('prTrack').value = ps.track;
     if (document.activeElement !== $('prWear')) $('prWear').value = ps.wear_mult;
     if (document.activeElement !== $('prFuel')) $('prFuel').value = ps.fuel_mult;
-    setText('prTrackInfo', ps.track ? '' : 'Trať se pozná podle mapy, pokud už jsi na ní trénoval. Jinak ji napiš – stejně jako v nastavení závodu.');
+    const info = ps.layout_warning || (!ps.track ? 'Trať se pozná podle mapy, pokud už jsi na ní trénoval. Jinak napiš trať i variantu (např. Nürburgring GP) – stejně jako v nastavení závodu.'
+      : ps.track_length_m ? `Varianta uložená podle tvaru kola · délka ${nf(ps.track_length_m / 1000, 2)} km. Jiná varianta téže trati = jiný název.`
+      : 'Tvar trati se uloží po prvním celém kole.');
+    setText('prTrackInfo', info);
+    $('prTrackInfo').classList.toggle('bad', !!ps.layout_warning);
     $('prChips').innerHTML = ['R', 'S', 'C'].flatMap(k => ['S', 'M', 'H'].map(c => k + c))
       .map(c => `<button data-c="${c}" class="${c === ps.compound ? 'on' : ''}">${c}</button>`).join('');
     $('prCount').classList.toggle('on', ps.counting);
@@ -1894,7 +1898,7 @@
     $('prLaps').innerHTML = laps.length ? `<table class="ptab"><tbody>${laps.map(({ index, lap: l }) => {
       const why = !l.clean ? 'neplatné' : !l.counted ? 'nepočítá se' : '';
       return `<tr class="${why ? 'off' : ''}"><td>${l.compound} ${l.age + 1}.</td><td>${fmtLap(l.ms)}</td><td>${nf(l.fuel, 2)}</td>`
-        + `<td>${l.clean ? `<button data-i="${index}">${l.counted ? 'vyřadit' : 'vrátit'}</button>` : '<small>box / neúplné</small>'}</td></tr>`;
+        + `<td>${l.clean ? `<button data-i="${index}">${l.counted ? 'vyřadit' : 'vrátit'}</button>` : `<small>${l.wrong_layout ? 'jiná varianta' : 'box / neúplné'}</small>`}</td></tr>`;
     }).join('')}</tbody></table>` : '<span class="muted">Zatím žádné kolo.</span>';
   }
   $('stMode').addEventListener('click', async e => {

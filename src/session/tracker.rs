@@ -283,20 +283,19 @@ impl Tracker {
                 }
             }
             let closed = self.track.current_closed();
+            if self.lap > 0 && crossed_line && self.lap_full && closed {
+                // Practice: which track (layout) the lap was driven on, before the lap is stored
+                let pts = self.track.current_points();
+                self.with_strategy(|s| s.lap_shape(&pts));
+            }
             if self.lap > 0 && crossed_line && self.lap_full {
                 let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
                 self.with_strategy(|s| s.lap_finished(lap, burn, refuel, finished, closed));
             }
-            let shape_lap = self.lap > 0 && crossed_line && self.lap_full && closed;
             self.lap_burn = 0.0;
             self.lap_refuel = false;
             self.lap_full = crossed_line;
             self.track.lap_started(finished, crossed_line && p.current_lap > 0);
-            if shape_lap {
-                // Practice: the track is recognised by the shape of the lap
-                let pts: Vec<(f32, f32)> = self.track.map().points.iter().map(|q| (q.x, q.z)).collect();
-                self.with_strategy(|s| s.lap_shape(&pts));
-            }
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));
             }

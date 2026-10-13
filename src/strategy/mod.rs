@@ -236,6 +236,10 @@ pub struct PracticeState {
     pub fuel_mult: f32,
     /// Laps stored (changes when a lap was added: the dashboard reloads the figures)
     pub laps: usize,
+    /// The last lap does not fit the layout of the track name
+    pub layout_warning: Option<String>,
+    /// Length of the stored layout, m
+    pub track_length_m: Option<f32>,
 }
 
 fn call(level: &'static str, text: String) -> Call {
@@ -530,6 +534,8 @@ impl Strategy {
             wear_mult: p.wear_mult,
             fuel_mult: p.fuel_mult,
             laps: p.laps.len(),
+            layout_warning: self.practice.layout_warning.clone(),
+            track_length_m: self.practice.track_length(&p.track),
         }
     }
 

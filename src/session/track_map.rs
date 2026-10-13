@@ -108,6 +108,11 @@ impl Track {
         self.ref_idx = 0;
     }
 
+    /// Points of the running lap.
+    pub fn current_points(&self) -> Vec<(f32, f32)> {
+        self.current.iter().map(|p| (p.x, p.z)).collect()
+    }
+
     /// Does the running lap end where it started (a full lap, not the short first race lap)?
     pub fn current_closed(&self) -> bool {
         match (self.current.first(), self.current.last()) {
