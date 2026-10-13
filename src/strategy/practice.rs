@@ -280,6 +280,13 @@ impl Practice {
         let key = track_key(&name);
         let stored = self.saved.shapes.iter().find(|s| track_key(&s.track) == key);
         let fits = stored.map(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M);
+        // A shape stored by an older version has no length yet: take it from this lap
+        if fits == Some(true) {
+            if let Some(s) = self.saved.shapes.iter_mut().find(|s| track_key(&s.track) == key && s.length_m <= 0.0) {
+                s.length_m = length_m;
+                self.save();
+            }
+        }
         self.layout_warning = match (fits, matching) {
             (Some(true), _) => None,
             (Some(false), Some(other)) => {
@@ -505,6 +512,11 @@ mod tests {
         p.shape(&circle(500.0, 0.0));
         assert_eq!(p.saved.shapes.len(), 1);
         assert!((p.track_length("nurburgring gp").unwrap() - 3141.0).abs() < 5.0);
+        // A shape without a length (older version) gets one from the next lap that fits
+        p.saved.shapes[0].length_m = 0.0;
+        assert_eq!(p.track_length("Nürburgring GP"), None);
+        p.shape(&circle(500.0, 1.0));
+        assert!(p.track_length("Nürburgring GP").is_some());
         p.saved.track.clear();
         p.shape(&circle(500.0, 3.0)); // same layout, slightly different line
         assert_eq!(p.saved.track, "Nürburgring GP");
