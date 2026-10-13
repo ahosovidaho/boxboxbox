@@ -168,7 +168,8 @@
   table.wheels { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.wheels th { font-size: 10px; color: var(--label); font-weight: 600; text-align: right; padding: 2px 0 4px; }
   table.wheels th:first-child, table.wheels td:first-child { text-align: left; color: var(--dim); font-family: inherit; }
-  table.wheels td { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; padding: 2px 0; }
+  table.wheels td { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; padding: 2px 0 2px 8px; white-space: nowrap; }
+  table.wheels td:first-child { padding-left: 0; white-space: normal; }
   .gcanvas { width: 100%; aspect-ratio: 1; max-height: 210px; display: block; margin: 0 auto; }
   .bars { display: grid; gap: 5px; font-size: 12px; }
   .bar { display: grid; grid-template-columns: 70px 1fr 54px; gap: 8px; align-items: center; }
@@ -1797,7 +1798,8 @@
   function renderBoxBig(d) {
     const el = $('boxbig'), st = d.strategy;
     let txt = '', cls = '', sub = '';
-    if (st && st.race) {
+    // Practice: no race calls on page 1
+    if (st && st.race && !(st.practice && st.practice.active)) {
       if (st.stop_add != null) {
         // Standing in the box: how much to put in
         txt = st.stop_add > 0.05 ? `DOTANKUJ +${nf(st.stop_add, 1)}` : 'BEZ TANKOVÁNÍ';
@@ -1821,7 +1823,7 @@
 
   function renderBoxCall(d) {
     const el = $('boxcall');
-    const c = d.live && d.strategy && d.strategy.calls.find(c => c.level !== 'info' || c.text.startsWith('Box v kole'));
+    const c = d.live && d.strategy && !(d.strategy.practice && d.strategy.practice.active) && d.strategy.calls.find(c => c.level !== 'info' || c.text.startsWith('Box v kole'));
     el.hidden = !c;
     if (!c) return;
     el.className = c.level;
@@ -1894,7 +1896,8 @@
       ? `<table class="ptab"><thead><tr><th>Směs</th><th>Vydrží kol</th><th>Čistá kola</th><th>Nejlepší</th><th>Ztráta / kolo</th><th>Tempo</th><th>Spotřeba</th><th>Nejdelší run</th></tr></thead><tbody>${rows}</tbody></table>`
         + `<div class="pfrom">${car}${car ? ' · ' : ''}${ps.track || 'trať?'} · opotřebení ${ps.wear_mult}× · spotřeba ${ps.fuel_mult}×${sm.fuel_per_lap != null ? ` · průměrná spotřeba ${nf(sm.fuel_per_lap, 2)} / kolo` : ''}</div>`
       : '<span class="muted">Zatím žádná čistá kola pro toto auto, trať a násobiče.</span>';
-    const laps = prData.laps || [];
+    const tk = t => (t || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
+    const laps = (prData.laps || []).filter(({ lap: l }) => l.car === prData.car && tk(l.track) === tk(ps.track));
     $('prLaps').innerHTML = laps.length ? `<table class="ptab"><tbody>${laps.map(({ index, lap: l }) => {
       const why = !l.clean ? 'neplatné' : !l.counted ? 'nepočítá se' : '';
       return `<tr class="${why ? 'off' : ''}"><td>${l.compound} ${l.age + 1}.</td><td>${fmtLap(l.ms)}</td><td>${nf(l.fuel, 2)}</td>`

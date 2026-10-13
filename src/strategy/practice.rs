@@ -232,6 +232,10 @@ impl Practice {
         if self.saved.track.is_empty() {
             return;
         }
+        // Another car or track than the last lap: new tyres
+        if self.saved.laps.last().is_some_and(|l| l.car != car || track_key(&l.track) != track_key(&self.saved.track)) {
+            self.saved.set_age = 0;
+        }
         let s = &mut self.saved;
         s.laps.push(PracticeLap {
             at: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
@@ -483,6 +487,10 @@ mod tests {
         p.lap_done(1, 7.0, false, Some(99_000), true); // automat
         let clean: Vec<bool> = p.saved.laps.iter().map(|l| l.clean && l.counted).collect();
         assert_eq!(clean, [false, false, false, true, false]);
+        // Another car: the set starts from new
+        p.saved.counting = true;
+        p.lap_done(2, 7.0, false, Some(99_000), true);
+        assert_eq!(p.saved.laps.last().unwrap().age, 0);
         let s = p.summary(1, "Nürburgring GP", 6.0, 3.0);
         assert_eq!(s.compounds[0].laps, 1);
         assert_eq!(s.compounds[0].deg, None); // not enough laps

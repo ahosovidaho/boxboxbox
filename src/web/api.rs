@@ -123,7 +123,17 @@ fn practice_json(st: &strategy::Strategy, track: Option<String>, car: Option<i32
     let track = track.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| p.track.clone());
     let car = car.or_else(|| st.practice_car(&track));
     let summary = car.map(|c| st.practice.summary(c, &track, p.wear_mult, p.fuel_mult));
-    let laps: Vec<_> = p.laps.iter().enumerate().rev().take(12).map(|(i, l)| json!({ "index": i, "lap": l })).collect();
+    // The last laps of this car on this track
+    let key = strategy::practice::track_key(&track);
+    let laps: Vec<_> = p
+        .laps
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, l)| Some(l.car) == car && strategy::practice::track_key(&l.track) == key)
+        .take(12)
+        .map(|(i, l)| json!({ "index": i, "lap": l }))
+        .collect();
     let mut tracks: Vec<String> = p.shapes.iter().map(|s| s.track.clone()).chain(p.laps.iter().map(|l| l.track.clone())).collect();
     tracks.sort();
     tracks.dedup();
