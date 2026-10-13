@@ -8,6 +8,7 @@
   (žlutý příští kolo, červený toto kolo) a velký stupeň s rychlostí, doporučeným stupněm
   a pruhy plynu a brzdy; vpravo mapa s barevnými úseky; dole palivo jako 30 segmentů
   (bílá = potřeba do cíle, zelená = rezerva, červená = nevystačí, červená čára = potřeba do cíle).
+  Palivo: 20 čtverců přes celou šířku jako LED otáčkoměru, údaje v řádku nad nimi.
   Písma Saira Condensed a JetBrains Mono z Google Fonts (bez internetu systémová).
 
 ## BOXBOXBOX 0.7.0-fork1 – 2026-10-13

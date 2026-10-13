@@ -313,7 +313,7 @@
   #p6 { --rf: 'Saira Condensed', 'Arial Narrow', -apple-system, sans-serif; --rm: 'JetBrains Mono', var(--mono); --acc: #ff2a1a;
     font-family: var(--rf); display: grid; gap: 8px;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .95fr);
-    grid-template-rows: minmax(48px, 12%) minmax(0, 1fr) minmax(52px, 13%) 18px;
+    grid-template-rows: minmax(48px, 12%) minmax(0, 1fr) minmax(70px, 17%) 18px;
     grid-template-areas: "rev rev rev" "left mid map" "fuel fuel fuel" "strip strip strip"; }
   #p6 .rc { background: #0d0d0d; border: 1px solid #1f1f1f; border-radius: 10px; min-height: 0; min-width: 0; overflow: hidden; }
   #p6 .rl { font-size: 12px; letter-spacing: .2em; color: #8c8c8c; text-transform: uppercase; }
@@ -330,9 +330,9 @@
   #r_tyrecard .row { color: #8c8c8c; }
   #r_tyres { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
   #r_tyres div { border-radius: 8px; border: 2px solid var(--c, #2a2a2a); background: color-mix(in srgb, var(--c, #2a2a2a) 10%, transparent);
-    display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
-  #r_tyres small { font-size: 11px; color: #8c8c8c; letter-spacing: .15em; }
-  #r_tyres b { font-family: var(--rm); font-size: min(34px, 7vh); color: var(--c, #f2f2f2); }
+    display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; container-type: size; }
+  #r_tyres small { font-size: min(11px, 18cqh); line-height: 1; color: #8c8c8c; letter-spacing: .15em; }
+  #r_tyres b { font-family: var(--rm); font-size: min(34px, 48cqh); line-height: 1.05; color: var(--c, #f2f2f2); }
   #r_pace { padding: 8px 12px; display: flex; flex-direction: column; justify-content: space-between; }
   #r_lap { font-size: 22px; } #r_lap i { font-style: normal; color: #6a6a6a; }
   #r_delta { font-size: min(44px, 9vh); letter-spacing: -1px; }
@@ -355,16 +355,17 @@
   #r_brk { position: absolute; right: 0; bottom: 0; height: 4px; background: #3d6bff; width: 0; }
   #r_map { grid-area: map; display: flex; flex-direction: column; min-height: 0; }
   #r_map #mapcard { flex: 1; border: 0; border-radius: 0; background: transparent; }
-  #r_fuel { grid-area: fuel; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 6px 14px;
-    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); border-radius: 0; }
-  #r_fuelnum { font-size: min(30px, 6vh); line-height: 1; }
-  #r_fuelnum small { font-size: 15px; color: #8c8c8c; }
-  #r_fuelsegs { display: flex; gap: 3px; height: 60%; min-height: 18px; }
-  #r_fuelsegs i { flex: 1; background: #1c1c1c; }
+  #r_fuel { grid-area: fuel; display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 8px; }
+  #r_fueltop { display: flex; align-items: baseline; gap: 14px; line-height: 1; }
+  #r_fuelnum { font-size: min(24px, 5vh); }
+  #r_fuelnum small { font-size: 13px; color: #8c8c8c; }
+  #r_fuelsegs { flex: 1; display: flex; gap: 5px; min-height: 14px; }
+  #r_fuelsegs i { flex: 1; border-radius: 4px; background: #1c1c1c; }
   #r_fuelsegs i.need { background: #f2f2f2; } #r_fuelsegs i.res { background: #2fd36b; } #r_fuelsegs i.short { background: var(--acc); }
-  #r_fuelsegs i.mark { box-shadow: 3px 0 0 var(--acc); }
-  #r_fuelkv { display: flex; gap: 18px; font-size: 13px; letter-spacing: .14em; color: #8c8c8c; white-space: nowrap; }
-  #r_fuelkv b { font-family: var(--rm); color: #f2f2f2; font-size: 19px; letter-spacing: 0; }
+  #r_fuelsegs i.need, #r_fuelsegs i.res, #r_fuelsegs i.short { box-shadow: 0 0 10px color-mix(in srgb, currentColor 0%, transparent); }
+  #r_fuelsegs i.mark { outline: 2px solid var(--acc); outline-offset: 2px; }
+  #r_fuelkv { margin-left: auto; display: flex; gap: 18px; font-size: 12px; letter-spacing: .14em; color: #8c8c8c; white-space: nowrap; }
+  #r_fuelkv b { font-family: var(--rm); color: #f2f2f2; font-size: 17px; letter-spacing: 0; }
   #r_strip { grid-area: strip; display: flex; gap: 14px; align-items: center; font-size: 12px; color: #8c8c8c; white-space: nowrap; overflow: hidden; }
   #r_strip #r_call { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #f2f2f2; font-weight: 600; letter-spacing: .04em; }
   #p7 { display: flex; flex-direction: column; gap: 8px; }
@@ -842,9 +843,11 @@
   </div>
   <div class="rc" id="r_map"></div>
   <div class="rc" id="r_fuel">
-    <div style="display:flex;flex-direction:column;line-height:1.05"><span class="rl">Palivo</span><span id="r_fuelnum" class="rn">–</span></div>
+    <div id="r_fueltop">
+      <span class="rl">Palivo</span><span id="r_fuelnum" class="rn">–</span>
+      <div id="r_fuelkv"><span>VYSTAČÍ <b id="r_fuellaps">–</b></span><span>L/KOLO <b id="r_fpl">–</b></span><span>REZERVA <b id="r_margin">–</b></span></div>
+    </div>
     <div id="r_fuelsegs"></div>
-    <div id="r_fuelkv"><span>VYSTAČÍ <b id="r_fuellaps">–</b></span><span>L/KOLO <b id="r_fpl">–</b></span><span>REZERVA <b id="r_margin">–</b></span></div>
   </div>
   <div id="r_strip">
     <span>Voda <span id="r_water" class="num">–</span>°</span>
@@ -2033,7 +2036,7 @@
   const LED_COLOURS = [...Array(5).fill('#2fd36b'), ...Array(5).fill('#ff2a1a'), ...Array(5).fill('#3d6bff')];
   $('r_leds').innerHTML = LED_COLOURS.map(c => `<i style="--c:${c}"></i>`).join('');
   const rLeds = [...$('r_leds').children];
-  const FUEL_SEGS = 30;
+  const FUEL_SEGS = 20;
   $('r_fuelsegs').innerHTML = '<i></i>'.repeat(FUEL_SEGS);
   const rFuel = [...$('r_fuelsegs').children];
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
@@ -2104,13 +2107,14 @@
     carPos = { x: d.pos[0], z: d.pos[2], h: d.heading * Math.PI / 180, color: { none: '#ffffff', under: '#3d8bff', over: '#ff8a2a', neutral: '#2fd36b' }[bal] };
     updateSegments(d);
     drawMap(false);
-    // Fuel: white = needed to the finish, green = reserve, red = short; red line = what the finish needs
+    // Fuel: 20 squares over the whole width; white = needed to the finish, green = reserve,
+  // red = short; the square with the red frame = where the fuel to the finish ends
     const cap = d.fuel_capacity;
     const ev = cap === 100;
     setText('r_fuelnum', cap > 0 ? (ev ? `${d.fuel.toFixed(1)} %` : `${U.fl(d.fuel).toFixed(1)}`) : '–');
     if (cap > 0 && !ev && !$('r_fuelnum').querySelector('small')) $('r_fuelnum').insertAdjacentHTML('beforeend', ` <small>${U.fuel}</small>`);
     const need = st && st.fuel_needed;
-    const on = cap > 0 ? Math.round(d.fuel / cap * FUEL_SEGS) : 0;
+    const on = cap > 0 ? Math.ceil(d.fuel / cap * FUEL_SEGS - 0.05) : 0;
     const needAt = need != null && cap > 0 ? Math.min(FUEL_SEGS, Math.round(need / cap * FUEL_SEGS)) : null;
     rFuel.forEach((el, i) => {
       let cls = i < on ? (needAt == null ? 'need' : on < needAt ? 'short' : i < needAt ? 'need' : 'res') : '';
