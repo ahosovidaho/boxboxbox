@@ -1,5 +1,15 @@
 # Changelog
 
+## BOXBOXBOX 0.7.1-fork1 – 2026-10-13
+
+- **Závodní dashboard „Rosso“** podle vybraného návrhu: 15 LED otáčkoměru (5 zelených,
+  5 červených, 5 modrých, u omezovače bliká modře), otáčky a bod řazení; vlevo teploty gum se
+  směsí a stářím sady a tempo (kolo, živá delta, poslední, nejlepší); uprostřed pokyn k boxu
+  (žlutý příští kolo, červený toto kolo) a velký stupeň s rychlostí, doporučeným stupněm
+  a pruhy plynu a brzdy; vpravo mapa s barevnými úseky; dole palivo jako 30 segmentů
+  (bílá = potřeba do cíle, zelená = rezerva, červená = nevystačí, červená čára = potřeba do cíle).
+  Písma Saira Condensed a JetBrains Mono z Google Fonts (bez internetu systémová).
+
 ## BOXBOXBOX 0.7.0-fork1 – 2026-10-13
 
 - **Dva módy aplikace: ZÁVOD a TRÉNINK** (přepínač u teček stránek a na stránce Strategie; mód

@@ -9,6 +9,9 @@
 <meta name="apple-mobile-web-app-title" content="BOXBOXBOX">
 <meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.webmanifest">
+<!-- Race dashboard fonts; without internet the system fonts are used -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link rel="apple-touch-icon" href="icon.png">
 <title>BOXBOXBOX</title>
 <style>
@@ -306,43 +309,64 @@
   .serr[hidden] { display: none; }
 
 
-  /* ---------- Race mode: dashboard (p6) and race recap (p7) ---------- */
-  #p6 { display: grid; gap: 8px; grid-template-columns: minmax(0, .9fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
-    grid-template-rows: 54px minmax(0, 1fr) 30px; grid-template-areas: "rev rev rev" "drive pace fuel" "strip strip strip"; }
-  #r_rev { grid-area: rev; display: flex; gap: 10px; align-items: stretch; }
-  #r_revbar { flex: 1; display: flex; gap: 3px; }
-  #r_revbar i { flex: 1; border-radius: 4px; background: var(--line); }
-  #r_revbar i.on-g { background: var(--green); } #r_revbar i.on-y { background: var(--yellow); } #r_revbar i.on-r { background: var(--red); }
-  #r_rev.flash #r_revbar i { background: var(--blue) !important; animation: flash .12s steps(1) infinite alternate; }
-  #r_rpm { font: 700 34px/54px var(--mono); min-width: 5.2ch; text-align: right; color: #f0f0f3; }
-  #r_drive { grid-area: drive; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; container-type: size; }
-  #r_gear { font: 700 min(170px, 46cqh, 70cqw)/.9 var(--mono); color: #f0f0f3; }
-  #r_gear.limit { color: var(--red); }
-  #r_speed { font: 600 min(44px, 12cqh)/1 var(--mono); }
-  #r_tyres { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%; margin-top: 6px; }
-  #r_tyres span { border: 1px solid var(--line); border-radius: 8px; text-align: center; font: 600 15px var(--mono); padding: 3px 0; color: var(--c, var(--text)); border-color: var(--c, var(--line)); }
-  #r_pace { grid-area: pace; display: flex; flex-direction: column; gap: 4px; }
-  #r_delta { font: 700 min(76px, 14vh)/1 var(--mono); text-align: center; margin: 4px 0 2px; }
-  #r_lapline { display: flex; justify-content: space-between; align-items: baseline; }
-  #r_lap { font: 700 28px var(--mono); }
-  #r_laptime { font: 500 22px var(--mono); color: var(--dim); }
-  .rkv { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 15px; margin-top: auto; }
-  .rkv span:nth-child(odd) { color: var(--dim); }
-  .rkv span:nth-child(even) { font-family: var(--mono); text-align: right; font-size: 18px; }
-  #r_fuelcol { grid-area: fuel; display: grid; gap: 8px; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-  #r_fuelbig { font: 700 min(48px, 8vh)/1 var(--mono); }
-  #r_fuelbar { position: relative; height: 14px; border-radius: 7px; background: var(--line); margin: 8px 0 6px; overflow: hidden; }
-  #r_fuelbar b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); border-radius: 7px; }
-  #r_fuelbar i { position: absolute; top: -2px; bottom: -2px; width: 3px; background: #fff; }
-  #r_margin { font: 700 22px var(--mono); }
-  #r_box { display: flex; flex-direction: column; justify-content: center; text-align: center; }
-  #r_boxbig { font: 800 min(44px, 8vh)/1.05 -apple-system, system-ui, sans-serif; letter-spacing: .02em; }
-  #r_boxsub { font-size: 17px; color: var(--dim); margin-top: 6px; }
-  #r_box.now { background: var(--red); border-color: var(--red); } #r_box.now * { color: #000 !important; }
-  #r_box.soon { border-color: var(--yellow); } #r_box.soon #r_boxbig { color: var(--yellow); }
-  #r_box.done #r_boxbig { color: var(--green); }
-  #r_strip { grid-area: strip; display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; }
-  #r_strip #r_call { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 600; }
+  /* ---------- Race mode: dashboard (p6, "Rosso") and race recap (p7) ---------- */
+  #p6 { --rf: 'Saira Condensed', 'Arial Narrow', -apple-system, sans-serif; --rm: 'JetBrains Mono', var(--mono); --acc: #ff2a1a;
+    font-family: var(--rf); display: grid; gap: 8px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .95fr);
+    grid-template-rows: minmax(48px, 12%) minmax(0, 1fr) minmax(52px, 13%) 18px;
+    grid-template-areas: "rev rev rev" "left mid map" "fuel fuel fuel" "strip strip strip"; }
+  #p6 .rc { background: #0d0d0d; border: 1px solid #1f1f1f; border-radius: 10px; min-height: 0; min-width: 0; overflow: hidden; }
+  #p6 .rl { font-size: 12px; letter-spacing: .2em; color: #8c8c8c; text-transform: uppercase; }
+  #p6 .rn { font-family: var(--rm); font-weight: 700; font-variant-numeric: tabular-nums; }
+  #r_rev { grid-area: rev; display: flex; align-items: center; gap: 12px; padding: 7px 12px; }
+  #r_leds { flex: 1; display: flex; gap: 5px; height: 100%; }
+  #r_leds i { flex: 1; border-radius: 5px; background: #1c1c1c; }
+  #r_leds i.on { background: var(--c); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent); }
+  #r_rev.flash #r_leds i { background: #3d6bff; animation: flash .12s steps(1) infinite alternate; }
+  #r_revnum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
+  #r_rpm { font-size: min(32px, 6vh); letter-spacing: -1px; }
+  #r_left { grid-area: left; display: grid; grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr); gap: 8px; min-height: 0; }
+  #r_tyrecard { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  #r_tyrecard .row { color: #8c8c8c; }
+  #r_tyres { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
+  #r_tyres div { border-radius: 8px; border: 2px solid var(--c, #2a2a2a); background: color-mix(in srgb, var(--c, #2a2a2a) 10%, transparent);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+  #r_tyres small { font-size: 11px; color: #8c8c8c; letter-spacing: .15em; }
+  #r_tyres b { font-family: var(--rm); font-size: min(34px, 7vh); color: var(--c, #f2f2f2); }
+  #r_pace { padding: 8px 12px; display: flex; flex-direction: column; justify-content: space-between; }
+  #r_lap { font-size: 22px; } #r_lap i { font-style: normal; color: #6a6a6a; }
+  #r_delta { font-size: min(44px, 9vh); letter-spacing: -1px; }
+  #r_times { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--rm); font-size: 14px; color: #bdbdbd; line-height: 1.35; }
+  #r_times span span { color: #6a6a6a; }
+  #r_mid { grid-area: mid; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.8fr); gap: 8px; min-height: 0; }
+  #r_box { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 4px 8px; container-type: size; }
+  #r_boxbig { font-weight: 800; font-size: min(46px, 44cqh, 10.5cqw); line-height: 1; letter-spacing: .03em; white-space: nowrap; }
+  #r_boxsub { font-size: min(18px, 17cqh, 5cqw); letter-spacing: .08em; margin-top: 4px; color: #bdbdbd; white-space: nowrap; }
+  #r_box.now { background: var(--acc); border-color: var(--acc); } #r_box.now * { color: #000; }
+  #r_box.soon { border: 2px solid #ffd400; } #r_box.soon * { color: #ffd400; }
+  #r_box.done #r_boxbig { color: #2fd36b; }
+  #r_drive { display: flex; align-items: center; justify-content: center; gap: 20px; position: relative; container-type: size; }
+  #r_gear { font-family: var(--rm); font-weight: 700; font-size: min(190px, 82cqh, 40cqw); line-height: .85; color: #fff; }
+  #r_gear.limit { color: var(--acc); }
+  #r_spd { display: flex; flex-direction: column; align-items: flex-start; }
+  #r_speed { font-size: min(58px, 26cqh); line-height: 1; }
+  #r_sugg { margin-top: 10px; font-size: 15px; letter-spacing: .14em; color: var(--acc); min-height: 1em; }
+  #r_thr { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--acc); width: 0; }
+  #r_brk { position: absolute; right: 0; bottom: 0; height: 4px; background: #3d6bff; width: 0; }
+  #r_map { grid-area: map; display: flex; flex-direction: column; min-height: 0; }
+  #r_map #mapcard { flex: 1; border: 0; border-radius: 0; background: transparent; }
+  #r_fuel { grid-area: fuel; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 6px 14px;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); border-radius: 0; }
+  #r_fuelnum { font-size: min(30px, 6vh); line-height: 1; }
+  #r_fuelnum small { font-size: 15px; color: #8c8c8c; }
+  #r_fuelsegs { display: flex; gap: 3px; height: 60%; min-height: 18px; }
+  #r_fuelsegs i { flex: 1; background: #1c1c1c; }
+  #r_fuelsegs i.need { background: #f2f2f2; } #r_fuelsegs i.res { background: #2fd36b; } #r_fuelsegs i.short { background: var(--acc); }
+  #r_fuelsegs i.mark { box-shadow: 3px 0 0 var(--acc); }
+  #r_fuelkv { display: flex; gap: 18px; font-size: 13px; letter-spacing: .14em; color: #8c8c8c; white-space: nowrap; }
+  #r_fuelkv b { font-family: var(--rm); color: #f2f2f2; font-size: 19px; letter-spacing: 0; }
+  #r_strip { grid-area: strip; display: flex; gap: 14px; align-items: center; font-size: 12px; color: #8c8c8c; white-space: nowrap; overflow: hidden; }
+  #r_strip #r_call { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #f2f2f2; font-weight: 600; letter-spacing: .04em; }
   #p7 { display: flex; flex-direction: column; gap: 8px; }
   #p7head { display: flex; align-items: center; gap: 12px; height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); white-space: nowrap; }
   #p7head b { color: var(--text); font-weight: 600; }
@@ -786,45 +810,46 @@
   </div>
 </section>
 
-<!-- ======================= Race mode: dashboard ======================= -->
+<!-- ======================= Race mode: dashboard ("Rosso") ======================= -->
 <section class="page" id="p6" hidden>
-  <div id="r_rev"><div id="r_revbar"></div><div id="r_rpm">0</div></div>
-  <div class="card" id="r_drive">
-    <div id="r_gear">N</div>
-    <div id="r_speed">0</div>
-    <div class="label" data-u="speed">km/h</div>
-    <div id="r_tyres"><span id="r_t0">–</span><span id="r_t1">–</span><span id="r_t2">–</span><span id="r_t3">–</span></div>
+  <div class="rc" id="r_rev">
+    <div id="r_leds"></div>
+    <div id="r_revnum"><span id="r_rpm" class="rn">0</span><span class="rl" id="r_shift">OT/MIN</span></div>
   </div>
-  <div class="card" id="r_pace">
-    <h2>Tempo</h2>
-    <div id="r_lapline"><span id="r_lap">–</span><span id="r_laptime">–</span></div>
-    <div id="r_delta">–</div>
-    <div class="rkv">
-      <span>Poslední</span><span id="r_last">–</span>
-      <span>Průměr 3 kol</span><span id="r_avg3">–</span>
-      <span>Nejlepší</span><span id="r_best">–</span>
-      <span>Poslední vs průměr</span><span id="r_trend">–</span>
-      <span>Pozice</span><span id="r_pos">–</span>
-    </div>
-  </div>
-  <div id="r_fuelcol">
-    <div class="card" id="r_fuel">
-      <h2>Palivo</h2>
-      <div class="row"><span id="r_fuelbig">–</span><span id="r_margin">–</span></div>
-      <div id="r_fuelbar"><b></b><i hidden></i></div>
-      <div class="rkv">
-        <span>Vystačí na</span><span id="r_fuellaps">–</span>
-        <span>Spotřeba / kolo</span><span id="r_fpl">–</span>
+  <div id="r_left">
+    <div class="rc" id="r_tyrecard">
+      <div class="row"><span class="rl">Pneumatiky</span><span class="rl" id="r_set" style="color:#f2f2f2"></span></div>
+      <div id="r_tyres">
+        <div id="r_t0"><small>LP</small><b>–</b></div><div id="r_t1"><small>PP</small><b>–</b></div>
+        <div id="r_t2"><small>LZ</small><b>–</b></div><div id="r_t3"><small>PZ</small><b>–</b></div>
       </div>
     </div>
-    <div class="card" id="r_box">
-      <div id="r_boxbig">–</div>
-      <div id="r_boxsub"></div>
+    <div class="rc" id="r_pace">
+      <div class="row"><span class="rl">Kolo</span><span id="r_lap" class="rn">–</span></div>
+      <div class="row" style="align-items:flex-end">
+        <span id="r_delta" class="rn">–</span>
+        <div id="r_times"><span><span>POSL </span><b id="r_last">–</b></span><span><span>NEJ </span><b id="r_best" style="color:#b25cff">–</b></span></div>
+      </div>
     </div>
+  </div>
+  <div id="r_mid">
+    <div class="rc" id="r_box"><div id="r_boxbig">–</div><div id="r_boxsub"></div></div>
+    <div class="rc" id="r_drive">
+      <div id="r_gear">N</div>
+      <div id="r_spd"><span id="r_speed" class="rn">0</span><span class="rl" data-u="speed">km/h</span><span id="r_sugg"></span></div>
+      <i id="r_thr"></i><i id="r_brk"></i>
+    </div>
+  </div>
+  <div class="rc" id="r_map"></div>
+  <div class="rc" id="r_fuel">
+    <div style="display:flex;flex-direction:column;line-height:1.05"><span class="rl">Palivo</span><span id="r_fuelnum" class="rn">–</span></div>
+    <div id="r_fuelsegs"></div>
+    <div id="r_fuelkv"><span>VYSTAČÍ <b id="r_fuellaps">–</b></span><span>L/KOLO <b id="r_fpl">–</b></span><span>REZERVA <b id="r_margin">–</b></span></div>
   </div>
   <div id="r_strip">
     <span>Voda <span id="r_water" class="num">–</span>°</span>
     <span>Olej <span id="r_oil" class="num">–</span>°</span>
+    <span id="r_pos"></span>
     <span id="r_call"></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
@@ -1079,6 +1104,10 @@
     for (const i of ALL_PAGES) $('p' + i).hidden = n !== i;
     store('page', n);
     updateDots();
+    // One map for both driving pages: the card moves to the page shown
+    const mapHome = n === 6 ? $('r_map') : $('mapcol');
+    if ($('mapcard').parentElement !== mapHome) { mapHome.prepend($('mapcard')); requestAnimationFrame(() => drawMap(true)); }
+    if (n === 6) requestAnimationFrame(() => drawMap(true));
     if (n === 7) loadRecap();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
@@ -1244,7 +1273,7 @@
     return [v.ox + (px - v.minX) * v.s, v.oy + (pz - v.minZ) * v.s];
   }
   function drawMap(full) {
-    if (page !== 1) return;
+    if (page !== 1 && page !== 6) return;
     const dpr = devicePixelRatio || 1;
     const w = mapCanvas.clientWidth, h = mapCanvas.clientHeight;
     if (!w || !h) return;
@@ -1999,26 +2028,29 @@
   }
 
 
-  // ---------- Race dashboard (race mode) ----------
-  const rRev = $('r_revbar');
-  rRev.innerHTML = '<i></i>'.repeat(SEGMENTS);
-  const rSegs = [...rRev.children];
+  // ---------- Race dashboard (race mode, "Rosso") ----------
+  // 15 rev LEDs like an F1 wheel: 5 green, 5 red, 5 blue; all blue flashing at the limiter
+  const LED_COLOURS = [...Array(5).fill('#2fd36b'), ...Array(5).fill('#ff2a1a'), ...Array(5).fill('#3d6bff')];
+  $('r_leds').innerHTML = LED_COLOURS.map(c => `<i style="--c:${c}"></i>`).join('');
+  const rLeds = [...$('r_leds').children];
+  const FUEL_SEGS = 30;
+  $('r_fuelsegs').innerHTML = '<i></i>'.repeat(FUEL_SEGS);
+  const rFuel = [...$('r_fuelsegs').children];
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   function boxCall(st) {
-    // Same logic as page 1, plus the compound of the next stop
     let txt = '', cls = '', sub = '';
-    if (!st || !st.race) return { txt: 'Vyber závod', sub: 'stránka Strategie → Závod…', cls: '' };
+    if (!st || !st.race) return { txt: 'VYBER ZÁVOD', sub: 'Strategie → Závod…', cls: '' };
     const next = st.options && st.options.best && st.options.best.stops[0];
     if (st.stop_add != null) {
       txt = st.stop_add > 0.05 ? `DOTANKUJ +${nf(st.stop_add, 1)}` : 'BEZ TANKOVÁNÍ';
-      sub = (st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '') + (next ? ` · ${next.compound}` : '');
+      sub = [st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '', next ? next.compound : ''].filter(Boolean).join(' · ');
       cls = 'now';
     } else if (st.laps_to_box != null) {
       const n = st.laps_to_box;
       txt = n === 0 ? 'BOX TOTO KOLO' : n === 1 ? 'BOX PŘÍŠTÍ KOLO' : `BOX ZA ${n} ${kol(n).toUpperCase()}`;
       cls = n === 0 ? 'now' : n === 1 ? 'soon' : '';
-      const fuel = st.next_stop_fuel != null ? (st.next_stop_fuel > 0.05 ? `dotankovat +${nf(st.next_stop_fuel, 1)}` : 'bez tankování') : '';
-      sub = [st.target_lap != null ? `v kole ${st.target_lap}` : '', fuel, next ? next.compound : ''].filter(Boolean).join(' · ');
+      const fuel = st.next_stop_fuel != null ? (st.next_stop_fuel > 0.05 ? `+${nf(st.next_stop_fuel, 1)} L` : 'bez tankování') : '';
+      sub = [n > 0 && st.target_lap != null ? `KOLO ${st.target_lap}` : '', fuel, next ? next.compound : ''].filter(Boolean).join(' · ');
     } else if (st.fuel_margin_laps != null) {
       txt = st.pit_done ? 'DO CÍLE ✓' : 'BEZ ZASTÁVKY ✓';
       cls = 'done';
@@ -2030,67 +2062,72 @@
   }
   function renderRace(d, tireVals) {
     const st = d.strategy;
-    // Rev meter
+    // Rev LEDs
     const max = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
-    const min = d.rpm_alert_min > 0 ? d.rpm_alert_min : max * 0.9;
-    const start = max * 0.45;
-    const lit = Math.max(0, Math.min(SEGMENTS, Math.round((d.rpm - start) / (max - start) * SEGMENTS)));
+    const start = max * 0.55;
+    const lit = Math.max(0, Math.min(15, Math.round((d.rpm - start) / (max - start) * 15)));
     const flash = d.rpm >= max || d.rev_limiter;
     $('r_rev').classList.toggle('flash', flash);
-    for (let i = 0; i < SEGMENTS; i++) {
-      const frac = (i + 1) / SEGMENTS, segRpm = start + frac * (max - start);
-      const cls = i < lit ? (segRpm >= min ? 'on-r' : frac > 0.6 ? 'on-y' : 'on-g') : '';
-      if (rSegs[i].className !== cls) rSegs[i].className = cls;
-    }
-    setText('r_rpm', String(Math.round(d.rpm)));
-    setText('r_gear', gearText(d.gear));
-    $('r_gear').classList.toggle('limit', flash);
-    setText('r_speed', String(Math.round(U.spd(d.speed_kmh))));
+    rLeds.forEach((el, i) => { const on = i < lit; if (el.classList.contains('on') !== on) el.classList.toggle('on', on); });
+    setText('r_rpm', Math.round(d.rpm).toLocaleString('cs-CZ'));
+    setText('r_shift', d.rpm_alert_max > 0 ? `OT/MIN · SHIFT ${d.rpm_alert_max.toLocaleString('cs-CZ')}` : 'OT/MIN');
+    // Tyres
     tireVals.forEach(({ t: temp }, i) => {
       const el = $('r_t' + i), c = tireColor(temp);
-      setText('r_t' + i, temp != null ? `${Math.round(U.tmp(temp))}°` : '–');
+      const txt = temp != null ? `${Math.round(U.tmp(temp))}°` : '–';
+      if (el.lastChild.textContent !== txt) el.lastChild.textContent = txt;
       c ? el.style.setProperty('--c', c) : el.style.removeProperty('--c');
     });
+    setText('r_set', st && st.compound ? `${st.compound} · ${Math.floor(st.stint_laps || 0)} ${kol(Math.floor(st.stint_laps || 0)).toUpperCase()}` : '');
     // Pace
     const total = d.total_laps > 0 ? d.total_laps : st && st.total_laps;
-    setText('r_lap', d.lap > 0 ? (total ? `${d.lap}/${total}` : String(d.lap)) : '–');
-    setText('r_laptime', d.current_lap_ms != null ? fmt(d.current_lap_ms) : '');
-    const de = $('r_delta');
+    const lapHtml = d.lap > 0 ? `${d.lap}${total ? `<i>/${total}</i>` : ''}` : '–';
+    if ($('r_lap').innerHTML !== lapHtml) $('r_lap').innerHTML = lapHtml;
     setText('r_delta', d.live_delta_ms != null ? sgn(d.live_delta_ms / 1000, 2) : '–');
-    de.className = d.live_delta_ms > 0 ? 'delta-pos' : d.live_delta_ms < 0 ? 'delta-neg' : '';
-    const laps = (d.laps || []).filter(ms => ms > 0);
-    const a3 = avg(laps.slice(-3));
+    $('r_delta').style.color = d.live_delta_ms > 0 ? 'var(--acc)' : d.live_delta_ms < 0 ? '#2fd36b' : '';
     setText('r_last', fmt(d.last_lap_ms));
-    setText('r_avg3', a3 != null ? fmt(Math.round(a3)) : '–');
     setText('r_best', fmt(d.best_lap_ms));
-    const tr = laps.length >= 2 && a3 != null ? (laps[laps.length - 1] - a3) / 1000 : null;
-    setText('r_trend', tr == null ? '–' : sgn(tr, 2) + ' s');
-    $('r_trend').className = tr == null ? '' : tr > 0.05 ? 'delta-pos' : tr < -0.05 ? 'delta-neg' : '';
-    setText('r_pos', d.position != null ? (d.cars ? `${d.position}/${d.cars}` : String(d.position)) : '–');
-    // Fuel
-    const cap = d.fuel_capacity;
-    setText('r_fuelbig', cap > 0 ? `${U.fl(d.fuel).toFixed(1)} ${U.fuel}` : '–');
-    const m = st && st.fuel_margin_laps;
-    setText('r_margin', m == null ? '' : (m >= 0 ? '+' : '') + nf(m) + ' ' + kol(Math.abs(Math.round(m))));
-    $('r_margin').style.color = m == null ? '' : m < 0 ? 'var(--red)' : 'var(--green)';
-    const bar = $('r_fuelbar');
-    bar.firstElementChild.style.width = (cap > 0 ? d.fuel / cap * 100 : 0) + '%';
-    bar.firstElementChild.style.background = m != null && m < 0 ? 'var(--red)' : 'var(--dim)';
-    const need = st && st.fuel_needed, mk = bar.lastElementChild;
-    mk.hidden = !(need != null && cap > 0 && need < cap);
-    if (!mk.hidden) mk.style.left = (need / cap * 100) + '%';
-    setText('r_fuellaps', d.fuel_laps_left != null ? nf(d.fuel_laps_left) + ' kola' : '–');
-    const fpl = st && st.fuel_per_lap != null ? st.fuel_per_lap : d.fuel_per_lap;
-    setText('r_fpl', fpl != null ? nf(fpl, 2) : '–');
     // Box
     const b = boxCall(st);
     setText('r_boxbig', b.txt);
     setText('r_boxsub', b.sub);
-    if ($('r_box').className !== 'card ' + b.cls) $('r_box').className = 'card ' + b.cls;
+    if ($('r_box').className !== 'rc ' + b.cls) $('r_box').className = 'rc ' + b.cls;
+    // Gear, speed, pedals
+    setText('r_gear', gearText(d.gear));
+    $('r_gear').classList.toggle('limit', flash);
+    setText('r_speed', String(Math.round(U.spd(d.speed_kmh))));
+    setText('r_sugg', d.suggested_gear != null && d.suggested_gear !== d.gear ? '→ ' + gearText(d.suggested_gear) : '');
+    $('r_thr').style.width = (d.throttle / 2) + '%';
+    $('r_brk').style.width = (d.brake / 2) + '%';
+    // Map (the map card lives here on this page)
+    const bal = balanceState(d.balance);
+    carPos = { x: d.pos[0], z: d.pos[2], h: d.heading * Math.PI / 180, color: { none: '#ffffff', under: '#3d8bff', over: '#ff8a2a', neutral: '#2fd36b' }[bal] };
+    updateSegments(d);
+    drawMap(false);
+    // Fuel: white = needed to the finish, green = reserve, red = short; red line = what the finish needs
+    const cap = d.fuel_capacity;
+    const ev = cap === 100;
+    setText('r_fuelnum', cap > 0 ? (ev ? `${d.fuel.toFixed(1)} %` : `${U.fl(d.fuel).toFixed(1)}`) : '–');
+    if (cap > 0 && !ev && !$('r_fuelnum').querySelector('small')) $('r_fuelnum').insertAdjacentHTML('beforeend', ` <small>${U.fuel}</small>`);
+    const need = st && st.fuel_needed;
+    const on = cap > 0 ? Math.round(d.fuel / cap * FUEL_SEGS) : 0;
+    const needAt = need != null && cap > 0 ? Math.min(FUEL_SEGS, Math.round(need / cap * FUEL_SEGS)) : null;
+    rFuel.forEach((el, i) => {
+      let cls = i < on ? (needAt == null ? 'need' : on < needAt ? 'short' : i < needAt ? 'need' : 'res') : '';
+      if (needAt != null && i === needAt - 1) cls += ' mark';
+      if (el.className !== cls) el.className = cls;
+    });
+    setText('r_fuellaps', d.fuel_laps_left != null ? nf(d.fuel_laps_left) : '–');
+    const fpl = st && st.fuel_per_lap != null ? st.fuel_per_lap : d.fuel_per_lap;
+    setText('r_fpl', fpl != null ? nf(fpl, 2) : '–');
+    const m = st && st.fuel_margin_laps;
+    setText('r_margin', m == null ? '–' : (m >= 0 ? '+' : '') + nf(m));
+    $('r_margin').style.color = m == null ? '' : m < 0 ? 'var(--acc)' : '#2fd36b';
     // Strip
     setText('r_water', String(Math.round(U.tmp(d.water_temp))));
     setText('r_oil', String(Math.round(U.tmp(d.oil_temp))));
-    const c = st && st.calls.find(c => c.level !== 'info') || (st && st.calls[0]);
+    setText('r_pos', d.position != null ? `P${d.position}${d.cars ? '/' + d.cars : ''}` : '');
+    const c = st && (st.calls.find(c => c.level !== 'info') || st.calls[0]);
     setText('r_call', c ? c.text : '');
   }
 
