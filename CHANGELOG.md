@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Kouč – cíl bez spinů**: „Cíl: Zx“ a souhrn session počítají průměrnou ztrátu jen z normálních
+  kol (do 107 % nejlepšího). Kolo se spinem, výletem mimo trať nebo zastávkou dřív přetáhlo
+  průměr (F3500 Yas Marina: Z14 „10,39 s“ kvůli spinu se ztrátou 41 s).
+
 - **Doporučení nastavení** (stránka Nastavení auta): z posledních 10 celých kol aktivního setupu
   na trati (min. 3) se počítá vyvážení ve třech fázích zatáčky (brzdy při vjezdu, střed, plyn
   při výjezdu – nedotáčivost/přetáčivost nad ±2°), blokování kol, prokluz a omezovač v nejvyšším

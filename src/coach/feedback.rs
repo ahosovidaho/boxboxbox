@@ -356,13 +356,21 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
     })
 }
 
-/// Focus: the corner with the largest average loss; cause taken from the latest lap.
+/// Laps slower than this × the best lap are incidents and left out of the focus.
+const INCIDENT: f64 = 1.07;
+
+/// Focus: the corner with the largest average loss over the normal laps (incidents left out);
+/// cause taken from the latest lap.
 pub fn focus_for(res: &Comparison, latest: &LapResult) -> Option<Value> {
     if res.laps.len() < 2 {
         return None;
     }
     let reference = res.reference_lap()?;
-    let not_ref = || res.laps.iter().filter(|l| l.file != reference.file);
+    // Laps with a spin, an excursion or a pit stop (over 107 % of the best) would dominate the
+    // average: a 40 s spin is no lesson for that corner on the normal laps
+    let limit = reference.ms as f64 * INCIDENT;
+    let not_ref = || res.laps.iter().filter(|l| l.file != reference.file && (l.ms as f64) <= limit);
+    not_ref().next()?;
     let (loss, cn) = res.corners.iter().map(|c| (lap::mean(not_ref().map(|l| l.corner(c.n).dt)), c.n)).fold(
         None::<(f64, usize)>,
         |best, p| match best {
@@ -376,7 +384,7 @@ pub fn focus_for(res: &Comparison, latest: &LapResult) -> Option<Value> {
                                        "All corners are close to your best – now repeat the lap cleanly.", "Všechny zatáčky jsou blízko tvého nejlepšího – teď kolo čistě zopakuj.")}));
     }
     // Cause from the latest lap; if that is the best lap itself, from the weakest lap there
-    let src = if latest.file != reference.file {
+    let src = if latest.file != reference.file && (latest.ms as f64) <= limit {
         latest
     } else {
         not_ref().fold(None::<&LapResult>, |best, l| match best {
@@ -506,7 +514,8 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
         .corners
         .iter()
         .filter_map(|c| {
-            let vals: Vec<f64> = laps.iter().filter(|l| l.file != reference.file).map(|l| l.corner(c.n).dt).collect();
+            let vals: Vec<f64> =
+                laps.iter().filter(|l| l.file != reference.file && (l.ms as f64) <= best * INCIDENT).map(|l| l.corner(c.n).dt).collect();
             (!vals.is_empty()).then(|| (lap::mean(vals), c.n))
         })
         .collect();
@@ -591,4 +600,37 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     md.extend(laps.iter().map(|l| format!("| {} | {} | {} |", l.lap, t_loc(l.ms as f64), secs((l.ms as f64 - best) / 1000.0, 3))));
     fs::write(dir.join("summary.md"), md.join("\n") + "\n")?;
     Ok(item)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A spin in one lap (40 s lost in Z14) must not make Z14 the focus for the normal laps.
+    #[test]
+    fn focus_ignores_incident_laps() {
+        let lap = |file: &str, ms: i64, dts: [f64; 2]| {
+            json!({ "file": file, "lap": 1, "ms": ms, "delta_ms": 0,
+                    "corners": [{ "n": 1, "dt": dts[0] }, { "n": 14, "dt": dts[1] }] })
+        };
+        let corner = |n: usize| json!({ "n": n, "dir": "L", "x": 0.0, "z": 0.0, "s": 0, "ref": null });
+        let res: Comparison = serde_json::from_value(json!({
+            "reference": { "file": "a", "ms": 94_218, "lap": 4 },
+            "steer_ratio": 15.0,
+            "corners": [corner(1), corner(14)],
+            "laps": [lap("a", 94_218, [0.0, 0.0]), lap("b", 94_530, [0.33, 0.17]), lap("c", 95_121, [0.30, 0.40]),
+                     lap("spin", 156_554, [0.0, 40.97])],
+            "theoretical_ms": null,
+        }))
+        .unwrap();
+        let latest = res.laps.iter().find(|l| l.file == "spin").unwrap();
+        let f = focus_for(&res, latest).unwrap();
+        // Z1 loses 0.32 s on average on the normal laps, Z14 only 0.29 s (with the spin: 13.8 s)
+        assert_eq!(f["corner"], 1, "{f}");
+        assert!(f["text"].as_str().unwrap().contains(" 0,3"), "{f}");
+        // Only incident laps besides the best: no focus
+        let mut only = res.clone();
+        only.laps.retain(|l| l.file == "a" || l.file == "spin");
+        assert!(focus_for(&only, latest).is_none());
+    }
 }
