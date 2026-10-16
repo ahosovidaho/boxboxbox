@@ -271,6 +271,13 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
     };
 
     let mut points: Vec<String> = Vec::new();
+    for i in &lap.incidents {
+        let what = if i.kind == "spin" { tr!("Dreher", "Spin", "Spin") } else { tr!("Rutscher", "Slide", "Ujetí zádi") };
+        let at = i.corner.map(corner).unwrap_or_default();
+        let (cause, tip) = (&i.cause, &i.tip);
+        points.push(format!("⚠ {what} {at}: {cause}. {tip}"));
+        tone = "warn";
+    }
     if let Some(sp) = metrics.spins.first() {
         let (at, v) = (t_loc(sp.lap_ms.unwrap_or(0.0)), i18n::speed(sp.v as f64));
         points.push(tr!("Dreher/großer Rutscher bei {at} ({v}).", "Spin/big slide at {at} ({v}).", "Hodiny/velký smyk v {at} ({v})."));

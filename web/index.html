@@ -404,10 +404,10 @@
   .tlg { display: inline-flex; align-items: center; gap: 6px; }
   .tlg i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
   #p9body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 23%) 1fr; gap: 8px; }
-  #tSide { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  #tSide { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
   #tMapCard { flex: 0 0 auto; padding: 8px; }
   #tMap { width: 100%; aspect-ratio: 1.15; display: block; }
-  #tCorners { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; align-content: start; }
+  #tCorners { flex: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; align-content: start; }
   #tCorners button { background: #16161a; border: 1px solid #26262c; color: var(--text); border-radius: 9px; padding: 6px 4px; font: 600 13px -apple-system, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; gap: 1px; }
   #tCorners button small { font: 500 11px var(--mono); }
   #tCorners button.on { border-color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
@@ -425,6 +425,18 @@
   .tch .rd { position: absolute; right: 0; top: 2px; background: var(--panel); padding-left: 6px; font: 12px var(--mono); color: var(--dim); pointer-events: none; z-index: 1; text-align: right; }
   .tch .rd b { font-weight: 500; }
   #tCross { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.35); pointer-events: none; display: none; }
+  #tView { align-self: flex-start; }
+  #tInc { flex: none; display: flex; flex-direction: column; gap: 5px; }
+  #tInc button { text-align: left; background: #16161a; border: 1px solid #26262c; border-left: 3px solid var(--orange); border-radius: 8px; color: var(--text); padding: 6px 8px; font: 12px/1.35 -apple-system, system-ui, sans-serif; }
+  #tInc button.spin { border-left-color: var(--red); }
+  #tInc button b { font-size: 13px; }
+  #tInc button span { color: var(--dim); }
+  #tInc h4 { margin: 2px 0 0; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--label); font-weight: 600; }
+  #tCorners button.r2 small { color: var(--red) !important; }
+  #tCorners button.r1 small { color: var(--orange) !important; }
+  .tmark { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255, 74, 61, .55); pointer-events: none; }
+  .tmark.slide { background: rgba(255, 138, 42, .5); }
+  #tSum .inc { display: block; white-space: normal; color: var(--orange); margin-top: 2px; }
   #tAxis { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--label); padding-top: 2px; }
   @media (max-width: 900px) { #tCorners { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); } #tCorners button { padding: 4px 2px; } }
   @media (max-width: 760px) { #p9body { grid-template-columns: 1fr; } #tSide { flex-direction: row; } #tMapCard { width: 38%; } }
@@ -959,7 +971,9 @@
   <div id="p9body">
     <div id="tSide">
       <div class="card" id="tMapCard"><svg id="tMap" role="img" aria-label="Mapa trati se zatáčkami"></svg></div>
+      <span class="seg" id="tView"><button data-v="loss" class="on">Ztráta</button><button data-v="risk">Riziko</button></span>
       <div id="tCorners"></div>
+      <div id="tInc"></div>
     </div>
     <div class="card" id="tMain">
       <div id="tSum"><span class="muted">Načítám…</span></div>
@@ -969,6 +983,7 @@
         <div class="tch" id="tcThr"><span class="lb">Plyn (%)</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
         <div class="tch" id="tcBrk"><span class="lb">Brzda (%)</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
         <div class="tch" id="tcSteer"><span class="lb">Volant (°) · stupeň</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
+        <div id="tMarks"></div>
         <div id="tCross"></div>
       </div>
       <div id="tAxis"><span></span><span></span><span></span></div>
@@ -1215,7 +1230,7 @@
   // strategy, all data) and race (race dashboard, race recap, strategy). The mode lives on the
   // server (practice mode of the strategy), so all devices show the same.
   // Telemetry graphs page state (declared early: the start page may be page 9)
-  let tData = null, tCorner = null, tWin = [0, 1], tFile = null, tUpdated = null, tBusy = false;
+  let tData = null, tCorner = null, tWin = [0, 1], tFile = null, tUpdated = null, tBusy = false, tView = 'loss';
   const ORDER = { practice: [1, 3, 9, 4, 5, 8, 2], race: [6, 7, 5] };
   const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
@@ -1261,7 +1276,7 @@
   let press = null;
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
-    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #tCharts, #tCorners, button, input, select, textarea');
+    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #tCharts, #tSide, button, input, select, textarea');
     // Horizontal drags on a chart move its cursor instead of switching pages
     press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
@@ -2501,7 +2516,23 @@
     setText('tRefName', `nejlepší (kolo ${d.reference.lap} · ${fmtLap(d.reference.ms)})`);
     const dtc = v => v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)';
     $('tCorners').innerHTML = `<button class="all ${tCorner == null ? 'on' : ''}" data-n="">Celé kolo <small style="color:${dtc(d.lap.ms - d.reference.ms > 0 ? 1 : 0)}">${tsg((d.lap.ms - d.reference.ms) / 1000, 3)}</small></button>`
-      + d.corners.map(c => `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}">Z${c.n}<small style="color:${dtc(c.dt)}">${tsg(c.dt, 2)}</small></button>`).join('');
+      + d.corners.map(c => {
+        if (tView === 'risk') {
+          const r = (d.risk || []).find(x => x.n === c.n) || { level: 0, slides: 0, laps: 0, spins: 0 };
+          const txt = r.spins ? `${r.spins}× spin` : r.moments ? `${r.moments}× ujetí` : `${r.slides}/${r.laps}`;
+          return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''} r${r.level}" title="kola, kde ujela záď / všechna kola">Z${c.n}<small style="color:var(--dim)">${txt}</small></button>`;
+        }
+        return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}">Z${c.n}<small style="color:${dtc(c.dt)}">${tsg(c.dt, 2)}</small></button>`;
+      }).join('');
+    renderIncidents();
+  }
+  // Spins and slides of the session: tap = that lap and corner, marked in the graphs
+  function renderIncidents() {
+    const list = (tData.incidents || []);
+    $('tInc').innerHTML = list.length ? '<h4>Spiny a ujetí zádi</h4>' + list.map((x, k) => {
+      const i = x.incident;
+      return `<button data-k="${k}" class="${i.kind}"><b>${i.kind === 'spin' ? 'Spin' : 'Ujetí zádi'} · kolo ${x.lap}${i.corner ? ' · Z' + i.corner : ''}</b><br><span>${esc(i.cause)}</span></button>`;
+    }).join('') : (tView === 'risk' ? '<h4>Žádné spiny ani ujetí zádi</h4>' : '');
   }
   const tsg = (v, d) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(d).replace('.', ',');
   function setTraceWindow() {
@@ -2533,6 +2564,10 @@
     }
     parts.push(`<span>Výjezd <em>${u(a.v_exit)}</em> / ${u(r.v_exit)} km/h</span>`);
     if (a.gear_min != null && r.gear_min != null && a.gear_min !== r.gear_min) parts.push(`<span>Stupeň <em>${a.gear_min}</em> / ${r.gear_min}</span>`);
+    for (const x of lapIncidents().filter(x => x.incident.corner === c.n)) {
+      const i = x.incident;
+      parts.push(`<span class="inc">⚠ ${i.kind === 'spin' ? 'Spin' : 'Ujetí zádi'} (${i.speed} km/h${i.dv != null ? ', ' + (i.dv > 0 ? '+' : '') + i.dv + ' proti nejlepšímu' : ''}): ${esc(i.cause)}. ${esc(i.tip)}</span>`);
+    }
     $('tSum').innerHTML = parts.join('');
   }
   function drawTraces() {
@@ -2569,6 +2604,8 @@
     const yS = v => 50 - v / sm * 46;
     $('tcSteer').querySelector('svg').setAttribute('viewBox', '0 0 1000 100');
     $('tcSteer').querySelector('svg').innerHTML = zero(50) + line(R.steer, yS, T_REF) + line(L.steer, yS, T_LAP);
+    $('tMarks').innerHTML = lapIncidents().filter(x => x.incident.s >= w0 && x.incident.s <= w1)
+      .map(x => `<div class="tmark ${x.incident.kind}" style="left:${((x.incident.s - w0) / (w1 - w0) * 100).toFixed(2)}%"></div>`).join('');
     const ax = $('tAxis').children;
     ax[0].textContent = Math.round(w0) + ' m'; ax[1].textContent = Math.round((w0 + w1) / 2) + ' m'; ax[2].textContent = Math.round(w1) + ' m';
     traceReadout(null);
@@ -2613,7 +2650,9 @@
     if (c) html += `<path d="${path(idx(c.from), idx(c.to))}" fill="none" stroke="#f2c230" stroke-width="${6 * k}" stroke-linecap="round" stroke-linejoin="round"/>`;
     for (const x of d.corners) {
       const [px, py] = pts[idx(x.apex)];
-      const col = x.dt > 0.05 ? '#ff4a3d' : x.dt < -0.05 ? '#2fd36b' : '#8a8a94';
+      const rk = (d.risk || []).find(r => r.n === x.n);
+      const col = tView === 'risk' ? (rk && rk.level === 2 ? '#ff4a3d' : rk && rk.level === 1 ? '#ff8a2a' : '#34343c')
+        : x.dt > 0.05 ? '#ff4a3d' : x.dt < -0.05 ? '#2fd36b' : '#8a8a94';
       html += `<g data-n="${x.n}" style="cursor:pointer"><circle cx="${px}" cy="${py}" r="${9 * k}" fill="#0b0b0d" stroke="${col}" stroke-width="${1.5 * k}"/>`
         + `<text x="${px}" y="${py}" fill="${x.n === tCorner ? '#f2c230' : '#d9d9de'}" font-size="${9 * k}" font-weight="700" text-anchor="middle" dominant-baseline="central">${x.n}</text></g>`;
     }
@@ -2635,6 +2674,22 @@
     renderTraceHead(); setTraceWindow();
   });
   $('tLap').addEventListener('change', e => loadTraces(e.target.value));
+  const lapIncidents = () => tData ? (tData.incidents || []).filter(x => x.file === tData.lap.file) : [];
+  $('tView').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || !tData) return;
+    tView = b.dataset.v;
+    $$('#tView button').forEach(x => x.classList.toggle('on', x === b));
+    renderTraceHead(); drawTraceMap();
+  });
+  $('tInc').addEventListener('click', async e => {
+    const b = e.target.closest('button');
+    if (!b || !tData) return;
+    const x = tData.incidents[+b.dataset.k];
+    tCorner = x.incident.corner;
+    if (x.file !== tData.lap.file) await loadTraces(x.file);
+    else { renderTraceHead(); setTraceWindow(); }
+  });
   const tPoint = e => {
     if (!tData) return;
     const box = $('tCharts').getBoundingClientRect();

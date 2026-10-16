@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Mapa rizika a rozbor spinů** (stránka Telemetrie): přepínač Ztráta / Riziko. Riziko u každé
+  zatáčky = spiny, ujetí zádi a kolik kol mělo záď přes 8° (červeně / oranžově i na mapě).
+  Spin (smyk karoserie přes 30° nebo zastavení na trati) a ujetí zádi (záď přes 12° aspoň 0,25 s)
+  se hledají v každém kole; z 1,5 s před nimi se určí pravděpodobná příčina (podřazení na
+  brzdách, brzdění v zatáčce, prudké ubrání nebo přidání plynu, plyn s natočeným volantem,
+  rychlejší vjezd) a tip. Seznam vlevo – ťuknutím se otevře to kolo a zatáčka s vyznačeným
+  místem v grafech. Kouč je píše i do hodnocení kola.
+
 - **Telemetrie po zatáčkách** (Trénink, nová stránka za Koučem): libovolné kolo session proti
   nejlepšímu na stejné vzdálenosti – rozdíl času, rychlost, plyn nahoru / brzda dolů, volant
   a stupeň. Celé kolo nebo jedna zatáčka s brzdnou zónou (výchozí: zatáčka s největší ztrátou),

@@ -3,6 +3,7 @@
 
 pub mod compare;
 pub mod feedback;
+pub mod incident;
 pub mod lap;
 pub mod report;
 pub mod trailbrake;

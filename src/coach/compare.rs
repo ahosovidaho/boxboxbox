@@ -41,6 +41,9 @@ pub struct LapResult {
     pub ms: i64,
     pub delta_ms: i64,
     pub corners: Vec<LapCorner>,
+    /// Spins and slides in this lap
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incidents: Vec<super::incident::Incident>,
 }
 
 impl LapResult {
@@ -312,7 +315,7 @@ fn s_of(rows: &[Row], i: usize) -> f64 {
 }
 
 fn evaluate_lap(path: &Path, ms: i64, ref_ms: i64, rows: &[Row], reference: &[Row], corners: &[Corner]) -> LapResult {
-    let corners = corners
+    let lap_corners = corners
         .iter()
         .map(|c| {
             let (s0, s1) = (s_of(reference, c.from), s_of(reference, c.to));
@@ -320,7 +323,10 @@ fn evaluate_lap(path: &Path, ms: i64, ref_ms: i64, rows: &[Row], reference: &[Ro
             LapCorner { n: c.n, dt: lap::round_to(dt, 3), stats: corner_stats(rows, s0, s1, c.s) }
         })
         .collect();
-    LapResult { file: file_name(path), lap: rows[0].lap as i64, ms, delta_ms: ms - ref_ms, corners }
+    let sections: Vec<(usize, f64, f64)> =
+        corners.iter().map(|c| (c.n, s_of(reference, c.from), s_of(reference, c.to))).collect::<Vec<_>>();
+    let incidents = super::incident::detect(rows, reference, &sections);
+    LapResult { file: file_name(path), lap: rows[0].lap as i64, ms, delta_ms: ms - ref_ms, corners: lap_corners, incidents }
 }
 
 fn dist2(r: &Row, x: f64, z: f64) -> f64 {
@@ -496,6 +502,9 @@ fn corner_stats(rows: &[Row], s_from: f64, s_to: f64, s_apex: f64) -> Option<Cor
     })
 }
 
+/// Rear slip angle (°) from which a lap counts as "the rear stepped out" in a corner
+const RISK_SLIDE: f64 = 8.0;
+
 /// Grid step of the traces (m along the reference lap)
 const TRACE_STEP: f64 = 4.0;
 
@@ -587,7 +596,35 @@ impl Comparer {
             })
             .collect();
         let lap_of = |p: &Path| meta_lap(p);
+        // Risk per corner over all laps of the session, and every spin / slide
+        let res = self.compare(session)?;
+        let mut incidents = Vec::new();
+        for l in &res.laps {
+            for i in &l.incidents {
+                incidents.push(serde_json::json!({ "file": l.file, "lap": l.lap, "ms": l.ms, "incident": i }));
+            }
+        }
+        let risk: Vec<serde_json::Value> = res
+            .corners
+            .iter()
+            .map(|c| {
+                let slides = res.laps.iter().filter(|l| l.corner(c.n).stats.as_ref().is_some_and(|s| s.rear_slide >= RISK_SLIDE)).count();
+                let spins = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "spin").count();
+                let moments = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "slide").count();
+                let n = res.laps.len().max(1);
+                let level = if spins > 0 || slides * 10 >= n * 4 {
+                    2
+                } else if moments > 0 || slides * 10 >= n * 2 {
+                    1
+                } else {
+                    0
+                };
+                serde_json::json!({ "n": c.n, "laps": res.laps.len(), "slides": slides, "spins": spins, "moments": moments, "level": level })
+            })
+            .collect();
         Ok(serde_json::json!({
+            "risk": risk,
+            "incidents": incidents,
             "session": file_name(session),
             "laps": laps.iter().map(|(p, ms)| serde_json::json!({ "file": file_name(p), "lap": lap_of(p), "ms": ms })).collect::<Vec<_>>(),
             "reference": { "file": file_name(&ref_path), "lap": lap_of(&ref_path), "ms": ref_ms },
