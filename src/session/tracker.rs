@@ -308,7 +308,9 @@ impl Tracker {
         let loading = p.flags & flags::LOADING != 0;
         if let (Some(prev), true) = (self.prev_fuel, on_track && !loading && p.current_lap > 0) {
             let diff = p.fuel_level - prev;
-            if diff > 0.05 {
+            // Refuelling: GT7 adds fuel in steps of ~0.05, part of them just below 0.05, so in the
+            // pit (standing) every rise counts; on the move only clear jumps (a reset)
+            if diff > 0.05 || (diff > 0.0 && p.speed_ms < 1.0) {
                 self.lap_refuel = true;
                 let lap = p.current_lap;
                 self.with_strategy(|s| s.refuelled(lap, diff));

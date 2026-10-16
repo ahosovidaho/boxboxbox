@@ -180,7 +180,15 @@ impl Store {
         let best_id = ["0-100", "0-50"].iter().find_map(|k| best.get(k).map(|b| b.2.id.as_str()));
         let best_accel = runs.iter().find(|r| Some(r.id.as_str()) == best_id && Some(&r.id) != last_accel.map(|l| &l.id));
 
-        let dyno_run = runs.iter().find(|r| r.dyno.is_some());
+        // The run that reached the highest rpm: a run shifted early cannot tell whether revving
+        // higher pays off (every gear looks "late"); newest first among equals
+        let dyno_run = runs.iter().filter(|r| r.dyno.is_some()).fold(None::<&Run>, |best, r| {
+            let rpm = |x: &Run| x.dyno.as_ref().map_or(0.0, |d| d.max_rpm);
+            match best {
+                Some(b) if rpm(b) >= rpm(r) => Some(b),
+                _ => Some(r),
+            }
+        });
         let overview = Overview {
             car_code: car,
             car: runs.first().map(|r| r.car.clone()).or_else(|| crate::telemetry::cars::name(car).map(str::to_string)),

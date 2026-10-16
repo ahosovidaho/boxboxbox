@@ -561,13 +561,17 @@ impl Strategy {
             self.practice.saved.life.len(),
             self.practice.saved.life.values().sum::<u32>(),
             self.practice.saved.laps.iter().filter(|l| l.counted).count()
-        );
+        ) + &format!("|{:?}|{}", self.practice.saved.compound, self.practice.saved.track);
         if let Some((k, r, u)) = &self.filled {
             if *k == key {
                 return (r.clone(), u.clone());
             }
         }
-        let result = fill_from_practice(&self.practice, race, car);
+        let mut result = fill_from_practice(&self.practice, race, car);
+        // No starting compound set: the tyres last marked in practice on this track
+        if result.0.start_compound.is_none() && practice::track_key(&self.practice.saved.track) == practice::track_key(&race.track) {
+            result.0.start_compound.clone_from(&self.practice.saved.compound);
+        }
         self.filled = Some((key, result.0.clone(), result.1.clone()));
         result
     }
