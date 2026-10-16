@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Trénink na vybraný závod**: na stránce Strategie je tlačítko „Závod…“ i v Tréninku (výběr
+  z kalendáře šampionátu) a pod tratí tlačítko „Trénovat na závod: <trať> · opotř. ×… · spotř. ×…“,
+  které přenese trať a násobiče závodu do tréninku. Nabídka tratí obsahuje i trať závodu.
+
 - **Karty nastavení auta** (Trénink, nová stránka „Nastavení auta“ před stránkou dat): hodnoty
   z menu nastavení GT7 – pneumatiky, podvozek (světlá výška, frekvence, stabilizátory, tlumiče,
   odklon, sbíhavost), přítlak, diferenciál, brzdy a asistenty, převodovka, výkon a zátěž –

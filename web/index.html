@@ -453,7 +453,6 @@
   .seg button { background: #1c1c21; color: var(--dim); border: 0; padding: 4px 12px; font: 600 13px -apple-system, system-ui, sans-serif; }
   .seg button.on { background: var(--text); color: #000; }
   #p5[data-mode="practice"] .race-only, #p5:not([data-mode="practice"]) .practice-only { display: none; }
-  #p5[data-mode="practice"] #stPick { display: none; }
   .prow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; font-size: 13px; color: var(--dim); }
   .prow input[type=text], .prow input[type=number] { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 6px 8px; font: 14px -apple-system, system-ui, sans-serif; }
   .prow input[type=text] { flex: 1 1 160px; min-width: 0; }
@@ -470,6 +469,7 @@
   .ptab input { width: 52px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; padding: 4px 5px; font: 13px var(--mono); text-align: right; }
   .ptab tr.off td { color: var(--label); text-decoration: line-through; }
   .ptab button { background: none; border: 1px solid #2c2c33; color: var(--dim); border-radius: 7px; padding: 2px 7px; font-size: 12px; }
+  #prFromRace { width: 100%; margin-top: 6px; text-align: left; white-space: normal; }
   .pnote { font-size: 12px; color: var(--label); margin-top: 6px; line-height: 1.4; }
   .pfrom { font-size: 12px; color: var(--dim); margin-top: 6px; }
   #raceSheet .sheet { max-width: 560px; }
@@ -771,6 +771,7 @@
     <div class="card practice-only"><h2>Trénink</h2>
       <div class="stbig" id="prBig">–</div>
       <div class="prow">Trať <input type="text" id="prTrack" list="prTracks" placeholder="trať a varianta, např. Nürburgring GP" autocomplete="off"><datalist id="prTracks"></datalist></div>
+      <button class="stbtn small" id="prFromRace" hidden></button>
       <div class="pnote" id="prTrackInfo"></div>
       <div class="prow"><label>Opotřebení × <input type="number" id="prWear" inputmode="decimal" step="0.5" min="0"></label>
         <label>Spotřeba × <input type="number" id="prFuel" inputmode="decimal" step="0.5" min="0"></label></div>
@@ -2510,12 +2511,14 @@
       : 'Tvar trati se uloží po prvním celém kole.');
     setText('prTrackInfo', info + (prData && prData.setup ? ` · setup: ${prData.setup}` : prData ? ' · bez setupu (stránka Nastavení auta)' : ''));
     $('prTrackInfo').classList.toggle('bad', !!ps.layout_warning);
+    renderFromRace(ps);
     $('prChips').innerHTML = ['R', 'S', 'C'].flatMap(k => ['S', 'M', 'H'].map(c => k + c))
       .map(c => `<button data-c="${c}" class="${c === ps.compound ? 'on' : ''}">${chip(c)}</button>`).join('');
     $('prCount').classList.toggle('on', ps.counting);
     setText('prCount', ps.counting ? 'Počítat kola ✓' : 'Nepočítat (automat)');
     if (!prData) return;
-    $('prTracks').innerHTML = (prData.tracks || []).map(t => `<option value="${t}">`).join('');
+    const tracks = [...new Set([stRace && stRace.track, ...(prData.tracks || [])].filter(Boolean))];
+    $('prTracks').innerHTML = tracks.map(t => `<option value="${esc(t)}">`).join('');
     const sm = prData.summary;
     const rows = sm && sm.compounds.length ? sm.compounds.map(c => `<tr><td>${c.compound}</td>`
       + `<td><input type="number" inputmode="numeric" min="1" data-life="${c.compound}" value="${c.life ?? ''}"></td>`
@@ -2546,6 +2549,23 @@
   $('prNewSet').onclick = () => prAction('practice_new_set');
   $('prCount').onclick = () => prAction('practice_counting', { value: lastData.strategy?.practice?.counting ? '0' : '1' });
   $('prTrack').addEventListener('change', async () => { await prAction('practice_track', { value: $('prTrack').value }); await loadPractice(); });
+  // Practice for the chosen race: its track (name and layout as in the race settings) and multipliers
+  function renderFromRace(ps) {
+    const b = $('prFromRace'), r = stRace;
+    const same = (a, c) => c == null || Math.abs(a - c) < 1e-6;
+    const show = !!(r && r.track) && (r.track.trim().toLowerCase() !== (ps.track || '').trim().toLowerCase()
+      || !same(ps.wear_mult, r.tyre_wear) || !same(ps.fuel_mult, r.fuel_mult));
+    b.hidden = !show;
+    if (show) b.textContent = `Trénovat na závod: ${r.track}` + (r.tyre_wear != null ? ` · opotř. ×${nf(r.tyre_wear, 1)}` : '')
+      + (r.fuel_mult != null ? ` · spotř. ×${nf(r.fuel_mult, 1)}` : '');
+  }
+  $('prFromRace').onclick = async () => {
+    const r = stRace;
+    if (!r || !r.track) return;
+    await prAction('practice_track', { value: r.track });
+    if (r.tyre_wear != null || r.fuel_mult != null) await prAction('practice_mults', { wear: r.tyre_wear, fuel: r.fuel_mult });
+    await loadPractice();
+  };
   const saveMults = async () => { await prAction('practice_mults', { wear: numIn($('prWear').value), fuel: numIn($('prFuel').value) }); await loadPractice(); };
   $('prWear').addEventListener('change', saveMults);
   $('prFuel').addEventListener('change', saveMults);
@@ -2749,7 +2769,7 @@
     const race = raceFromForm();
     if (!race.name) { $('rErr').textContent = 'Vyplň aspoň název závodu.'; $('rErr').hidden = false; return; }
     const saved = await stPost('api/strategy/race', race);
-    if (saved) { stRace = saved.race; $('raceSheet').hidden = true; }
+    if (saved) { stRace = saved.race; $('raceSheet').hidden = true; prKey = ''; }
   };
 
   // ---------- WebSocket ----------
