@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Body řazení z jízdy**: každý úsek na plný plyn v rovině (bez brzdy, malá rychlost stáčení)
+  se ukládá pro auto (`perf/<auto>/track.json`, max. ~11 min plného plynu) a z nich se počítá
+  výkonová křivka a body řazení pro všechny použité stupně (`track_dyno.json`, přepočet každých
+  ~25 s plného plynu). Stoupání a klesání se započítá (gravitace po sklonu), prokluz se vyřadí.
+- Otáčkoměr bere bod řazení z jízdy, pak z měření z místa, pak kontrolku hry; „pozdě“ se bere
+  jen ze zdroje, který došel k omezovači. Pod LED: „ŘADIT 7 440 · Z JÍZDY / Z MĚŘENÍ / HRA“.
+- Starší nahrávky jde naimportovat: `boxboxbox perf --save <session>` (každá session jen jednou).
+
 - **Živý kouč v Tréninku** (stránka 1): dole na mapě rada pro příští zatáčku podle toho, jak
   minulé vyhodnocené kolo dopadlo proti nejlepšímu: „brzdi o 12 m dřív / později“, „víc
   rychlosti do vrcholu“, „dřív na plyn“ nebo „✓ drž to“, a ztráta v sekundách. Rámeček zežloutne

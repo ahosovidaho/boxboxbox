@@ -30,6 +30,8 @@ struct Overview<'a> {
     /// Power curve of the most recent run that has one (short runs have none)
     dyno: Option<&'a Dyno>,
     dyno_time: Option<&'a str>,
+    /// Power curve and shift points from all full-throttle driving with this car
+    track_dyno: Option<super::track::TrackDynoFile>,
 }
 
 #[derive(Serialize)]
@@ -84,6 +86,10 @@ impl Store {
     /// Number of runs saved since start; changes tell the dashboard to reload.
     pub fn saved(&self) -> u32 {
         self.saved.load(Ordering::Relaxed)
+    }
+
+    pub fn dir(&self) -> &std::path::Path {
+        &self.dir
     }
 
     fn car_dir(&self, car: i32) -> PathBuf {
@@ -214,6 +220,7 @@ impl Store {
             last_brake: runs.iter().find(|r| r.kind == Kind::Brake),
             dyno: dyno_run.and_then(|r| r.dyno.as_ref()),
             dyno_time: dyno_run.map(|r| r.time.as_str()),
+            track_dyno: super::track::read(&self.dir, car),
         };
         serde_json::to_string(&overview).unwrap_or_default()
     }

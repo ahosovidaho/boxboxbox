@@ -2093,14 +2093,20 @@
   // same car): the rpm where the next gear starts to pull harder; "late" = rev up to the highest rpm
   // measured, minus a little so the light comes before the limiter. Without a measurement, or in
   // the top gear: the shift light of the game.
+  // Two sources: all full-throttle driving with this car (practice, races: every gear) and the
+  // launch runs of page 4. A source counts for a gear only if it is a real shift point, or if it
+  // revved up to the limiter ("late" from a run that was shifted early says nothing).
   function shiftPoint(d) {
     const game = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
-    const dy = perf && perf.dyno;
-    const s = dy && (dy.shifts || []).find(x => x.gear === d.gear);
-    if (!s) return { rpm: game, src: 'HRA' };
-    // "Late" from a run that never reached the limiter says nothing: use the game's
-    if (s.late) return dy.max_rpm >= game * 0.97 ? { rpm: Math.min(game, dy.max_rpm) - 100, src: 'OPTIMUM' } : { rpm: game - 100, src: 'HRA' };
-    return { rpm: s.rpm, src: 'OPTIMUM' };
+    const from = (dy, src) => {
+      const s = dy && (dy.shifts || []).find(x => x.gear === d.gear);
+      if (!s) return null;
+      if (!s.late) return { rpm: s.rpm, src };
+      return dy.max_rpm >= game * 0.97 ? { rpm: Math.min(game, dy.max_rpm) - 100, src } : null;
+    };
+    return from(perf && perf.track_dyno && perf.track_dyno.dyno, 'Z JÍZDY')
+      || from(perf && perf.dyno, 'Z MĚŘENÍ')
+      || { rpm: game - 100, src: 'HRA' };
   }
   // ---------- Live coach (practice, page 1) ----------
   // The corner just passed is the one whose apex the car came near; the hint is for the next

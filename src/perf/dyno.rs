@@ -123,7 +123,10 @@ pub(super) fn compute(pts: &[Pt], transmission: [f32; 8]) -> Option<Dyno> {
         if win.iter().any(|q| (q.rpm / q.v / r - 1.0).abs() > RATIO_TOL) {
             continue;
         }
-        let acc = (b.v - a.v) / 3.6 / (b.t - a.t);
+        // Uphill the engine also lifts the car: add gravity along the slope
+        let ds = b.s - a.s;
+        let slope = if ds > 0.5 { (b.y - a.y) / ds } else { 0.0 };
+        let acc = (b.v - a.v) / 3.6 / (b.t - a.t) + 9.81 * slope;
         bins.entry((p.gear, (p.rpm / BIN_RPM).round() as i32)).or_default().push(acc * p.v / 3.6);
     }
 

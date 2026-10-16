@@ -119,12 +119,13 @@ fn details(r: &Run) -> Vec<String> {
 }
 
 /// Reads the channels a measurement needs from a recorded lap file.
-fn samples(path: &Path) -> io::Result<Vec<Sample>> {
+fn samples(path: &Path) -> io::Result<Vec<(Sample, f32)>> {
     let text = fs::read_to_string(path)?;
     let mut lines = text.lines();
     let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
     let col = |name: &str| header.iter().position(|c| *c == name);
     let cols = ["packet_id", "flags", "speed_kmh", "rpm", "gear", "throttle", "brake", "pos_y"].map(col);
+    let yaw_col = col("angvel_y");
     // Recorded since 08.10.2026; older files have no transmission ratios
     let ratio_cols: Vec<Option<usize>> = (1..=8).map(|g| col(&format!("gear_ratio_{g}"))).collect();
     let [Some(tick), Some(flags), Some(speed), Some(rpm), Some(gear), Some(thr), Some(brk), Some(y)] = cols else {
@@ -152,6 +153,7 @@ fn samples(path: &Path) -> io::Result<Vec<Sample>> {
                 y: f(y)?,
                 gear_ratios: std::array::from_fn(|i| ratio_cols[i].and_then(f).unwrap_or(0.0)),
             })
+            .map(|s| (s, yaw_col.and_then(f).unwrap_or(0.0)))
         })
         .collect())
 }
@@ -171,7 +173,7 @@ struct SessionInfo {
 
 fn session_info(dir: &Path) -> Option<SessionInfo> {
     let meta: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join("session.json")).ok()?).ok()?;
-    let first_tick = lap_files(dir).iter().find_map(|f| samples(f).ok()?.first().map(|s| s.tick))?;
+    let first_tick = lap_files(dir).iter().find_map(|f| samples(f).ok()?.first().map(|s| s.0.tick))?;
     Some(SessionInfo {
         name: dir.file_name()?.to_string_lossy().into_owned(),
         car_code: meta["car_code"].as_i64()? as i32,
@@ -194,13 +196,46 @@ pub fn run(paths: &[PathBuf], store: Option<&Store>) {
         // Laps of a session are fed in order: a run may continue across the start/finish line
         let mut det = Detector::default();
         let mut runs = Vec::new();
+        // Full-throttle driving of the whole session for the shift points of every gear
+        let mut track = super::track::TrackDyno::for_import(store.map(|s| s.dir().to_path_buf()));
+        let import = match (&info, store) {
+            (Some(i), Some(_)) => !track.imported(i.car_code, &i.name),
+            _ => false,
+        };
         for f in &files {
             match samples(f) {
-                Ok(samples) => runs.extend(samples.into_iter().filter_map(|s| det.update(s))),
+                Ok(samples) => {
+                    for (s, yaw) in samples {
+                        if let (true, Some(i)) = (import, &info) {
+                            track.update(i.car_code, &s, yaw);
+                        }
+                        runs.extend(det.update(s));
+                    }
+                }
                 Err(e) => eprintln!("  {}: {e}", f.display()),
             }
         }
         runs.extend(det.flush());
+        if let (true, Some(i)) = (import, &info) {
+            if let Some(t) = track.finish_import(&i.name) {
+                let shifts: Vec<String> = t
+                    .dyno
+                    .shifts
+                    .iter()
+                    .map(|s| format!("{}→{} {}", s.gear, s.gear + 1, if s.late { "↑".into() } else { format!("{:.0}", s.rpm) }))
+                    .collect();
+                let n = t.points;
+                let sh = shifts.join(", ");
+                println!(
+                    "  {}",
+                    tr!(
+                        "Schaltpunkte aus der Fahrt ({n} Punkte): {sh}",
+                        "Shift points from driving ({n} points): {sh}",
+                        "Body řazení z jízdy ({n} bodů): {sh}"
+                    )
+                );
+            }
+        }
         if runs.is_empty() {
             println!("  {}", tr!("keine Messläufe gefunden", "no measurement runs found", "nenalezeny žádné měřicí jízdy"));
         }

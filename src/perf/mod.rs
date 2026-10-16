@@ -15,6 +15,7 @@
 pub mod cli;
 mod dyno;
 pub mod store;
+pub mod track;
 
 pub use dyno::Dyno;
 pub use store::Store;

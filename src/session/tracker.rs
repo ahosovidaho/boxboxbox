@@ -155,6 +155,8 @@ pub struct Tracker {
     last_packet: Option<Instant>,
     perf: perf::Detector,
     perf_store: Option<perf::Store>,
+    /// Power curve from all full-throttle driving (shift points for every gear)
+    track_dyno: perf::track::TrackDyno,
     strategy: Option<strategy::Shared>,
     /// Fuel of the previous packet (refuelling detection)
     prev_fuel: Option<f32>,
@@ -198,6 +200,7 @@ impl Tracker {
             off_track_since: None,
             last_packet: None,
             perf: perf::Detector::default(),
+            track_dyno: perf::track::TrackDyno::new(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
             perf_store,
             strategy: None,
             prev_fuel: None,
@@ -362,7 +365,9 @@ impl Tracker {
         let lap_ms = self.lap_start_tick.map(|t| ((p.packet_id - t) as f64 / TICKS_PER_SEC * 1000.0) as i64);
         let dyn_ = dynamics::compute(p, self.steer_cal.ratio);
         self.steer_cal.update(p, &dyn_);
-        if let Some(run) = self.perf.update(perf::Sample::from_packet(p)) {
+        let sample = perf::Sample::from_packet(p);
+        self.track_dyno.update(p.car_code, &sample, p.angular_velocity[1]);
+        if let Some(run) = self.perf.update(sample) {
             self.perf_finished(run, p.car_code);
         }
         let (x, z) = (p.position[0], p.position[2]);
@@ -592,6 +597,7 @@ impl Tracker {
     /// Restart: `full = false` (race/time trial restarted) keeps map, best lap and steering ratio;
     /// `full = true` (new car / new track) drops everything.
     fn reset(&mut self, full: bool) {
+        self.track_dyno.save();
         let mut track = std::mem::take(&mut self.track);
         if full {
             track.reset();
