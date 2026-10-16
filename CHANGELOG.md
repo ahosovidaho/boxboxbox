@@ -6,7 +6,7 @@
   nejlepšímu na stejné vzdálenosti – rozdíl času, rychlost, plyn nahoru / brzda dolů, volant
   a stupeň. Celé kolo nebo jedna zatáčka s brzdnou zónou (výchozí: zatáčka s největší ztrátou),
   ťuknutím do grafu hodnoty obou kol v tom místě a bod na mapě. Nahoře souhrn zatáčky: brzdný
-  bod, vjezd, vrchol, plný plyn, výjezd a stupeň. API `/api/traces?session=&lap=`.
+  bod, vjezd, vrchol, plný plyn, výjezd a stupeň. Plyn a brzda každý ve vlastním grafu (0 % dole). API `/api/traces?session=&lap=`.
 
 - **Kouč – cíl bez spinů**: „Cíl: Zx“ a souhrn session počítají průměrnou ztrátu jen z normálních
   kol (do 107 % nejlepšího). Kolo se spinem, výletem mimo trať nebo zastávkou dřív přetáhlo
