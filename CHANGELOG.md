@@ -1,5 +1,21 @@
 # Changelog
 
+## BOXBOXBOX 0.7.3-fork1 – 2026-10-16 (opravy po závodě na Nürburgringu)
+
+- **Tankování se počítalo jen asi ze 70 %**: GT7 přidává palivo po krocích ~0,05 a část kroků je
+  těsně pod 0,05, které se nepočítaly (závod 15. 10.: skutečně +42,4, zapsáno +29,4). Ve stání
+  se teď počítá každé zvýšení. Tím byla zkreslená i změřená ztráta zastávkou.
+- **Otáčkoměr**: 15 LED se plní rovnoměrně až k bodu řazení (5 zelených, 5 červených, 5 modrých),
+  v bodě řazení všechny modře blikají (blikání řízené časem, ne CSS animací, která se při
+  přepínání restartovala a vypadala jako trvalé světlo). Příznak „omezovač“ z GT7 se už
+  nepoužívá: zapíná se už na začátku rozsahu řadicí kontrolky (u Lanceru 7 000 ot/min, omezovač
+  je kolem 8 000).
+- **Bod řazení z měření**: použije se jízda, která došla nejvýš v otáčkách; „pozdě“ z jízdy,
+  která omezovač nikdy nedosáhla, se nebere (kontrolka hry).
+- Směsi s českými názvy (SS = sportovní měkké, SM = střední, SH = tvrdé) v Tréninku, ve Strategii
+  i v nastavení závodu.
+- Bez nastavené startovní směsi se v závodě bere směs naposledy označená v Tréninku na stejné trati.
+
 ## BOXBOXBOX 0.7.2-fork1 – 2026-10-14
 
 - **Řazení podle naměřeného optima**: modré LED závodního dashboardu se rozsvítí a blikají
