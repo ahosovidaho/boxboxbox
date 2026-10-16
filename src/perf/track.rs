@@ -44,6 +44,8 @@ pub struct TrackDynoFile {
 pub struct TrackDyno {
     dir: Option<PathBuf>,
     car: i32,
+    /// Active setup of the car: data are kept per setup
+    setup: String,
     pts: Vec<Pt>,
     imported: Vec<String>,
     last_tick: Option<i32>,
@@ -62,13 +64,13 @@ impl TrackDyno {
     }
 
     fn file(&self, name: &str) -> Option<PathBuf> {
-        self.dir.as_ref().map(|d| d.join(self.car.to_string()).join(name))
+        self.dir.as_ref().map(|d| d.join(self.car.to_string()).join(file_name(name, &self.setup)))
     }
 
-    /// One packet. `yaw` = yaw rate (rad/s).
-    pub fn update(&mut self, car: i32, s: &Sample, yaw: f32) {
-        if car != self.car {
-            self.update_car(car);
+    /// One packet. `yaw` = yaw rate (rad/s), `setup` = id of the active car setup ("" = none).
+    pub fn update(&mut self, car: i32, setup: &str, s: &Sample, yaw: f32) {
+        if car != self.car || setup != self.setup {
+            self.switch(car, setup);
         }
         let good = s.flags & crate::telemetry::packet::flags::ON_TRACK != 0
             && s.flags & (crate::telemetry::packet::flags::PAUSED | crate::telemetry::packet::flags::LOADING) == 0
@@ -128,14 +130,16 @@ impl TrackDyno {
     /// Recorded session imported before?
     pub fn imported(&mut self, car: i32, session: &str) -> bool {
         if car != self.car {
-            self.update_car(car);
+            let setup = self.setup.clone();
+            self.switch(car, &setup);
         }
         self.imported.iter().any(|s| s == session)
     }
 
-    fn update_car(&mut self, car: i32) {
+    fn switch(&mut self, car: i32, setup: &str) {
         self.save();
         self.car = car;
+        self.setup = setup.to_string();
         let saved = self.file("track.json").and_then(|f| load(&f)).unwrap_or_default();
         (self.pts, self.imported) = saved;
         self.last_tick = None;
@@ -194,9 +198,20 @@ fn write(path: &Path, text: &str) {
     }
 }
 
-/// The stored result for a car, if any.
-pub fn read(dir: &Path, car: i32) -> Option<TrackDynoFile> {
-    serde_json::from_str(&std::fs::read_to_string(dir.join(car.to_string()).join("track_dyno.json")).ok()?).ok()
+/// `track.json` for no setup, `track_s2.json` for setup s2
+fn file_name(name: &str, setup: &str) -> String {
+    let id: String = setup.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    if id.is_empty() {
+        name.to_string()
+    } else {
+        name.replace(".json", &format!("_{id}.json"))
+    }
+}
+
+/// The stored result for a car and setup, if any.
+pub fn read(dir: &Path, car: i32, setup: &str) -> Option<TrackDynoFile> {
+    let path = dir.join(car.to_string()).join(file_name("track_dyno.json", setup));
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
 #[cfg(test)]
@@ -232,7 +247,7 @@ mod tests {
                     gear_ratios: [0.0; 8],
                 };
                 let yaw = if run == 5 { 0.5 } else { 0.0 };
-                td.update(7, &s, yaw);
+                td.update(7, "", &s, yaw);
                 let acc = power(rpm.min(8000.0)) / (v / 3.6); // m/s²
                 v += acc * 3.6 / 60.0;
                 tick += 1;

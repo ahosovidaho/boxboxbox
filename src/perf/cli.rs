@@ -207,7 +207,7 @@ pub fn run(paths: &[PathBuf], store: Option<&Store>) {
                 Ok(samples) => {
                     for (s, yaw) in samples {
                         if let (true, Some(i)) = (import, &info) {
-                            track.update(i.car_code, &s, yaw);
+                            track.update(i.car_code, "", &s, yaw);
                         }
                         runs.extend(det.update(s));
                     }

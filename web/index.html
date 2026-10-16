@@ -394,7 +394,27 @@
   #rcChart svg { width: 100%; height: 170px; display: block; }
   .modechip { background: none; border: 1px solid #2c2c33; color: var(--dim); border-radius: 7px; padding: 1px 7px; font: 600 11px -apple-system, system-ui, sans-serif; letter-spacing: .06em; }
   .modechip.race { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, #2c2c33); }
-  #p6[hidden], #p7[hidden] { transform: translateX(24px); }
+  #p6[hidden], #p7[hidden], #p8[hidden] { transform: translateX(24px); }
+  /* ---------- Practice: car setup (p8) ---------- */
+  #p8 { display: flex; flex-direction: column; gap: 8px; }
+  #p8head { display: flex; align-items: center; gap: 10px; min-height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); flex-wrap: wrap; }
+  #p8head b { color: var(--text); font-weight: 600; }
+  #p8head select, #p8head input { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 5px 8px; font: 14px -apple-system, system-ui, sans-serif; }
+  #p8head input { width: 190px; }
+  #p8head .grow { flex: 1; }
+  #p8body { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); grid-auto-rows: max-content; align-content: start; align-items: start; padding-bottom: 8px; }
+  #p8body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 6px; }
+  .sutab { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sutab th { color: var(--label); font-weight: 500; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; text-align: right; padding: 0 3px 3px; }
+  .sutab td { padding: 2px 3px; }
+  .sutab td + td { width: 84px; }
+  .sutab td:first-child { color: var(--dim); }
+  .sutab td small { color: var(--label); }
+  .sutab input { width: 76px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; padding: 5px 6px; font: 13px var(--mono); text-align: right; float: right; }
+  .sutab input.wide { width: 100%; text-align: left; float: none; font-family: -apple-system, system-ui, sans-serif; }
+  #suNote { width: 100%; min-height: 70px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 6px 8px; font: 13px -apple-system, system-ui, sans-serif; resize: vertical; }
+  #suState.dirty { color: var(--yellow); }
 
   /* ---------- Page 5: strategy ---------- */
   #boxcall { font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 6px; }
@@ -872,6 +892,26 @@
   </div>
 </section>
 
+
+<!-- ======================= Practice: car setup ======================= -->
+<section class="page" id="p8" hidden>
+  <div id="p8head">
+    <b>Nastavení auta</b>
+    <span id="suCar">–</span>
+    <select id="suPick" aria-label="Setup"></select>
+    <input type="text" id="suName" placeholder="název setupu" autocomplete="off">
+    <button class="stbtn small" id="suSave">Uložit</button>
+    <button class="stbtn small" id="suNew">Nový</button>
+    <button class="stbtn small" id="suCopy">Duplikovat</button>
+    <button class="stbtn small" id="suDel">Smazat</button>
+    <span id="suState"></span>
+    <span class="grow"></span>
+    <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+    <span class="dots"></span>
+  </div>
+  <div id="p8body"><span class="muted">Jeď s autem, ať vím, které to je.</span></div>
+</section>
+
 <!-- ======================= Race mode: recap ======================= -->
 <section class="page" id="p7" hidden>
   <div id="p7head">
@@ -1090,8 +1130,8 @@
   // Two modes with their own pages: practice (driving view, coach, measurements, practice
   // strategy, all data) and race (race dashboard, race recap, strategy). The mode lives on the
   // server (practice mode of the strategy), so all devices show the same.
-  const ORDER = { practice: [1, 3, 4, 5, 2], race: [6, 7, 5] };
-  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7];
+  const ORDER = { practice: [1, 3, 4, 5, 8, 2], race: [6, 7, 5] };
+  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
   let page = ORDER[appMode][0];
   { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
@@ -1125,6 +1165,7 @@
     if ($('mapcard').parentElement !== mapHome) { mapHome.prepend($('mapcard')); requestAnimationFrame(() => drawMap(true)); }
     if (n === 6) requestAnimationFrame(() => drawMap(true));
     if (n === 7) loadRecap();
+    if (n === 8) loadSetups(true);
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
@@ -1133,7 +1174,7 @@
   let press = null;
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
-    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, button, input, select');
+    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, button, input, select, textarea');
     // Horizontal drags on a chart move its cursor instead of switching pages
     press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
@@ -1443,6 +1484,7 @@
     const mode = d.strategy && d.strategy.practice && d.strategy.practice.active ? 'practice' : 'race';
     if (mode !== appMode) setMode(mode);
     if (page === 6) renderRace(d, tireVals);
+    else if (page === 8) loadSetups(false);
     else if (page === 1) {
       renderCoachHint(d); updateSegments(d); renderMain(d, tireVals); } else if (page === 2) renderDetails(d); else if (page === 4) renderPerfLive(d);
     else if (page === 5) renderStrategy(d);
@@ -2340,6 +2382,103 @@
     $('rcCoach').innerHTML = html || '<span class="muted">Kouč zatím nic nevyhodnotil.</span>';
   }
 
+
+  // ---------- Car setup (practice) ----------
+  // Fields of the GT7 settings sheet. [key, label, unit, front/rear pair?]; values are kept as typed.
+  const SETUP_FIELDS = [
+    ['Pneumatiky', [['tyre', 'Směs', '', true, 'text']]],
+    ['Podvozek', [['ride', 'Světlá výška', 'mm', true], ['freq', 'Vlastní frekvence', 'Hz', true], ['arb', 'Stabilizátor', '1–10', true],
+      ['damp_c', 'Tlumiče – komprese', '%', true], ['damp_e', 'Tlumiče – roztažení', '%', true], ['camber', 'Odklon', '°', true], ['toe', 'Sbíhavost', '°', true]]],
+    ['Aerodynamika', [['downforce', 'Přítlak', '', true]]],
+    ['Diferenciál', [['lsd_init', 'Počáteční moment', '', true], ['lsd_accel', 'Citlivost akcelerace', '', true],
+      ['lsd_brake', 'Citlivost brzdění', '', true], ['torque_split', 'Rozdělení momentu P : Z', '', false, 'text']]],
+    ['Brzdy a asistenty', [['brake_bias', 'Vyvážení brzd', '−5…+5', false], ['tcs', 'Kontrola trakce', '0–5', false], ['abs', 'ABS', '', false, 'text']]],
+    ['Převodovka', [['top_speed', 'Max. rychlost', 'km/h', false], ['final', 'Stálý převod', '', false],
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map(g => [`gear_${g}`, `${g}. stupeň`, '', false])]],
+    ['Výkon a hmotnost', [['ecu', 'Řídicí jednotka', '%', false], ['restrictor', 'Omezovač výkonu', '%', false],
+      ['ballast', 'Zátěž', 'kg', false], ['ballast_pos', 'Umístění zátěže', '−50…+50', false]]],
+  ];
+  let suCar = null, suList = [], suActive = '', suEdit = null, suDirty = false;
+  function suBlank(car) { return { id: '', car, name: '', note: '', values: {} }; }
+  async function loadSetups(force) {
+    const car = lastData && lastData.car_code;
+    if (!car) { $('p8body').innerHTML = '<span class="muted">Jeď s autem, ať vím, které to je.</span>'; return; }
+    if (!force && car === suCar) return;
+    try {
+      const r = await (await fetch('api/setups?car=' + car, { cache: 'no-store' })).json();
+      suCar = car; suList = r.setups || []; suActive = r.active || '';
+      if (!suDirty || force) { suEdit = structuredClone(suList.find(x => x.id === suActive) || suBlank(car)); suDirty = false; }
+      renderSetupForm();
+    } catch {}
+  }
+  function renderSetupForm() {
+    setText('suCar', (lastData && lastData.car_name) || `auto ${suCar}`);
+    $('suPick').innerHTML = '<option value="">– bez setupu –</option>'
+      + suList.map(x => `<option value="${esc(x.id)}" ${x.id === suActive ? 'selected' : ''}>${esc(x.name)}${x.id === suActive ? ' ✓' : ''}</option>`).join('');
+    $('suPick').value = suEdit.id || (suDirty ? '' : suActive);
+    $('suName').value = suEdit.name || '';
+    const v = suEdit.values || {};
+    const inp = (k, type) => `<input ${type === 'text' ? 'type="text" class="wide"' : 'type="text" inputmode="decimal"'} data-k="${k}" value="${esc(v[k] ?? '')}" autocomplete="off">`;
+    $('p8body').innerHTML = SETUP_FIELDS.map(([title, fields]) => {
+      const pair = fields.some(f => f[3]);
+      const rows = fields.map(([k, label, unit, fr, type]) => fr
+        ? `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td>${inp(k + '_f', type)}</td><td>${inp(k + '_r', type)}</td></tr>`
+        : `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td colspan="2">${inp(k, type)}</td></tr>`).join('');
+      return `<div class="card"><h2>${title}</h2><table class="sutab">${pair ? '<tr><th></th><th>Předek</th><th>Zadek</th></tr>' : ''}${rows}</table></div>`;
+    }).join('') + `<div class="card"><h2>Poznámka</h2><textarea id="suNote" placeholder="např. trať, počasí, jak se auto chovalo">${esc(suEdit.note || '')}</textarea>
+      <div class="pnote">Aktivní setup se přiřazuje tréninkovým kolům a bodům řazení z jízdy – po změně převodovky nebo přítlaku ulož nový setup (Duplikovat), ať se data nemíchají.</div></div>`;
+    suMarkDirty(suDirty);
+  }
+  function suMarkDirty(d) {
+    suDirty = d;
+    const st = $('suState');
+    st.textContent = d ? 'neuloženo' : suEdit.id ? (suEdit.id === suActive ? 'aktivní' : 'uloženo') : '';
+    st.className = d ? 'dirty' : '';
+  }
+  $('p8body').addEventListener('input', e => {
+    if (!suEdit) return;
+    if (e.target.dataset.k) suEdit.values[e.target.dataset.k] = e.target.value;
+    if (e.target.id === 'suNote') suEdit.note = e.target.value;
+    suMarkDirty(true);
+  });
+  $('suName').addEventListener('input', e => { if (suEdit) { suEdit.name = e.target.value; suMarkDirty(true); } });
+  async function suPost(path, body) {
+    const r = await stPost(path, body);
+    if (r) { suList = r.setups || []; suActive = r.active || ''; }
+    return r;
+  }
+  $('suSave').onclick = async () => {
+    if (!suEdit) return;
+    const isNew = !suEdit.id;
+    const r = await suPost('api/setups', suEdit);
+    if (!r) return;
+    // A new card becomes active; pick it (or the edited one) again from the list
+    suEdit = structuredClone(isNew ? suList.find(x => x.id === r.active) : suList.find(x => x.id === suEdit.id) || suEdit);
+    suMarkDirty(false); renderSetupForm();
+  };
+  $('suPick').addEventListener('change', async e => {
+    if (suDirty && !confirm('Neuložené změny se zahodí. Pokračovat?')) { renderSetupForm(); return; }
+    await suPost('api/setups/action', { action: 'activate', car: suCar, id: e.target.value });
+    suEdit = structuredClone(suList.find(x => x.id === suActive) || suBlank(suCar));
+    suMarkDirty(false); renderSetupForm();
+  });
+  $('suNew').onclick = () => {
+    if (suDirty && !confirm('Neuložené změny se zahodí. Pokračovat?')) return;
+    suEdit = suBlank(suCar); suMarkDirty(true); renderSetupForm();
+  };
+  $('suCopy').onclick = () => {
+    if (!suEdit) return;
+    suEdit = { ...structuredClone(suEdit), id: '', name: (suEdit.name || 'Setup') + ' (kopie)' };
+    suMarkDirty(true); renderSetupForm();
+  };
+  $('suDel').onclick = async () => {
+    if (!suEdit || !suEdit.id) return;
+    if (!confirm(`Smazat kartu „${suEdit.name}“? Kola odjetá s tímto setupem zůstanou uložená.`)) return;
+    await suPost('api/setups/action', { action: 'remove', car: suCar, id: suEdit.id });
+    suEdit = structuredClone(suList.find(x => x.id === suActive) || suBlank(suCar));
+    suMarkDirty(false); renderSetupForm();
+  };
+
   // ---------- Practice mode ----------
   let prData = null, prKey = '', prBusy = false;
   const fmtLap = ms => ms == null ? '–' : `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`.replace('.', ',');
@@ -2369,7 +2508,7 @@
     const info = ps.layout_warning || (!ps.track ? 'Trať se pozná podle mapy, pokud už jsi na ní trénoval. Jinak napiš trať i variantu (např. Nürburgring GP) – stejně jako v nastavení závodu.'
       : ps.track_length_m ? `Varianta uložená podle tvaru kola · délka ${nf(ps.track_length_m / 1000, 2)} km. Jiná varianta téže trati = jiný název.`
       : 'Tvar trati se uloží po prvním celém kole.');
-    setText('prTrackInfo', info);
+    setText('prTrackInfo', info + (prData && prData.setup ? ` · setup: ${prData.setup}` : prData ? ' · bez setupu (stránka Nastavení auta)' : ''));
     $('prTrackInfo').classList.toggle('bad', !!ps.layout_warning);
     $('prChips').innerHTML = ['R', 'S', 'C'].flatMap(k => ['S', 'M', 'H'].map(c => k + c))
       .map(c => `<button data-c="${c}" class="${c === ps.compound ? 'on' : ''}">${chip(c)}</button>`).join('');

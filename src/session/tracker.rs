@@ -157,6 +157,10 @@ pub struct Tracker {
     perf_store: Option<perf::Store>,
     /// Power curve from all full-throttle driving (shift points for every gear)
     track_dyno: perf::track::TrackDyno,
+    /// Active car setup (id), the car and lap it was looked up for
+    setup_id: String,
+    setup_car: i32,
+    setup_check: i16,
     strategy: Option<strategy::Shared>,
     /// Fuel of the previous packet (refuelling detection)
     prev_fuel: Option<f32>,
@@ -201,6 +205,9 @@ impl Tracker {
             last_packet: None,
             perf: perf::Detector::default(),
             track_dyno: perf::track::TrackDyno::new(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
+            setup_id: String::new(),
+            setup_car: -1,
+            setup_check: -1,
             perf_store,
             strategy: None,
             prev_fuel: None,
@@ -366,7 +373,15 @@ impl Tracker {
         let dyn_ = dynamics::compute(p, self.steer_cal.ratio);
         self.steer_cal.update(p, &dyn_);
         let sample = perf::Sample::from_packet(p);
-        self.track_dyno.update(p.car_code, &sample, p.angular_velocity[1]);
+        // The active setup changes rarely: looked up once per lap (and when the car changes)
+        if self.setup_car != p.car_code || self.setup_check != self.lap {
+            self.setup_car = p.car_code;
+            self.setup_check = self.lap;
+            let mut id = String::new();
+            self.with_strategy(|s| id = s.setups.active_id(p.car_code));
+            self.setup_id = id;
+        }
+        self.track_dyno.update(p.car_code, &self.setup_id, &sample, p.angular_velocity[1]);
         if let Some(run) = self.perf.update(sample) {
             self.perf_finished(run, p.car_code);
         }

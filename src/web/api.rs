@@ -12,6 +12,8 @@
 //! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
 //! | POST | `/api/strategy/action` | practice: `"practice"` (value "1"/"0"), `"practice_track"`, `"practice_compound"`, `"practice_new_set"`, `"practice_counting"`, `"practice_mults"`, `"practice_life"`, `"practice_toggle_lap"` |
 //! | GET  | `/api/practice?track=&car=` | practice state, figures per compound, last laps, known tracks |
+//! | GET/POST | `/api/setups?car=` | car setups (GT7 settings sheet) and the active one; POST saves a card |
+//! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
 use super::Feeds;
 use crate::config::{Config, DataPaths, Language, Units};
@@ -65,6 +67,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/strategy/preview", axum::routing::post(strategy_preview))
         .route("/api/strategy/action", axum::routing::post(strategy_action))
         .route("/api/practice", get(practice_state))
+        .route("/api/setups", get(setups_list).post(setups_save))
+        .route("/api/setups/action", axum::routing::post(setups_action))
 }
 
 async fn strategy_state(State(s): State<AppState>) -> impl IntoResponse {
@@ -122,7 +126,9 @@ fn practice_json(st: &strategy::Strategy, track: Option<String>, car: Option<i32
     let p = &st.practice.saved;
     let track = track.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| p.track.clone());
     let car = car.or_else(|| st.practice_car(&track));
-    let summary = car.map(|c| st.practice.summary(c, &track, p.wear_mult, p.fuel_mult));
+    let setup = car.map(|c| st.setups.active_id(c)).unwrap_or_default();
+    let summary = car.map(|c| st.practice.summary(c, &setup, &track, p.wear_mult, p.fuel_mult));
+    let setup_name = car.and_then(|c| st.setups.name_of(c, &setup));
     // The last laps of this car on this track
     let key = strategy::practice::track_key(&track);
     let laps: Vec<_> = p
@@ -137,7 +143,7 @@ fn practice_json(st: &strategy::Strategy, track: Option<String>, car: Option<i32
     let mut tracks: Vec<String> = p.shapes.iter().map(|s| s.track.clone()).chain(p.laps.iter().map(|l| l.track.clone())).collect();
     tracks.sort();
     tracks.dedup();
-    json!({ "state": st.practice_state(), "car": car, "summary": summary, "laps": laps, "tracks": tracks }).to_string()
+    json!({ "state": st.practice_state(), "car": car, "summary": summary, "laps": laps, "tracks": tracks, "setup": setup_name }).to_string()
 }
 
 async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction>) -> impl IntoResponse {
@@ -254,8 +260,55 @@ struct PerfQuery {
 }
 
 async fn perf_overview(State(s): State<AppState>, Query(q): Query<PerfQuery>) -> impl IntoResponse {
-    let body = tokio::task::spawn_blocking(move || s.perf.overview(q.car)).await.unwrap_or_default();
+    let st = s.strategy.clone();
+    let body = tokio::task::spawn_blocking(move || {
+        // Shift points from driving belong to the setup that is active for the car
+        s.perf.overview(q.car, |car| st.lock().unwrap_or_else(|e| e.into_inner()).setups.active_id(car))
+    })
+    .await
+    .unwrap_or_default();
     json_body(body)
+}
+
+#[derive(Deserialize)]
+struct SetupQuery {
+    car: i32,
+}
+
+/// The setups of a car and which one is active.
+async fn setups_list(State(s): State<AppState>, Query(q): Query<SetupQuery>) -> impl IntoResponse {
+    let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    json_body(setups_json(&st, q.car))
+}
+
+fn setups_json(st: &strategy::Strategy, car: i32) -> String {
+    json!({ "car": car, "active": st.setups.active_id(car), "setups": st.setups.for_car(car) }).to_string()
+}
+
+/// Saves a setup card (new without `id`); a new card becomes active.
+async fn setups_save(State(s): State<AppState>, Json(setup): Json<strategy::setups::Setup>) -> impl IntoResponse {
+    let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    let car = setup.car;
+    st.setups.upsert(setup);
+    json_body(setups_json(&st, car))
+}
+
+#[derive(Deserialize)]
+struct SetupAction {
+    action: String,
+    car: i32,
+    #[serde(default)]
+    id: String,
+}
+
+async fn setups_action(State(s): State<AppState>, Json(a): Json<SetupAction>) -> impl IntoResponse {
+    let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    match a.action.as_str() {
+        "activate" => st.setups.set_active(a.car, &a.id),
+        "remove" => st.setups.remove(a.car, &a.id),
+        _ => return (StatusCode::BAD_REQUEST, json_body(json!({ "error": "unknown action" }).to_string())).into_response(),
+    }
+    (StatusCode::OK, json_body(setups_json(&st, a.car))).into_response()
 }
 
 fn settings_json(s: &Settings) -> String {

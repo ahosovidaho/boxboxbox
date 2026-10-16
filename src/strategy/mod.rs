@@ -12,6 +12,7 @@
 
 pub mod planner;
 pub mod practice;
+pub mod setups;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -253,6 +254,7 @@ pub struct Strategy {
     /// Planner result and the input it was computed for (the planner runs once per lap, not per packet)
     cache: Option<(String, planner::Options)>,
     pub practice: practice::Practice,
+    pub setups: setups::Setups,
     /// Race with the practice figures filled in, and what it was computed from
     filled: Option<(String, Race, Option<PracticeUse>)>,
 }
@@ -263,7 +265,8 @@ impl Strategy {
         let saved =
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let practice = practice::Practice::load(file.as_ref().map(|f| f.with_file_name("practice.json")));
-        Strategy { saved, file, live: Live::default(), cache: None, practice, filled: None }
+        let setups = setups::Setups::load(file.as_ref().map(|f| f.with_file_name("setups.json")));
+        Strategy { saved, file, live: Live::default(), cache: None, practice, setups, filled: None }
     }
 
     pub fn shared(self) -> Shared {
@@ -334,7 +337,8 @@ impl Strategy {
     /// of a track with separate start and finish lines). In practice mode it goes to the practice.
     pub fn lap_finished(&mut self, lap: i16, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
         if self.practice.saved.active {
-            self.practice.lap_done(self.live.car_code, used, refuel, ms, closed);
+            let setup = self.setups.active_id(self.live.car_code);
+            self.practice.lap_done(self.live.car_code, &setup, used, refuel, ms, closed);
             return;
         }
         if lap < 1 || used <= 0.0 {
@@ -561,13 +565,19 @@ impl Strategy {
             self.practice.saved.life.len(),
             self.practice.saved.life.values().sum::<u32>(),
             self.practice.saved.laps.iter().filter(|l| l.counted).count()
-        ) + &format!("|{:?}|{}", self.practice.saved.compound, self.practice.saved.track);
+        ) + &format!(
+            "|{:?}|{}|{}",
+            self.practice.saved.compound,
+            self.practice.saved.track,
+            car.map(|c| self.setups.active_id(c)).unwrap_or_default()
+        );
         if let Some((k, r, u)) = &self.filled {
             if *k == key {
                 return (r.clone(), u.clone());
             }
         }
-        let mut result = fill_from_practice(&self.practice, race, car);
+        let setup = car.map(|c| self.setups.active_id(c)).unwrap_or_default();
+        let mut result = fill_from_practice(&self.practice, race, car, &setup);
         // No starting compound set: the tyres last marked in practice on this track
         if result.0.start_compound.is_none() && practice::track_key(&self.practice.saved.track) == practice::track_key(&race.track) {
             result.0.start_compound.clone_from(&self.practice.saved.compound);
@@ -662,13 +672,13 @@ impl Strategy {
 }
 
 /// See [`Strategy::race_with_practice`]. What the driver entered for the race wins.
-fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i32>) -> (Race, Option<PracticeUse>) {
+fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i32>, setup: &str) -> (Race, Option<PracticeUse>) {
     let mut r = race.clone();
     let Some(car) = car else { return (r, None) };
     if race.track.trim().is_empty() {
         return (r, None);
     }
-    let s = practice.summary(car, &race.track, race.tyre_wear.unwrap_or(1.0), race.fuel_mult.unwrap_or(1.0));
+    let s = practice.summary(car, setup, &race.track, race.tyre_wear.unwrap_or(1.0), race.fuel_mult.unwrap_or(1.0));
     if s.compounds.is_empty() && s.fuel_per_lap.is_none() {
         return (r, None);
     }
@@ -1339,7 +1349,7 @@ mod tests {
         // What was entered for the race wins over practice
         let mut manual = race.clone();
         manual.tyres.insert("SS".into(), TyreSpec { life: Some(20), ..Default::default() });
-        let (filled, _) = fill_from_practice(&s.practice, &manual, Some(3475));
+        let (filled, _) = fill_from_practice(&s.practice, &manual, Some(3475), "");
         assert_eq!(filled.tyres["SS"].life, Some(20));
         assert!((filled.tyres["SS"].deg.unwrap() - 0.30).abs() < 0.01);
     }

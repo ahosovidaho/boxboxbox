@@ -167,7 +167,7 @@ impl Store {
     /// Everything page 4 shows for one car (default: the car of the most recent run) as JSON:
     /// best values, the list of runs, and full traces of the last and the best acceleration run
     /// and of the last braking run.
-    pub fn overview(&self, car: Option<i32>) -> String {
+    pub fn overview(&self, car: Option<i32>, setup_of: impl FnOnce(i32) -> String) -> String {
         let Some(car) = car.or_else(|| self.latest_car()) else {
             return json!({ "car_code": null, "runs": [], "best": {} }).to_string();
         };
@@ -220,7 +220,7 @@ impl Store {
             last_brake: runs.iter().find(|r| r.kind == Kind::Brake),
             dyno: dyno_run.and_then(|r| r.dyno.as_ref()),
             dyno_time: dyno_run.map(|r| r.time.as_str()),
-            track_dyno: super::track::read(&self.dir, car),
+            track_dyno: super::track::read(&self.dir, car, &setup_of(car)),
         };
         serde_json::to_string(&overview).unwrap_or_default()
     }

@@ -2,6 +2,15 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Karty nastavení auta** (Trénink, nová stránka „Nastavení auta“ před stránkou dat): hodnoty
+  z menu nastavení GT7 – pneumatiky, podvozek (světlá výška, frekvence, stabilizátory, tlumiče,
+  odklon, sbíhavost), přítlak, diferenciál, brzdy a asistenty, převodovka, výkon a zátěž –
+  předek/zadek vedle sebe, plus poznámka. Více karet na auto (Nový / Duplikovat / Uložit /
+  Smazat), jedna je aktivní (`setups.json`, API `/api/setups`).
+- Tréninková kola a body řazení z jízdy se ukládají **pro aktivní setup**, takže se nemíchají
+  data s jinou převodovkou nebo přítlakem (`track_s2.json`). Starší kola patří pod „bez setupu“.
+  Tréninková karta ukazuje, se kterým setupem jedeš; strategie závodu bere data aktivního setupu.
+
 - **Body řazení z jízdy**: každý úsek na plný plyn v rovině (bez brzdy, malá rychlost stáčení)
   se ukládá pro auto (`perf/<auto>/track.json`, max. ~11 min plného plynu) a z nich se počítá
   výkonová křivka a body řazení pro všechny použité stupně (`track_dyno.json`, přepočet každých

@@ -32,6 +32,8 @@ pub struct PracticeLap {
     /// Local time when the lap ended, "2026-10-14 19:30"
     pub at: String,
     pub car: i32,
+    /// Id of the car setup it was driven with ("" = none chosen)
+    pub setup: String,
     pub track: String,
     pub compound: String,
     /// Timed laps on this set before this lap
@@ -222,7 +224,7 @@ impl Practice {
     }
 
     /// A timed lap ended. `closed`: it ended where it started (not the short first race lap).
-    pub fn lap_done(&mut self, car: i32, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
+    pub fn lap_done(&mut self, car: i32, setup: &str, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
         let pit = self.pit_this_lap || refuel;
         let out_lap = self.pit_last_lap;
         let wrong_layout = !std::mem::replace(&mut self.layout_ok, true);
@@ -240,6 +242,7 @@ impl Practice {
         s.laps.push(PracticeLap {
             at: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
             car,
+            setup: setup.to_string(),
             track: s.track.clone(),
             compound,
             age: s.set_age,
@@ -341,7 +344,7 @@ impl Practice {
     }
 
     /// Figures for a car on a track at the given multipliers.
-    pub fn summary(&self, car: i32, track: &str, wear_mult: f32, fuel_mult: f32) -> Summary {
+    pub fn summary(&self, car: i32, setup: &str, track: &str, wear_mult: f32, fuel_mult: f32) -> Summary {
         let key = track_key(track);
         let laps: Vec<&PracticeLap> = self
             .saved
@@ -349,6 +352,7 @@ impl Practice {
             .iter()
             .filter(|l| {
                 l.car == car
+                    && l.setup == setup
                     && track_key(&l.track) == key
                     && same_mult(l.wear_mult, wear_mult)
                     && same_mult(l.fuel_mult, fuel_mult)
@@ -457,7 +461,7 @@ mod tests {
     fn stint(p: &mut Practice, compound: &str, n: u32, base: f32, deg: f32, fuel: f32) {
         p.new_set(Some(compound));
         for age in 0..n {
-            p.lap_done(3475, fuel, false, Some(((base + deg * age as f32) * 1000.0) as i32), true);
+            p.lap_done(3475, "", fuel, false, Some(((base + deg * age as f32) * 1000.0) as i32), true);
         }
     }
 
@@ -467,8 +471,8 @@ mod tests {
         stint(&mut p, "SS", 8, 160.0, 0.30, 6.9);
         stint(&mut p, "SM", 10, 161.0, 0.12, 6.9);
         // A spin: way off, ignored
-        p.lap_done(3475, 6.9, false, Some(175_000), true);
-        let s = p.summary(3475, "nurburgring gp", 6.0, 3.0);
+        p.lap_done(3475, "", 6.9, false, Some(175_000), true);
+        let s = p.summary(3475, "", "nurburgring gp", 6.0, 3.0);
         let ss = s.compounds.iter().find(|c| c.compound == "SS").unwrap();
         let sm = s.compounds.iter().find(|c| c.compound == "SM").unwrap();
         assert_eq!(s.compounds[0].compound, "SS"); // soft first
@@ -478,27 +482,27 @@ mod tests {
         assert!((s.fuel_per_lap.unwrap() - 6.9).abs() < 1e-4);
         assert_eq!(sm.laps, 10);
         // Other multipliers: nothing
-        assert!(p.summary(3475, "Nürburgring GP", 1.0, 1.0).compounds.is_empty());
+        assert!(p.summary(3475, "", "Nürburgring GP", 1.0, 1.0).compounds.is_empty());
     }
 
     #[test]
     fn pit_and_out_laps_are_not_clean_and_ai_laps_not_counted() {
         let mut p = practice();
         p.new_set(Some("RM"));
-        p.lap_done(1, 7.0, false, Some(100_000), false); // short first lap
+        p.lap_done(1, "", 7.0, false, Some(100_000), false); // short first lap
         p.pit();
-        p.lap_done(1, 5.0, false, Some(130_000), true); // in-lap
-        p.lap_done(1, 7.0, false, Some(110_000), true); // out-lap
-        p.lap_done(1, 7.0, false, Some(101_000), true); // clean
+        p.lap_done(1, "", 5.0, false, Some(130_000), true); // in-lap
+        p.lap_done(1, "", 7.0, false, Some(110_000), true); // out-lap
+        p.lap_done(1, "", 7.0, false, Some(101_000), true); // clean
         p.saved.counting = false;
-        p.lap_done(1, 7.0, false, Some(99_000), true); // automat
+        p.lap_done(1, "", 7.0, false, Some(99_000), true); // automat
         let clean: Vec<bool> = p.saved.laps.iter().map(|l| l.clean && l.counted).collect();
         assert_eq!(clean, [false, false, false, true, false]);
         // Another car: the set starts from new
         p.saved.counting = true;
-        p.lap_done(2, 7.0, false, Some(99_000), true);
+        p.lap_done(2, "", 7.0, false, Some(99_000), true);
         assert_eq!(p.saved.laps.last().unwrap().age, 0);
-        let s = p.summary(1, "Nürburgring GP", 6.0, 3.0);
+        let s = p.summary(1, "", "Nürburgring GP", 6.0, 3.0);
         assert_eq!(s.compounds[0].laps, 1);
         assert_eq!(s.compounds[0].deg, None); // not enough laps
     }
@@ -529,10 +533,10 @@ mod tests {
     fn life_is_kept_per_car_track_compound_and_wear() {
         let mut p = practice();
         p.set_life(7, "Nürburgring GP", "ss", 6.0, Some(9));
-        let s = p.summary(7, "NURBURGRING GP", 6.0, 3.0);
+        let s = p.summary(7, "", "NURBURGRING GP", 6.0, 3.0);
         assert_eq!(s.compounds.len(), 1);
         assert_eq!((s.compounds[0].compound.as_str(), s.compounds[0].life), ("SS", Some(9)));
-        assert!(p.summary(7, "Nürburgring GP", 1.0, 3.0).compounds.is_empty());
+        assert!(p.summary(7, "", "Nürburgring GP", 1.0, 3.0).compounds.is_empty());
     }
 
     #[test]
@@ -543,16 +547,16 @@ mod tests {
         let mut p = practice();
         p.new_set(Some("SS"));
         p.shape(&circle(500.0)); // GP layout, stored
-        p.lap_done(1, 7.0, false, Some(100_000), true);
+        p.lap_done(1, "", 7.0, false, Some(100_000), true);
         p.shape(&circle(900.0)); // other layout, same name
-        p.lap_done(1, 7.0, false, Some(200_000), true);
+        p.lap_done(1, "", 7.0, false, Some(200_000), true);
         assert!(p.layout_warning.as_deref().unwrap().contains("jiný tvar"));
         let flags: Vec<(bool, bool)> = p.saved.laps.iter().map(|l| (l.clean, l.wrong_layout)).collect();
         assert_eq!(flags, [(true, false), (false, true)]);
         // Named as its own layout: stored separately, laps count again
         p.saved.track = "Nürburgring Nordschleife".into();
         p.shape(&circle(900.0));
-        p.lap_done(1, 7.0, false, Some(200_000), true);
+        p.lap_done(1, "", 7.0, false, Some(200_000), true);
         assert_eq!(p.saved.shapes.len(), 2);
         assert!(p.layout_warning.is_none() && p.saved.laps[2].clean);
         // Back on GP but still named Nordschleife: the lap belongs to the other name
