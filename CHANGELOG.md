@@ -5,6 +5,7 @@
 - **Trénink na vybraný závod**: na stránce Strategie je tlačítko „Závod…“ i v Tréninku (výběr
   z kalendáře šampionátu) a pod tratí tlačítko „Trénovat na závod: <trať> · opotř. ×… · spotř. ×…“,
   které přenese trať a násobiče závodu do tréninku. Nabídka tratí obsahuje i trať závodu.
+  Když v Tréninku vybereš a uložíš jiný závod, trať a násobiče se přenesou samy.
 
 - **Karty nastavení auta** (Trénink, nová stránka „Nastavení auta“ před stránkou dat): hodnoty
   z menu nastavení GT7 – pneumatiky, podvozek (světlá výška, frekvence, stabilizátory, tlumiče,

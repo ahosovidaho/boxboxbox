@@ -2559,13 +2559,14 @@
     if (show) b.textContent = `Trénovat na závod: ${r.track}` + (r.tyre_wear != null ? ` · opotř. ×${nf(r.tyre_wear, 1)}` : '')
       + (r.fuel_mult != null ? ` · spotř. ×${nf(r.fuel_mult, 1)}` : '');
   }
-  $('prFromRace').onclick = async () => {
+  $('prFromRace').onclick = () => practiceForRace();
+  async function practiceForRace() {
     const r = stRace;
     if (!r || !r.track) return;
     await prAction('practice_track', { value: r.track });
     if (r.tyre_wear != null || r.fuel_mult != null) await prAction('practice_mults', { wear: r.tyre_wear, fuel: r.fuel_mult });
     await loadPractice();
-  };
+  }
   const saveMults = async () => { await prAction('practice_mults', { wear: numIn($('prWear').value), fuel: numIn($('prFuel').value) }); await loadPractice(); };
   $('prWear').addEventListener('change', saveMults);
   $('prFuel').addEventListener('change', saveMults);
@@ -2769,7 +2770,12 @@
     const race = raceFromForm();
     if (!race.name) { $('rErr').textContent = 'Vyplň aspoň název závodu.'; $('rErr').hidden = false; return; }
     const saved = await stPost('api/strategy/race', race);
-    if (saved) { stRace = saved.race; $('raceSheet').hidden = true; prKey = ''; }
+    if (saved) {
+      const changed = (stRace && stRace.track) !== (saved.race && saved.race.track);
+      stRace = saved.race; $('raceSheet').hidden = true; prKey = '';
+      // In practice a newly chosen race also sets the practice track and multipliers
+      if (appMode === 'practice' && (changed || !prData || !prData.state || !prData.state.track)) await practiceForRace();
+    }
   };
 
   // ---------- WebSocket ----------
