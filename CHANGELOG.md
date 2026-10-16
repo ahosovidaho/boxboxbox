@@ -2,6 +2,16 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Doporučení nastavení** (stránka Nastavení auta): z posledních 10 celých kol aktivního setupu
+  na trati (min. 3) se počítá vyvážení ve třech fázích zatáčky (brzdy při vjezdu, střed, plyn
+  při výjezdu – nedotáčivost/přetáčivost nad ±2°), blokování kol, prokluz a omezovač v nejvyšším
+  stupni (`handling.json`). Z jasných nálezů je jedna změna v nastavení – s aktuální hodnotou,
+  když je zadaná („přední stabilizátor 6 → 5“) – a tip pro jízdu.
+- **Porovnání setupů**: čistá tréninková kola na trati podle karty setupu – počet, nejlepší
+  a medián; nejrychlejší medián (aspoň 3 kola) zeleně.
+- **BoP**: karta setupu může být označená jako BoP (nastavení v závodě zamčené) – bez polí
+  nastavení, doporučení jen pro jízdu.
+
 - **Trénink na vybraný závod**: na stránce Strategie je tlačítko „Závod…“ i v Tréninku (výběr
   z kalendáře šampionátu) a pod tratí tlačítko „Trénovat na závod: <trať> · opotř. ×… · spotř. ×…“,
   které přenese trať a násobiče závodu do tréninku. Nabídka tratí obsahuje i trať závodu.

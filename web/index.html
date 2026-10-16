@@ -415,6 +415,24 @@
   .sutab input.wide { width: 100%; text-align: left; float: none; font-family: -apple-system, system-ui, sans-serif; }
   #suNote { width: 100%; min-height: 70px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 6px 8px; font: 13px -apple-system, system-ui, sans-serif; resize: vertical; }
   #suState.dirty { color: var(--yellow); }
+  #suInfo, #suForm { display: contents; }
+  .subop { display: inline-flex; align-items: center; gap: 5px; color: var(--text); font-weight: 600; }
+  #p8head .subop input { width: 18px; height: 18px; padding: 0; accent-color: var(--green); }
+  .suwide { grid-column: 1 / -1; }
+  .suadv { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 8px; }
+  .suadv > div { background: #1c1c21; border-radius: 10px; padding: 9px 11px; font-size: 13px; line-height: 1.45; }
+  .suadv b { display: block; font-size: 14px; margin-bottom: 3px; }
+  .suadv .k { color: var(--label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; margin-right: 4px; }
+  .subal { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+  .subal span b { color: var(--text); font-family: var(--mono); font-weight: 500; }
+  .sucmp { width: 100%; max-width: 620px; border-collapse: collapse; font-size: 13px; }
+  .sucmp td, .sucmp th { padding: 4px 6px; text-align: right; }
+  .sucmp th { color: var(--label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 500; }
+  .sucmp td:first-child, .sucmp th:first-child { text-align: left; }
+  .sucmp td { font-family: var(--mono); }
+  .sucmp td:first-child { font-family: inherit; }
+  .sucmp tr.on td:first-child { font-weight: 700; }
+  .sucmp .best { color: var(--green); }
 
   /* ---------- Page 5: strategy ---------- */
   #boxcall { font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 6px; }
@@ -905,12 +923,13 @@
     <button class="stbtn small" id="suNew">Nový</button>
     <button class="stbtn small" id="suCopy">Duplikovat</button>
     <button class="stbtn small" id="suDel">Smazat</button>
+    <label class="subop" title="Balance of Performance: nastavení v závodě nejde měnit, jen tipy pro jízdu"><input type="checkbox" id="suBop"> BoP</label>
     <span id="suState"></span>
     <span class="grow"></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
   </div>
-  <div id="p8body"><span class="muted">Jeď s autem, ať vím, které to je.</span></div>
+  <div id="p8body"><div id="suInfo"></div><div id="suForm"><span class="muted">Jeď s autem, ať vím, které to je.</span></div></div>
 </section>
 
 <!-- ======================= Race mode: recap ======================= -->
@@ -2399,17 +2418,24 @@
     ['Výkon a hmotnost', [['ecu', 'Řídicí jednotka', '%', false], ['restrictor', 'Omezovač výkonu', '%', false],
       ['ballast', 'Zátěž', 'kg', false], ['ballast_pos', 'Umístění zátěže', '−50…+50', false]]],
   ];
-  let suCar = null, suList = [], suActive = '', suEdit = null, suDirty = false;
-  function suBlank(car) { return { id: '', car, name: '', note: '', values: {} }; }
+  let suCar = null, suList = [], suActive = '', suEdit = null, suDirty = false, suInfoData = null, suLap = null;
+  function suBlank(car) { return { id: '', car, name: '', note: '', bop: false, values: {} }; }
   async function loadSetups(force) {
     const car = lastData && lastData.car_code;
-    if (!car) { $('p8body').innerHTML = '<span class="muted">Jeď s autem, ať vím, které to je.</span>'; return; }
-    if (!force && car === suCar) return;
+    if (!car) { $('suForm').innerHTML = '<span class="muted">Jeď s autem, ať vím, které to je.</span>'; return; }
+    // Without force: only when the car changed or a lap was finished (new advice)
+    const lap = lastData.lap;
+    if (!force && car === suCar && lap === suLap) return;
+    const carChanged = car !== suCar;
+    suLap = lap;
     try {
       const r = await (await fetch('api/setups?car=' + car, { cache: 'no-store' })).json();
-      suCar = car; suList = r.setups || []; suActive = r.active || '';
-      if (!suDirty || force) { suEdit = structuredClone(suList.find(x => x.id === suActive) || suBlank(car)); suDirty = false; }
-      renderSetupForm();
+      suCar = car; suList = r.setups || []; suActive = r.active || ''; suInfoData = r;
+      if (force || carChanged) {
+        if (!suDirty || carChanged) { suEdit = structuredClone(suList.find(x => x.id === suActive) || suBlank(car)); suDirty = false; }
+        renderSetupForm();
+      }
+      renderSetupInfo();
     } catch {}
   }
   function renderSetupForm() {
@@ -2420,16 +2446,45 @@
     $('suName').value = suEdit.name || '';
     const v = suEdit.values || {};
     const inp = (k, type) => `<input ${type === 'text' ? 'type="text" class="wide"' : 'type="text" inputmode="decimal"'} data-k="${k}" value="${esc(v[k] ?? '')}" autocomplete="off">`;
-    $('p8body').innerHTML = SETUP_FIELDS.map(([title, fields]) => {
+    $('suBop').checked = !!suEdit.bop;
+    $('suForm').innerHTML = (suEdit.bop ? `<div class="card"><h2>BoP</h2><div class="pnote" style="margin:0">Nastavení je v závodě zamčené (Balance of Performance). Kola a body řazení se ukládají k této kartě, doporučení jsou jen pro jízdu.</div></div>` : SETUP_FIELDS.map(([title, fields]) => {
       const pair = fields.some(f => f[3]);
       const rows = fields.map(([k, label, unit, fr, type]) => fr
         ? `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td>${inp(k + '_f', type)}</td><td>${inp(k + '_r', type)}</td></tr>`
         : `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td colspan="2">${inp(k, type)}</td></tr>`).join('');
       return `<div class="card"><h2>${title}</h2><table class="sutab">${pair ? '<tr><th></th><th>Předek</th><th>Zadek</th></tr>' : ''}${rows}</table></div>`;
-    }).join('') + `<div class="card"><h2>Poznámka</h2><textarea id="suNote" placeholder="např. trať, počasí, jak se auto chovalo">${esc(suEdit.note || '')}</textarea>
+    }).join('')) + `<div class="card"><h2>Poznámka</h2><textarea id="suNote" placeholder="např. trať, počasí, jak se auto chovalo">${esc(suEdit.note || '')}</textarea>
       <div class="pnote">Aktivní setup se přiřazuje tréninkovým kolům a bodům řazení z jízdy – po změně převodovky nebo přítlaku ulož nový setup (Duplikovat), ať se data nemíchají.</div></div>`;
     suMarkDirty(suDirty);
   }
+  // Advice from the last laps of the active setup, and the setups side by side on this track
+  function renderSetupInfo() {
+    const r = suInfoData;
+    if (!r) { $('suInfo').innerHTML = ''; return; }
+    const a = r.advice || {}, act = suList.find(x => x.id === suActive);
+    const name = act ? act.name : 'bez setupu';
+    const pc = v => `${Math.round(v || 0)} %`;
+    let body;
+    if (!r.track) body = '<div class="pnote" style="margin:0">Zadej trať v Tréninku (nebo vyber závod) – doporučení jsou pro konkrétní trať.</div>';
+    else if (a.laps < a.needed) body = `<div class="pnote" style="margin:0">Odjeď ještě ${a.needed - a.laps} ${a.needed - a.laps === 1 ? 'celé kolo' : 'celá kola'} se setupem „${esc(name)}“ (bez zastávky v boxu), pak ukážu, kde auto nedotáčí nebo přetáčí a co zkusit změnit.</div>`;
+    else {
+      const bal = `<div class="subal"><span>Vjezd <b>↗${pc(a.entry[0])} ↘${pc(a.entry[1])}</b></span><span>Střed <b>↗${pc(a.mid[0])} ↘${pc(a.mid[1])}</b></span>
+        <span>Výjezd <b>↗${pc(a.exit[0])} ↘${pc(a.exit[1])}</b></span><span>Blokování P/Z <b>${pc(a.lock_f)} / ${pc(a.lock_r)}</b></span><span>Prokluz <b>${pc(a.spin)}</b></span>
+        <span class="muted">↗ nedotáčivost · ↘ přetáčivost</span></div>`;
+      const items = (a.advice || []).map(x => `<div><b>${esc(x.finding)}</b>${x.setup ? `<span class="k">Nastavení</span>${esc(x.setup)}<br>` : ''}${x.driving ? `<span class="k">Jízda</span>${esc(x.driving)}` : ''}</div>`).join('');
+      body = bal + (items ? `<div class="suadv">${items}</div><div class="pnote">Měň vždy jen jednu věc: Duplikovat → upravit → Uložit (nová karta je aktivní), pak 3+ kola a porovnej níže.</div>`
+        : '<div class="pnote">Auto je vyvážené – žádná výrazná nedotáčivost, přetáčivost, blokování ani prokluz. Hledej čas v jízdě (kouč na stránce 1).</div>');
+    }
+    const cmp = r.compare || [];
+    const bestMed = Math.min(...cmp.filter(c => c.laps >= 3).map(c => c.median_ms));
+    const cmpHtml = cmp.length ? `<div class="card suwide"><h2>Porovnání setupů · ${esc(r.track)} · čistá tréninková kola</h2><table class="sucmp">
+        <tr><th>Setup</th><th>Kol</th><th>Nejlepší</th><th>Medián</th></tr>
+        ${cmp.map(c => `<tr class="${c.id === suActive ? 'on' : ''}"><td>${esc(c.name)}${c.id === suActive ? ' ✓' : ''}</td><td>${c.laps}</td><td>${fmtLap(c.best_ms)}</td>
+          <td class="${c.median_ms === bestMed ? 'best' : ''}">${fmtLap(c.median_ms)}</td></tr>`).join('')}</table>
+        <div class="pnote">Medián je spolehlivější než nejlepší kolo; zelený = nejrychlejší setup aspoň se 3 koly.</div></div>` : '';
+    $('suInfo').innerHTML = `<div class="card suwide"><h2>Doporučení · ${esc(name)}${r.track ? ' · ' + esc(r.track) : ''}${a.laps ? ` · z ${a.laps} kol` : ''}</h2>${body}</div>` + cmpHtml;
+  }
+  $('suBop').addEventListener('change', e => { if (!suEdit) return; suEdit.bop = e.target.checked; if (suEdit.bop && !suEdit.name) suEdit.name = 'BoP'; suMarkDirty(true); renderSetupForm(); });
   function suMarkDirty(d) {
     suDirty = d;
     const st = $('suState');
@@ -2445,7 +2500,7 @@
   $('suName').addEventListener('input', e => { if (suEdit) { suEdit.name = e.target.value; suMarkDirty(true); } });
   async function suPost(path, body) {
     const r = await stPost(path, body);
-    if (r) { suList = r.setups || []; suActive = r.active || ''; }
+    if (r) { suList = r.setups || []; suActive = r.active || ''; suInfoData = r; renderSetupInfo(); }
     return r;
   }
   $('suSave').onclick = async () => {

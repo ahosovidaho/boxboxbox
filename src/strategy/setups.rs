@@ -18,6 +18,8 @@ pub struct Setup {
     pub car: i32,
     pub name: String,
     pub note: String,
+    /// Balance of Performance: the setup is locked in the race, only driving tips
+    pub bop: bool,
     /// Field key → value as typed ("12", "-1.5", "RS"); see the dashboard for the keys
     pub values: BTreeMap<String, String>,
     pub created: String,
@@ -70,7 +72,6 @@ impl Setups {
         self.saved.active.get(&car).cloned().unwrap_or_default()
     }
 
-    #[cfg(test)]
     pub fn active(&self, car: i32) -> Option<&Setup> {
         let id = self.saved.active.get(&car)?;
         self.saved.setups.iter().find(|s| s.car == car && &s.id == id)

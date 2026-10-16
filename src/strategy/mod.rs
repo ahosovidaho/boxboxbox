@@ -10,6 +10,7 @@
 //!
 //! Saved in `strategy.json` in the data folder, so a restart keeps the race and the calibration.
 
+pub mod handling;
 pub mod planner;
 pub mod practice;
 pub mod setups;
@@ -255,6 +256,8 @@ pub struct Strategy {
     cache: Option<(String, planner::Options)>,
     pub practice: practice::Practice,
     pub setups: setups::Setups,
+    /// Handling counts per lap, for the setup advice
+    pub handling: handling::Handling,
     /// Race with the practice figures filled in, and what it was computed from
     filled: Option<(String, Race, Option<PracticeUse>)>,
 }
@@ -266,7 +269,8 @@ impl Strategy {
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let practice = practice::Practice::load(file.as_ref().map(|f| f.with_file_name("practice.json")));
         let setups = setups::Setups::load(file.as_ref().map(|f| f.with_file_name("setups.json")));
-        Strategy { saved, file, live: Live::default(), cache: None, practice, setups, filled: None }
+        let handling = handling::Handling::load(file.as_ref().map(|f| f.with_file_name("handling.json")));
+        Strategy { saved, file, live: Live::default(), cache: None, practice, setups, handling, filled: None }
     }
 
     pub fn shared(self) -> Shared {
@@ -335,6 +339,28 @@ impl Strategy {
 
     /// A lap ended at the line. `closed`: it ended where it started (not the short first race lap
     /// of a track with separate start and finish lines). In practice mode it goes to the practice.
+    /// Handling counts of a finished lap: stored for the car, its active setup and the track
+    /// (practice track in practice, otherwise the race track).
+    pub fn handling_lap(&mut self, car: i32, mut lap: handling::LapStats) {
+        let track = self.advice_track();
+        if track.trim().is_empty() || car == 0 {
+            return;
+        }
+        lap.car = car;
+        lap.setup = self.setups.active_id(car);
+        lap.track = track;
+        self.handling.add(lap);
+    }
+
+    /// Track the setup advice is for
+    pub fn advice_track(&self) -> String {
+        if self.practice.saved.active {
+            self.practice.saved.track.clone()
+        } else {
+            self.saved.race.as_ref().map(|r| r.track.clone()).unwrap_or_default()
+        }
+    }
+
     pub fn lap_finished(&mut self, lap: i16, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
         if self.practice.saved.active {
             let setup = self.setups.active_id(self.live.car_code);

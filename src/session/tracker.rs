@@ -157,6 +157,8 @@ pub struct Tracker {
     perf_store: Option<perf::Store>,
     /// Power curve from all full-throttle driving (shift points for every gear)
     track_dyno: perf::track::TrackDyno,
+    /// Handling counts of the lap being driven (setup advice)
+    handling: strategy::handling::Collector,
     /// Active car setup (id), the car and lap it was looked up for
     setup_id: String,
     setup_car: i32,
@@ -204,6 +206,7 @@ impl Tracker {
             off_track_since: None,
             last_packet: None,
             perf: perf::Detector::default(),
+            handling: Default::default(),
             track_dyno: perf::track::TrackDyno::new(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
             setup_id: String::new(),
             setup_car: -1,
@@ -298,6 +301,11 @@ impl Tracker {
                 let pts = self.track.current_points();
                 self.with_strategy(|s| s.lap_shape(&pts));
             }
+            let handling = self.handling.take();
+            if self.lap > 0 && crossed_line && self.lap_full && closed && !self.lap_refuel {
+                let car = p.car_code;
+                self.with_strategy(|s| s.handling_lap(car, handling));
+            }
             if self.lap > 0 && crossed_line && self.lap_full {
                 let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
                 self.with_strategy(|s| s.lap_finished(lap, burn, refuel, finished, closed));
@@ -372,6 +380,7 @@ impl Tracker {
         let lap_ms = self.lap_start_tick.map(|t| ((p.packet_id - t) as f64 / TICKS_PER_SEC * 1000.0) as i64);
         let dyn_ = dynamics::compute(p, self.steer_cal.ratio);
         self.steer_cal.update(p, &dyn_);
+        self.handling.tick(p, &dyn_);
         let sample = perf::Sample::from_packet(p);
         // The active setup changes rarely: looked up once per lap (and when the car changes)
         if self.setup_car != p.car_code || self.setup_check != self.lap {
