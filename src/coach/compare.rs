@@ -495,3 +495,115 @@ fn corner_stats(rows: &[Row], s_from: f64, s_to: f64, s_apex: f64) -> Option<Cor
         tcs: pct(seg.iter().filter(|r| r.has_flag(11)).count(), seg.len()),
     })
 }
+
+/// Grid step of the traces (m along the reference lap)
+const TRACE_STEP: f64 = 4.0;
+
+/// Index and fraction where `rows` reach reference distance `s` (like [`time_at`]).
+fn at(rows: &[Row], s: f64) -> (usize, f64) {
+    let (mut lo, mut hi) = (0usize, rows.len() - 1);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if rows[mid].s_ref < s {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    let i = lo.max(1);
+    let (a, b) = (&rows[i - 1], &rows[i]);
+    let ds = b.s_ref - a.s_ref;
+    (i - 1, if ds > 0.0 { ((s - a.s_ref) / ds).clamp(0.0, 1.0) } else { 0.0 })
+}
+
+/// Channels of one lap on the distance grid of the reference lap.
+fn trace(rows: &[Row], grid: &[f64], reference: &[Row]) -> serde_json::Value {
+    let lerp = |(i, f): (usize, f64), v: &dyn Fn(&Row) -> f64| {
+        let j = (i + 1).min(rows.len() - 1);
+        v(&rows[i]) + (v(&rows[j]) - v(&rows[i])) * f
+    };
+    let r1 = |v: f64| (v * 10.0).round() / 10.0;
+    let mut speed = Vec::with_capacity(grid.len());
+    let (mut thr, mut brk, mut steer, mut gear, mut delta) = (vec![], vec![], vec![], vec![], vec![]);
+    for &s in grid {
+        let p = at(rows, s);
+        speed.push(r1(lerp(p, &|r| r.speed_kmh)));
+        thr.push(lerp(p, &|r| r.throttle_pct()).round());
+        brk.push(lerp(p, &|r| r.brake_pct()).round());
+        steer.push(r1(lerp(p, &|r| r.steering.to_degrees())));
+        let g = rows[p.0].gear;
+        gear.push(if (1.0..15.0).contains(&g) { g } else { 0.0 });
+        delta.push(lap::round_to(time_at(rows, s) - time_at(reference, s), 3));
+    }
+    serde_json::json!({ "speed": speed, "throttle": thr, "brake": brk, "steer": steer, "gear": gear, "delta": delta })
+}
+
+impl Comparer {
+    /// Speed, pedals, steering, gear and time delta of one lap against the fastest lap of the
+    /// session, on a common distance grid – for the corner graphs on the dashboard.
+    /// `lap_file` = None: the latest complete lap.
+    pub fn traces(&mut self, session: &Path, lap_file: Option<&str>) -> std::io::Result<serde_json::Value> {
+        let laps = self.complete_laps(session);
+        let Some((ref_path, ref_ms)) = laps.iter().min_by_key(|(_, ms)| *ms).cloned() else {
+            return Ok(serde_json::json!({ "laps": [] }));
+        };
+        let mut reference = lap::load(&ref_path)?;
+        let (ratio, _) = lap::steer_ratio(&reference);
+        prepare(&mut reference, ratio);
+        project(&mut reference, None);
+        let target = match lap_file {
+            Some(f) => laps.iter().find(|(p, _)| file_name(p) == f).cloned(),
+            None => laps.last().cloned(),
+        }
+        .unwrap_or((ref_path.clone(), ref_ms));
+        let mut rows = if target.0 == ref_path { reference.clone() } else { lap::load(&target.0)? };
+        if target.0 != ref_path {
+            prepare(&mut rows, ratio);
+            project(&mut rows, Some(&reference));
+        }
+        let length = reference.last().and_then(|r| r.s).unwrap_or(0.0);
+        let grid: Vec<f64> = (0..).map(|k| k as f64 * TRACE_STEP).take_while(|s| *s <= length).collect();
+        let corners_path = session.join("corners.json");
+        let corners = if corners_path.exists() { map_corner_defs(&corners_path, &reference)? } else { Vec::new() };
+        let corners: Vec<serde_json::Value> = corners
+            .iter()
+            .map(|c| {
+                let (s0, s1) = (s_of(&reference, c.from), s_of(&reference, c.to));
+                let dt = (time_at(&rows, s1) - time_at(&rows, s0)) - (time_at(&reference, s1) - time_at(&reference, s0));
+                serde_json::json!({
+                    "n": c.n, "from": lap::round_i(s0), "to": lap::round_i(s1), "apex": lap::round_i(c.s),
+                    "dt": lap::round_to(dt, 3),
+                    "ref": corner_stats(&reference, s0, s1, c.s), "lap": corner_stats(&rows, s0, s1, c.s),
+                })
+            })
+            .collect();
+        // Map of the reference lap (every 3rd grid point is plenty)
+        let map: Vec<[f64; 2]> = grid
+            .iter()
+            .step_by(3)
+            .map(|&s| {
+                let (i, _) = at(&reference, s);
+                [lap::round_to(reference[i].pos_x, 1), lap::round_to(reference[i].pos_z, 1)]
+            })
+            .collect();
+        let lap_of = |p: &Path| meta_lap(p);
+        Ok(serde_json::json!({
+            "session": file_name(session),
+            "laps": laps.iter().map(|(p, ms)| serde_json::json!({ "file": file_name(p), "lap": lap_of(p), "ms": ms })).collect::<Vec<_>>(),
+            "reference": { "file": file_name(&ref_path), "lap": lap_of(&ref_path), "ms": ref_ms },
+            "lap": { "file": file_name(&target.0), "lap": lap_of(&target.0), "ms": target.1 },
+            "step": TRACE_STEP,
+            "s": grid.iter().map(|s| lap::round_i(*s)).collect::<Vec<_>>(),
+            "map": map,
+            "corners": corners,
+            "ref_trace": trace(&reference, &grid, &reference),
+            "lap_trace": trace(&rows, &grid, &reference),
+        }))
+    }
+}
+
+/// Lap number from a file name like `011_lap08.csv`
+fn meta_lap(p: &Path) -> i64 {
+    let name = file_name(p);
+    name.split("_lap").nth(1).and_then(|r| r.trim_end_matches(".csv").parse().ok()).unwrap_or(0)
+}

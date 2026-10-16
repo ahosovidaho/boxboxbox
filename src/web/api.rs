@@ -13,6 +13,7 @@
 //! | POST | `/api/strategy/action` | practice: `"practice"` (value "1"/"0"), `"practice_track"`, `"practice_compound"`, `"practice_new_set"`, `"practice_counting"`, `"practice_mults"`, `"practice_life"`, `"practice_toggle_lap"` |
 //! | GET  | `/api/practice?track=&car=` | practice state, figures per compound, last laps, known tracks |
 //! | GET/POST | `/api/setups?car=` | car setups (GT7 settings sheet) and the active one; POST saves a card |
+//! | GET  | `/api/traces?session=&lap=` | speed, pedals, steering and delta of a lap against the best lap of the session (corner graphs) |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
 use super::Feeds;
@@ -60,6 +61,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/coach", get(coach))
         .route("/api/map", get(map))
+        .route("/api/traces", get(traces))
         .route("/api/perf", get(perf_overview))
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/strategy", get(strategy_state))
@@ -252,6 +254,47 @@ async fn coach(State(s): State<AppState>) -> impl IntoResponse {
 
 async fn map(State(s): State<AppState>) -> impl IntoResponse {
     json_body(s.feeds.map.borrow().to_string())
+}
+
+#[derive(Deserialize)]
+struct TraceQuery {
+    session: Option<String>,
+    lap: Option<String>,
+}
+
+/// Lap comparison traces. Session: the given one (a folder name in the recordings), otherwise the
+/// one the coach shows, otherwise the newest.
+async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl IntoResponse {
+    static COMPARER: std::sync::OnceLock<Mutex<crate::coach::compare::Comparer>> = std::sync::OnceLock::new();
+    let rec = s.settings.data.recordings.clone();
+    let feed = s.settings.data.coach_feed.clone();
+    let body = tokio::task::spawn_blocking(move || {
+        let safe = |n: &str| !n.is_empty() && !n.contains(['/', '\\']) && n != ".." && rec.join(n).is_dir();
+        let from_feed = || {
+            let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&feed).ok()?).ok()?;
+            v["session"].as_str().map(str::to_string)
+        };
+        let newest = || {
+            let mut d: Vec<String> = std::fs::read_dir(&rec)
+                .ok()?
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            d.sort();
+            d.pop()
+        };
+        let session = q.session.filter(|n| safe(n)).or_else(|| from_feed().filter(|n| safe(n))).or_else(newest);
+        let Some(session) = session else { return json!({ "laps": [] }).to_string() };
+        let mut c = COMPARER.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+        match c.traces(&rec.join(&session), q.lap.as_deref()) {
+            Ok(v) => v.to_string(),
+            Err(e) => json!({ "laps": [], "error": e.to_string() }).to_string(),
+        }
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
 }
 
 #[derive(Deserialize)]

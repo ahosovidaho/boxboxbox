@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Telemetrie po zatáčkách** (Trénink, nová stránka za Koučem): libovolné kolo session proti
+  nejlepšímu na stejné vzdálenosti – rozdíl času, rychlost, plyn nahoru / brzda dolů, volant
+  a stupeň. Celé kolo nebo jedna zatáčka s brzdnou zónou (výchozí: zatáčka s největší ztrátou),
+  ťuknutím do grafu hodnoty obou kol v tom místě a bod na mapě. Nahoře souhrn zatáčky: brzdný
+  bod, vjezd, vrchol, plný plyn, výjezd a stupeň. API `/api/traces?session=&lap=`.
+
 - **Kouč – cíl bez spinů**: „Cíl: Zx“ a souhrn session počítají průměrnou ztrátu jen z normálních
   kol (do 107 % nejlepšího). Kolo se spinem, výletem mimo trať nebo zastávkou dřív přetáhlo
   průměr (F3500 Yas Marina: Z14 „10,39 s“ kvůli spinu se ztrátou 41 s).
