@@ -13,6 +13,7 @@
 pub mod handling;
 pub mod planner;
 pub mod practice;
+pub mod prep;
 pub mod setup_compare;
 pub mod setups;
 
@@ -580,6 +581,39 @@ impl Strategy {
             layout_warning: self.practice.layout_warning.clone(),
             track_length_m: self.practice.track_length(&p.track),
         }
+    }
+
+    /// Preparation checklist for the chosen race. `shift_points(car, setup)`: shift points from
+    /// driving are stored for the car and setup.
+    pub fn prep(&self, shift_points: impl Fn(i32, &str) -> bool) -> Option<serde_json::Value> {
+        let race = self.saved.race.clone().filter(|r| !r.track.trim().is_empty())?;
+        let car = self.practice_car(&race.track);
+        let setup = car.map(|c| self.setups.active_id(c)).unwrap_or_default();
+        let wear = race.tyre_wear.unwrap_or(1.0);
+        let fuel = race.fuel_mult.unwrap_or(1.0);
+        let summary = car.map(|c| self.practice.summary(c, &setup, &race.track, wear, fuel));
+        let key = practice::track_key(&race.track);
+        let laps: Vec<&practice::PracticeLap> = self
+            .practice
+            .saved
+            .laps
+            .iter()
+            .filter(|l| Some(l.car) == car && l.clean && l.counted && !l.wrong_layout && practice::track_key(&l.track) == key)
+            .collect();
+        let (pit_loss, source) = self.pit_loss();
+        let card = car.and_then(|c| self.setups.active(c)).map(|s| (s.name.clone(), s.bop));
+        let items = prep::checklist(&prep::Input {
+            race: &race,
+            summary: summary.as_ref(),
+            laps,
+            pit_loss_source: source,
+            pit_loss,
+            setup: card,
+            shift_points: car.is_some_and(|c| shift_points(c, &setup)),
+            car_name: car.and_then(crate::telemetry::cars::name).map(str::to_string),
+        });
+        let done = items.iter().filter(|i| i.status == "ok").count();
+        Some(serde_json::json!({ "race": race.name, "track": race.track, "car": car, "items": items, "done": done, "total": items.len() }))
     }
 
     /// Car the practice figures are taken for: the car driven now if it has practice laps on the

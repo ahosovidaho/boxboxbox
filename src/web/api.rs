@@ -13,6 +13,7 @@
 //! | POST | `/api/strategy/action` | practice: `"practice"` (value "1"/"0"), `"practice_track"`, `"practice_compound"`, `"practice_new_set"`, `"practice_counting"`, `"practice_mults"`, `"practice_life"`, `"practice_toggle_lap"` |
 //! | GET  | `/api/practice?track=&car=` | practice state, figures per compound, last laps, known tracks |
 //! | GET/POST | `/api/setups?car=` | car setups (GT7 settings sheet) and the active one; POST saves a card |
+//! | GET  | `/api/prep` | preparation checklist for the chosen race |
 //! | GET  | `/api/traces?session=&lap=` | speed, pedals, steering and delta of a lap against the best lap of the session (corner graphs) |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
@@ -62,6 +63,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/coach", get(coach))
         .route("/api/map", get(map))
         .route("/api/traces", get(traces))
+        .route("/api/prep", get(prep))
         .route("/api/perf", get(perf_overview))
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/strategy", get(strategy_state))
@@ -254,6 +256,20 @@ async fn coach(State(s): State<AppState>) -> impl IntoResponse {
 
 async fn map(State(s): State<AppState>) -> impl IntoResponse {
     json_body(s.feeds.map.borrow().to_string())
+}
+
+/// What is known for the chosen race and what practice still has to deliver.
+async fn prep(State(s): State<AppState>) -> impl IntoResponse {
+    let perf = s.perf.clone();
+    let st = s.strategy.clone();
+    let body = tokio::task::spawn_blocking(move || {
+        let st = st.lock().unwrap_or_else(|e| e.into_inner());
+        st.prep(|car, setup| crate::perf::track::read(perf.dir(), car, setup).is_some())
+            .map_or_else(|| json!({ "items": [] }).to_string(), |v| v.to_string())
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
 }
 
 #[derive(Deserialize)]

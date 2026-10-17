@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Příprava na závod** (Strategie → Trénink, nahoře): pro vybraný závod co je hotové (✓),
+  částečně (!) a co chybí (○) – nastavení závodu, čistá kola na trati se stejnými násobiči,
+  každá směs (kola, ztráta za kolo, výdrž), spotřeba, ztráta zastávkou, dlouhý stint, karta
+  setupu, body řazení a vyrovnanost (cíl 10 kol v rozmezí 0,3 s) – a co udělat dál. API
+  `/api/prep`.
+
 - **Palivo živě v závodě** (závodní stránka): „TOTO KOLO 3,1/3,2“ = palivo spotřebované v tomto
   kole proti tomu, co povoluje cíl v tomto místě kola (zeleně pod, červeně nad). Když šetření
   ušetří zastávku (jedna zastávka a není povinná → žádná; dvě → jedna, do ~12 % úspory),

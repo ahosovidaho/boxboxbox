@@ -494,6 +494,17 @@
     display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); grid-auto-rows: max-content; align-content: start; padding-bottom: 8px; }
   #p5body .card { min-height: auto; }
   #p5body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 6px; }
+  #prepCard { grid-column: 1 / -1; }
+  #prepTitle b { color: var(--text); letter-spacing: 0; text-transform: none; font-size: 12px; margin-left: 6px; }
+  #prepItems { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+  .prep { background: #16161a; border-radius: 9px; padding: 7px 9px 7px 30px; position: relative; font-size: 12px; line-height: 1.4; color: var(--dim); }
+  .prep b { display: block; color: var(--text); font-size: 13px; }
+  .prep::before { position: absolute; left: 9px; top: 7px; font: 700 13px -apple-system, system-ui, sans-serif; }
+  .prep.ok { color: var(--dim); }
+  .prep.ok::before { content: '✓'; color: var(--green); }
+  .prep.warn::before { content: '!'; color: var(--yellow); left: 12px; }
+  .prep.missing::before { content: '○'; color: var(--red); }
+  .prep .todo { color: var(--text); margin-top: 3px; opacity: .85; }
   #stCalls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
   #stCalls:empty { display: none; }
   .stcall { border-radius: 10px; padding: 5px 12px; font-size: 15px; font-weight: 600; background: var(--panel); border: 1px solid var(--line); }
@@ -832,6 +843,7 @@
   </div>
   <div id="p5body">
     <div id="stCalls" class="race-only"></div>
+    <div class="card practice-only" id="prepCard" hidden><h2 id="prepTitle">Příprava na závod</h2><div id="prepItems"></div></div>
 
     <div class="card practice-only"><h2>Trénink</h2>
       <div class="stbig" id="prBig">–</div>
@@ -1271,6 +1283,7 @@
     if (n === 7) loadRecap();
     if (n === 8) loadSetups(true);
     if (n === 9) loadTraces();
+    if (n === 5) loadPrep();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
@@ -2895,6 +2908,20 @@
   // ---------- Practice mode ----------
   let prData = null, prKey = '', prBusy = false;
   const fmtLap = ms => ms == null ? '–' : `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`.replace('.', ',');
+  // Race preparation: what is known for the chosen race and what to practise next
+  async function loadPrep() {
+    try {
+      const r = await (await fetch('api/prep', { cache: 'no-store' })).json();
+      const card = $('prepCard');
+      if (!r.items || !r.items.length) { card.hidden = true; return; }
+      card.hidden = false;
+      $('prepTitle').innerHTML = `Příprava na závod <b>${esc(r.race)} · ${esc(r.track)} · hotovo ${r.done}/${r.total}</b>`;
+      // Open items first, then the done ones
+      const order = { missing: 0, warn: 1, ok: 2 };
+      $('prepItems').innerHTML = r.items.slice().sort((a, b) => order[a.status] - order[b.status])
+        .map(i => `<div class="prep ${i.status}"><b>${esc(i.label)}</b>${esc(i.detail)}${i.todo ? `<div class="todo">${esc(i.todo)}</div>` : ''}</div>`).join('');
+    } catch {}
+  }
   async function loadPractice() {
     if (prBusy) return;
     prBusy = true;
@@ -2910,7 +2937,7 @@
   function renderPractice(d) {
     const ps = d.strategy.practice;
     const key = `${ps.laps}|${ps.track}|${ps.compound}|${ps.set_age}|${ps.counting}|${ps.wear_mult}|${ps.fuel_mult}|${d.car_code}|${ps.layout_warning}|${ps.track_length_m}`;
-    if (!prData || (prData.state && prData.state.laps !== ps.laps)) { if (!prBusy) loadPractice(); }
+    if (!prData || (prData.state && prData.state.laps !== ps.laps)) { if (!prBusy) { loadPractice(); loadPrep(); } }
     const big = ps.compound ? `${ps.compound} <small>${ps.set_age + 1}. kolo na sadě</small>` : 'Vyber směs';
     if ($('prBig').innerHTML !== big) $('prBig').innerHTML = big;
     if (key === prKey) return;
@@ -3184,7 +3211,7 @@
     const saved = await stPost('api/strategy/race', race);
     if (saved) {
       const changed = (stRace && stRace.track) !== (saved.race && saved.race.track);
-      stRace = saved.race; $('raceSheet').hidden = true; prKey = '';
+      stRace = saved.race; $('raceSheet').hidden = true; prKey = ''; loadPrep();
       // In practice a newly chosen race also sets the practice track and multipliers
       if (appMode === 'practice' && (changed || !prData || !prData.state || !prData.state.track)) await practiceForRace();
     }
