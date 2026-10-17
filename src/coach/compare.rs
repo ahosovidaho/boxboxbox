@@ -646,8 +646,32 @@ impl Comparer {
             })
             .collect();
         let times: Vec<f64> = normal.iter().map(|l| l.ms as f64).collect();
+        // Setup of every lap (written by the recorder) → mean loss per corner and setup
+        let meta: serde_json::Value =
+            fs::read_to_string(session.join("session.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let setup_of = |file: &str| meta["lap_setups"][file].as_str().unwrap_or_default().to_string();
+        let mut ids: Vec<String> = normal.iter().map(|l| setup_of(&l.file)).collect();
+        ids.sort();
+        ids.dedup();
+        let by_setup: Vec<serde_json::Value> = if ids.len() < 2 {
+            Vec::new()
+        } else {
+            ids.iter()
+                .map(|id| {
+                    let laps: Vec<&&LapResult> = normal.iter().filter(|l| setup_of(&l.file) == *id).collect();
+                    let corners: serde_json::Map<String, serde_json::Value> = res
+                        .corners
+                        .iter()
+                        .map(|c| (c.n.to_string(), lap::round_to(lap::mean(laps.iter().map(|l| l.corner(c.n).dt)), 3).into()))
+                        .collect();
+                    let ms: Vec<f64> = laps.iter().map(|l| l.ms as f64).collect();
+                    serde_json::json!({ "id": id, "laps": laps.len(), "mean_ms": lap::round_i(lap::mean(ms)), "corners": corners })
+                })
+                .collect()
+        };
         Ok(serde_json::json!({
             "consistency": consistency,
+            "by_setup": by_setup,
             "normal": { "laps": times.len(), "mean_ms": lap::round_i(lap::mean(times.iter().copied())),
                         "sd_ms": lap::round_i(lap::pstdev(&times)), "theoretical_ms": res.theoretical_ms.map(lap::round_i) },
             "risk": risk,

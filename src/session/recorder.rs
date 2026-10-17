@@ -30,6 +30,8 @@ pub enum Msg {
     },
     Lap(i16),
     Row(String),
+    /// Id of the car setup driven from now on (stored per lap file in `session.json`)
+    Setup(String),
 }
 
 pub struct Recorder {
@@ -191,6 +193,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
     // Files are created with their first row only, so menus (lap −1/0 without driving) don't
     // leave empty files.
     let mut pending_lap: Option<i16> = None;
+    let mut setup = String::new();
     for msg in rx {
         match msg {
             Msg::Session { car, car_code, resume } => {
@@ -251,6 +254,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                     write_meta(dir, &meta);
                 }
             }
+            Msg::Setup(id) => setup = id,
             Msg::Lap(lap) => {
                 file = None;
                 notify();
@@ -260,6 +264,14 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                 if let (None, Some(lap), Some(dir)) = (&file, pending_lap.take(), &session) {
                     seq += 1;
                     let path = dir.join(format!("{seq:03}_lap{lap:02}.csv"));
+                    if !setup.is_empty() {
+                        let name = format!("{seq:03}_lap{lap:02}.csv");
+                        if !meta["lap_setups"].is_object() {
+                            meta["lap_setups"] = serde_json::json!({});
+                        }
+                        meta["lap_setups"][name] = setup.clone().into();
+                        write_meta(dir, &meta);
+                    }
                     match File::create(&path) {
                         Ok(f) => {
                             let mut w = BufWriter::new(f);

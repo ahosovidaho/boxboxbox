@@ -13,6 +13,7 @@
 pub mod handling;
 pub mod planner;
 pub mod practice;
+pub mod setup_compare;
 pub mod setups;
 
 use serde::{Deserialize, Serialize};

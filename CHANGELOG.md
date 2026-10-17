@@ -2,6 +2,17 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Férové srovnání setupů** (stránka Nastavení auta): čistá tréninková kola se proloží
+  modelem čas = základ setupu + opotřebení × stáří gum + vliv paliva × (palivo − referenční);
+  „Férově“ = čas setupu na nových gumách se stejným palivem ± nejistota a verdikt („o 0,3 s
+  pomalejší“, nebo „zatím nerozhodnuto“, dokud rozdíl není větší než dvojnásobek nejistoty).
+  Kola s chybou (o 2 s / 2 % pomalejší než typické) se vynechají. Opotřebení a vliv paliva se
+  učí z dat, při málo kolech drží typické hodnoty (0,2 s/kolo, 0,03 s/l). Tréninková kola nově
+  ukládají palivo na začátku kola.
+- **Setupy po zatáčkách**: záznam si u každého kola pamatuje aktivní setup (`session.json`,
+  `lap_setups`); když se v jedné session jezdilo s víc setupy, tabulka ukáže, ve kterých
+  zatáčkách který setup získává.
+
 - **Vyrovnanost** (stránka Telemetrie, třetí pohled): rozptyl ztráty v každé zatáčce mezi
   normálními koly (do 107 % nejlepšího) – zeleně do ±0,12 s, oranžově do ±0,25 s, jinak červeně,
   i na mapě. Celé kolo: počet normálních kol, průměr ± rozptyl, teoretické kolo a tři

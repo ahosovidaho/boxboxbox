@@ -41,6 +41,8 @@ pub struct PracticeLap {
     pub ms: i32,
     /// Fuel burnt
     pub fuel: f32,
+    /// Fuel in the tank at the start of the lap (for the fuel-corrected setup comparison)
+    pub fuel_start: Option<f32>,
     pub wear_mult: f32,
     pub fuel_mult: f32,
     /// Full lap from the line, no pit stop, not the lap out of the pit
@@ -189,13 +191,15 @@ pub struct Practice {
     layout_ok: bool,
     /// Why the last lap did not fit the track name
     pub layout_warning: Option<String>,
+    /// Fuel at the start of the lap that is being finished (set just before [`Practice::lap_done`])
+    pub fuel_start: Option<f32>,
 }
 
 impl Practice {
     pub fn load(file: Option<PathBuf>) -> Self {
         let saved =
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Practice { saved, file, pit_this_lap: false, pit_last_lap: false, layout_ok: true, layout_warning: None }
+        Practice { saved, file, pit_this_lap: false, pit_last_lap: false, layout_ok: true, layout_warning: None, fuel_start: None }
     }
 
     pub fn save(&self) {
@@ -228,6 +232,7 @@ impl Practice {
         let pit = self.pit_this_lap || refuel;
         let out_lap = self.pit_last_lap;
         let wrong_layout = !std::mem::replace(&mut self.layout_ok, true);
+        let fuel_start = self.fuel_start.take();
         self.pit_last_lap = pit;
         self.pit_this_lap = false;
         let (Some(ms), Some(compound)) = (ms.filter(|m| *m > 0), self.saved.compound.clone()) else { return };
@@ -248,6 +253,7 @@ impl Practice {
             age: s.set_age,
             ms,
             fuel: used.max(0.0),
+            fuel_start,
             wear_mult: s.wear_mult,
             fuel_mult: s.fuel_mult,
             clean: closed && !pit && !out_lap && !wrong_layout,

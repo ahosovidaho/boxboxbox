@@ -341,26 +341,37 @@ fn setups_json(st: &strategy::Strategy, car: i32) -> String {
     .to_string()
 }
 
-/// Clean practice laps per setup on the track: count, best and median lap time.
-fn setup_compare(st: &strategy::Strategy, car: i32, track: &str) -> Vec<serde_json::Value> {
+/// Clean practice laps per setup on the track: raw best and median, and the fair lap time on
+/// new tyres with the same fuel (see [`strategy::setup_compare`]).
+fn setup_compare(st: &strategy::Strategy, car: i32, track: &str) -> serde_json::Value {
     let key = strategy::practice::track_key(track);
-    let mut by: std::collections::BTreeMap<String, Vec<i32>> = Default::default();
-    for l in &st.practice.saved.laps {
-        if l.car == car && l.clean && l.counted && !l.wrong_layout && l.ms > 0 && strategy::practice::track_key(&l.track) == key {
-            by.entry(l.setup.clone()).or_default().push(l.ms);
+    let laps: Vec<&strategy::practice::PracticeLap> = st
+        .practice
+        .saved
+        .laps
+        .iter()
+        .filter(|l| l.car == car && l.clean && l.counted && !l.wrong_layout && l.ms > 0 && strategy::practice::track_key(&l.track) == key)
+        .collect();
+    let fair = strategy::setup_compare::fair(&laps);
+    let name = |id: &str| {
+        if id.is_empty() {
+            "bez setupu".to_string()
+        } else {
+            st.setups.name_of(car, id).unwrap_or_else(|| format!("smazaný ({id})"))
         }
-    }
-    by.into_iter()
-        .map(|(id, mut ms)| {
-            ms.sort_unstable();
-            let name = if id.is_empty() {
-                "bez setupu".to_string()
-            } else {
-                st.setups.name_of(car, &id).unwrap_or_else(|| format!("smazaný ({id})"))
-            };
-            json!({ "id": id, "name": name, "laps": ms.len(), "best_ms": ms[0], "median_ms": ms[ms.len() / 2] })
+    };
+    let rows: Vec<serde_json::Value> = fair
+        .rows
+        .iter()
+        .map(|r| {
+            let mut v = serde_json::to_value(r).unwrap_or_default();
+            v["id"] = r.setup.clone().into();
+            v["name"] = name(&r.setup).into();
+            v
         })
-        .collect()
+        .collect();
+    json!({ "rows": rows, "wear": fair.wear, "fuel_effect": fair.fuel_effect, "reference_fuel": fair.reference_fuel,
+            "wear_from_data": fair.wear_from_data, "fuel_from_data": fair.fuel_from_data })
 }
 
 /// Saves a setup card (new without `id`); a new card becomes active.

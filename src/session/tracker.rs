@@ -308,7 +308,11 @@ impl Tracker {
             }
             if self.lap > 0 && crossed_line && self.lap_full {
                 let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
-                self.with_strategy(|s| s.lap_finished(lap, burn, refuel, finished, closed));
+                let fuel_start = self.fuel_at_lap_start;
+                self.with_strategy(|s| {
+                    s.practice.fuel_start = fuel_start;
+                    s.lap_finished(lap, burn, refuel, finished, closed)
+                });
             }
             self.lap_burn = 0.0;
             self.lap_refuel = false;
@@ -388,6 +392,11 @@ impl Tracker {
             self.setup_check = self.lap;
             let mut id = String::new();
             self.with_strategy(|s| id = s.setups.active_id(p.car_code));
+            if id != self.setup_id {
+                if let Some(r) = &self.recorder {
+                    r.send(Msg::Setup(id.clone()));
+                }
+            }
             self.setup_id = id;
         }
         self.track_dyno.update(p.car_code, &self.setup_id, &sample, p.angular_velocity[1]);

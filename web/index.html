@@ -2794,14 +2794,38 @@
       body = bal + (items ? `<div class="suadv">${items}</div><div class="pnote">Měň vždy jen jednu věc: Duplikovat → upravit → Uložit (nová karta je aktivní), pak 3+ kola a porovnej níže.</div>`
         : '<div class="pnote">Auto je vyvážené – žádná výrazná nedotáčivost, přetáčivost, blokování ani prokluz. Hledej čas v jízdě (kouč na stránce 1).</div>');
     }
-    const cmp = r.compare || [];
-    const bestMed = Math.min(...cmp.filter(c => c.laps >= 3).map(c => c.median_ms));
-    const cmpHtml = cmp.length ? `<div class="card suwide"><h2>Porovnání setupů · ${esc(r.track)} · čistá tréninková kola</h2><table class="sucmp">
-        <tr><th>Setup</th><th>Kol</th><th>Nejlepší</th><th>Medián</th></tr>
-        ${cmp.map(c => `<tr class="${c.id === suActive ? 'on' : ''}"><td>${esc(c.name)}${c.id === suActive ? ' ✓' : ''}</td><td>${c.laps}</td><td>${fmtLap(c.best_ms)}</td>
-          <td class="${c.median_ms === bestMed ? 'best' : ''}">${fmtLap(c.median_ms)}</td></tr>`).join('')}</table>
-        <div class="pnote">Medián je spolehlivější než nejlepší kolo; zelený = nejrychlejší setup aspoň se 3 koly.</div></div>` : '';
+    const cmp = r.compare || {}, rows = cmp.rows || [];
+    const many = new Set(rows.map(c => c.compound)).size > 1;
+    const verdict = c => c.gap_ms === 0 ? '<span class="best">nejrychlejší</span>'
+      : c.sure ? `<span style="color:var(--red)">o ${nf(c.gap_ms / 1000, 2)} s pomalejší</span>`
+      : `<span style="color:var(--dim)">+${nf(c.gap_ms / 1000, 2)} s – zatím nerozhodnuto</span>`;
+    const wear = (cmp.wear || []).map(([c, w]) => `${c} ${nf(w, 2)} s/kolo`).join(', ');
+    const cmpHtml = rows.length ? `<div class="card suwide"><h2>Porovnání setupů · ${esc(r.track)} · čistá tréninková kola</h2><table class="sucmp" style="max-width:860px">
+        <tr><th>Setup</th>${many ? '<th>Směs</th>' : ''}<th>Kol</th><th>Nejlepší</th><th>Medián</th><th>Férově</th><th style="text-align:left">Verdikt</th></tr>
+        ${rows.map(c => `<tr class="${c.id === suActive ? 'on' : ''}"><td>${esc(c.name)}${c.id === suActive ? ' ✓' : ''}</td>${many ? `<td>${c.compound}</td>` : ''}<td>${c.laps}</td>
+          <td>${fmtLap(c.best_ms)}</td><td>${fmtLap(c.median_ms)}</td><td><b>${fmtLap(c.fair_ms)}</b> <span style="color:var(--label)">±${nf(c.se_ms / 1000, 2)}</span></td>
+          <td style="text-align:left;font-family:inherit">${verdict(c)}</td></tr>`).join('')}</table>
+        <div class="pnote">„Férově“ = čas na nových gumách${cmp.reference_fuel != null ? ` a s ${cmp.reference_fuel} l paliva` : ''}: přepočteno opotřebením ${wear || '–'}${cmp.wear_from_data ? '' : ' (odhad)'} a palivem ${nf(cmp.fuel_effect, 3)} s/l${cmp.fuel_from_data ? '' : ' (odhad – málo rozdílů v palivu)'}.
+          Verdikt platí, až je rozdíl větší než dvojnásobek nejistoty (±); jinak odjeď víc kol.</div>
+        <div id="suCorners"></div></div>` : '';
     $('suInfo').innerHTML = `<div class="card suwide"><h2>Doporučení · ${esc(name)}${r.track ? ' · ' + esc(r.track) : ''}${a.laps ? ` · z ${a.laps} kol` : ''}</h2>${body}</div>` + cmpHtml;
+    if (rows.length) loadSetupCorners();
+  }
+  // Same session, several setups: where on the track each one gains (from the recorded laps)
+  async function loadSetupCorners() {
+    try {
+      const t = await (await fetch('api/traces', { cache: 'no-store' })).json();
+      const by = t.by_setup || [], box = $('suCorners');
+      if (!box || by.length < 2) return;
+      const nm = id => id ? ((suList.find(x => x.id === id) || {}).name || id) : 'bez setupu';
+      const base = by.slice().sort((a, b) => a.mean_ms - b.mean_ms)[0];
+      const others = by.filter(x => x !== base);
+      const ns = Object.keys(base.corners).map(Number).sort((a, b) => a - b);
+      const cell = v => `<td style="color:${v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)'}">${tsg(v, 2)}</td>`;
+      box.innerHTML = `<div class="pnote" style="margin-top:10px;color:var(--text)">Po zatáčkách – session ${esc(t.session.slice(8, 10) + '. ' + t.session.slice(5, 7) + '. ' + t.session.slice(11, 16).replace('-', ':'))}: proti „${esc(nm(base.id))}“ (${base.laps} kol), záporné = rychlejší</div>
+        <table class="sucmp" style="max-width:none"><tr><th>Setup</th>${ns.map(n => `<th>Z${n}</th>`).join('')}</tr>
+        ${others.map(o => `<tr><td>${esc(nm(o.id))} (${o.laps})</td>${ns.map(n => cell(o.corners[n] - base.corners[n])).join('')}</tr>`).join('')}</table>`;
+    } catch {}
   }
   $('suBop').addEventListener('change', e => { if (!suEdit) return; suEdit.bop = e.target.checked; if (suEdit.bop && !suEdit.name) suEdit.name = 'BoP'; suMarkDirty(true); renderSetupForm(); });
   function suMarkDirty(d) {
