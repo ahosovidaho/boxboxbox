@@ -436,6 +436,7 @@
   #tCorners button.r1 small { color: var(--orange) !important; }
   .tmark { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255, 74, 61, .55); pointer-events: none; }
   .tmark.slide { background: rgba(255, 138, 42, .5); }
+  #tSum .cons { display: block; white-space: normal; margin-top: 2px; font: 12px var(--mono); }
   #tSum .inc { display: block; white-space: normal; color: var(--orange); margin-top: 2px; }
   #tAxis { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--label); padding-top: 2px; }
   @media (max-width: 900px) { #tCorners { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); } #tCorners button { padding: 4px 2px; } }
@@ -971,7 +972,7 @@
   <div id="p9body">
     <div id="tSide">
       <div class="card" id="tMapCard"><svg id="tMap" role="img" aria-label="Mapa trati se zatáčkami"></svg></div>
-      <span class="seg" id="tView"><button data-v="loss" class="on">Ztráta</button><button data-v="risk">Riziko</button></span>
+      <span class="seg" id="tView"><button data-v="loss" class="on">Ztráta</button><button data-v="cons">Vyrovnanost</button><button data-v="risk">Riziko</button></span>
       <div id="tCorners"></div>
       <div id="tInc"></div>
     </div>
@@ -2517,6 +2518,11 @@
     const dtc = v => v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)';
     $('tCorners').innerHTML = `<button class="all ${tCorner == null ? 'on' : ''}" data-n="">Celé kolo <small style="color:${dtc(d.lap.ms - d.reference.ms > 0 ? 1 : 0)}">${tsg((d.lap.ms - d.reference.ms) / 1000, 3)}</small></button>`
       + d.corners.map(c => {
+        if (tView === 'cons') {
+          const k = (d.consistency || []).find(x => x.n === c.n);
+          const sd = k ? k.sd : 0;
+          return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}" title="rozptyl ztráty v zatáčce mezi normálními koly">Z${c.n}<small style="color:${consColor(sd)}">±${nf(sd, 2)}</small></button>`;
+        }
         if (tView === 'risk') {
           const r = (d.risk || []).find(x => x.n === c.n) || { level: 0, slides: 0, laps: 0, spins: 0 };
           const txt = r.spins ? `${r.spins}× spin` : r.moments ? `${r.moments}× ujetí` : `${r.slides}/${r.laps}`;
@@ -2526,6 +2532,7 @@
       }).join('');
     renderIncidents();
   }
+  const consColor = sd => sd > 0.25 ? 'var(--red)' : sd > 0.12 ? 'var(--orange)' : 'var(--green)';
   // Spins and slides of the session: tap = that lap and corner, marked in the graphs
   function renderIncidents() {
     const list = (tData.incidents || []);
@@ -2546,6 +2553,14 @@
   }
   function renderTraceSummary(c) {
     const d = tData;
+    if (!c && tView === 'cons') {
+      const nl = d.normal || {};
+      const worst = (d.consistency || []).slice().sort((a, b) => b.sd - a.sd).slice(0, 3).map(x => `Z${x.n} ±${nf(x.sd, 2)}`).join(', ');
+      $('tSum').innerHTML = `<b>Normální kola: ${nl.laps || 0}</b><span>Průměr <em>${fmtLap(nl.mean_ms)}</em> ±${nf((nl.sd_ms || 0) / 1000, 2)} s</span>`
+        + `<span>Teoreticky <em>${fmtLap(nl.theoretical_ms)}</em></span><span>Nejrozkolísanější: <em>${worst || '–'}</em></span>`
+        + `<span class="cons" style="color:var(--dim)">Normální kolo = do 107 % nejlepšího (bez spinů a zastávek). Cíl do závodu: 10 kol v rozmezí 0,3 s.</span>`;
+      return;
+    }
     if (!c) {
       const lost = d.corners.filter(x => x.dt > 0.03).sort((a, b) => b.dt - a.dt).slice(0, 3).map(x => `Z${x.n} ${tsg(x.dt, 2)} s`).join(', ');
       $('tSum').innerHTML = `<b>Celé kolo ${tsg((d.lap.ms - d.reference.ms) / 1000, 3)} s</b><span>Nejvíc ztráty: <em>${lost || '–'}</em></span><span class="muted">Ťukni na zatáčku vlevo.</span>`;
@@ -2564,6 +2579,11 @@
     }
     parts.push(`<span>Výjezd <em>${u(a.v_exit)}</em> / ${u(r.v_exit)} km/h</span>`);
     if (a.gear_min != null && r.gear_min != null && a.gear_min !== r.gear_min) parts.push(`<span>Stupeň <em>${a.gear_min}</em> / ${r.gear_min}</span>`);
+    const k = (d.consistency || []).find(x => x.n === c.n);
+    if (tView === 'cons' && k && k.by_lap.length) {
+      const col = v => v > 0.1 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)';
+      parts.push(`<span class="cons">Rozptyl ±${nf(k.sd, 2)} s · průměr ${tsg(k.mean, 2)} · ${k.by_lap.map(([n, v]) => `<span style="color:${col(v)}">K${n} ${tsg(v, 2)}</span>`).join(' · ')}</span>`);
+    }
     for (const x of lapIncidents().filter(x => x.incident.corner === c.n)) {
       const i = x.incident;
       parts.push(`<span class="inc">⚠ ${i.kind === 'spin' ? 'Spin' : 'Ujetí zádi'} (${i.speed} km/h${i.dv != null ? ', ' + (i.dv > 0 ? '+' : '') + i.dv + ' proti nejlepšímu' : ''}): ${esc(i.cause)}. ${esc(i.tip)}</span>`);
@@ -2651,7 +2671,8 @@
     for (const x of d.corners) {
       const [px, py] = pts[idx(x.apex)];
       const rk = (d.risk || []).find(r => r.n === x.n);
-      const col = tView === 'risk' ? (rk && rk.level === 2 ? '#ff4a3d' : rk && rk.level === 1 ? '#ff8a2a' : '#34343c')
+      const ck = (d.consistency || []).find(r => r.n === x.n);
+      const col = tView === 'cons' ? (ck ? ({ 'var(--red)': '#ff4a3d', 'var(--orange)': '#ff8a2a', 'var(--green)': '#2fd36b' })[consColor(ck.sd)] : '#34343c') : tView === 'risk' ? (rk && rk.level === 2 ? '#ff4a3d' : rk && rk.level === 1 ? '#ff8a2a' : '#34343c')
         : x.dt > 0.05 ? '#ff4a3d' : x.dt < -0.05 ? '#2fd36b' : '#8a8a94';
       html += `<g data-n="${x.n}" style="cursor:pointer"><circle cx="${px}" cy="${py}" r="${9 * k}" fill="#0b0b0d" stroke="${col}" stroke-width="${1.5 * k}"/>`
         + `<text x="${px}" y="${py}" fill="${x.n === tCorner ? '#f2c230' : '#d9d9de'}" font-size="${9 * k}" font-weight="700" text-anchor="middle" dominant-baseline="central">${x.n}</text></g>`;
@@ -2681,6 +2702,7 @@
     tView = b.dataset.v;
     $$('#tView button').forEach(x => x.classList.toggle('on', x === b));
     renderTraceHead(); drawTraceMap();
+    renderTraceSummary(tData.corners.find(x => x.n === tCorner));
   });
   $('tInc').addEventListener('click', async e => {
     const b = e.target.closest('button');

@@ -505,6 +505,9 @@ fn corner_stats(rows: &[Row], s_from: f64, s_to: f64, s_apex: f64) -> Option<Cor
 /// Rear slip angle (°) from which a lap counts as "the rear stepped out" in a corner
 const RISK_SLIDE: f64 = 8.0;
 
+/// Normal laps for the consistency: up to this × the best (spins, excursions and stops left out)
+const NORMAL_LAP: f64 = 1.07;
+
 /// Grid step of the traces (m along the reference lap)
 const TRACE_STEP: f64 = 4.0;
 
@@ -622,7 +625,31 @@ impl Comparer {
                 serde_json::json!({ "n": c.n, "laps": res.laps.len(), "slides": slides, "spins": spins, "moments": moments, "level": level })
             })
             .collect();
+        // Consistency: spread of every corner over the normal laps (incidents left out)
+        let best = res.laps.iter().map(|l| l.ms).min().unwrap_or(0) as f64;
+        let normal: Vec<&LapResult> = res.laps.iter().filter(|l| (l.ms as f64) <= best * NORMAL_LAP).collect();
+        let consistency: Vec<serde_json::Value> = res
+            .corners
+            .iter()
+            .map(|c| {
+                let dts: Vec<f64> = normal.iter().map(|l| l.corner(c.n).dt).collect();
+                let by_lap: Vec<(i64, f64)> = normal.iter().map(|l| (l.lap, l.corner(c.n).dt)).collect();
+                serde_json::json!({
+                    "n": c.n,
+                    "laps": dts.len(),
+                    "mean": lap::round_to(lap::mean(dts.iter().copied()), 3),
+                    "sd": lap::round_to(lap::pstdev(&dts), 3),
+                    "best": lap::round_to(dts.iter().copied().fold(f64::INFINITY, f64::min), 3),
+                    "worst": lap::round_to(dts.iter().copied().fold(f64::NEG_INFINITY, f64::max), 3),
+                    "by_lap": by_lap,
+                })
+            })
+            .collect();
+        let times: Vec<f64> = normal.iter().map(|l| l.ms as f64).collect();
         Ok(serde_json::json!({
+            "consistency": consistency,
+            "normal": { "laps": times.len(), "mean_ms": lap::round_i(lap::mean(times.iter().copied())),
+                        "sd_ms": lap::round_i(lap::pstdev(&times)), "theoretical_ms": res.theoretical_ms.map(lap::round_i) },
             "risk": risk,
             "incidents": incidents,
             "session": file_name(session),

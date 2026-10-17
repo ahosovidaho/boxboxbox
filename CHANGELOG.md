@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Vyrovnanost** (stránka Telemetrie, třetí pohled): rozptyl ztráty v každé zatáčce mezi
+  normálními koly (do 107 % nejlepšího) – zeleně do ±0,12 s, oranžově do ±0,25 s, jinak červeně,
+  i na mapě. Celé kolo: počet normálních kol, průměr ± rozptyl, teoretické kolo a tři
+  nejrozkolísanější zatáčky. U zatáčky ztráta v každém kole zvlášť.
+
 - **Mapa rizika a rozbor spinů** (stránka Telemetrie): přepínač Ztráta / Riziko. Riziko u každé
   zatáčky = spiny, ujetí zádi a kolik kol mělo záď přes 8° (červeně / oranžově i na mapě).
   Spin (smyk karoserie přes 30° nebo zastavení na trati) a ujetí zádi (záď přes 12° aspoň 0,25 s)
