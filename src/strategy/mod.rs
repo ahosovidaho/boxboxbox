@@ -138,6 +138,8 @@ pub struct Live {
     pub car_code: i32,
     /// The car stands still (in the pit box, on the grid …)
     pub standing: bool,
+    /// Fuel at the start of the current lap (for the fuel used in the lap so far)
+    pub lap_start_fuel: Option<f32>,
 }
 
 impl Live {
@@ -161,6 +163,16 @@ pub struct Plan {
     pub stops_needed: u32,
     /// Two stops needed now, but one would do at this fuel per lap (saving fuel)
     pub one_stop_fpl: Option<f32>,
+    /// One stop needed now, but none at this fuel per lap (no mandatory stop)
+    pub no_stop_fpl: Option<f32>,
+    /// The fuel per lap to drive to: the saving target when saving saves a stop, else the
+    /// measured figure
+    pub fuel_target: Option<f32>,
+    /// This lap so far: fuel used, and what the target allows at this point of the lap
+    pub lap_fuel_used: Option<f32>,
+    pub lap_fuel_allowed: Option<f32>,
+    /// Fuel used in the last full lap without refuelling
+    pub last_lap_fuel: Option<f32>,
     /// Next stop: enter the pit at the end of one of these laps
     pub window: Option<[i16; 2]>,
     /// Next stop of the recommended strategy (box at the end of this lap)
@@ -678,7 +690,16 @@ impl Strategy {
         let (race, practice_use) = self.race_with_practice(race);
         let saved = Saved { race: Some(race.clone()), calibration: self.saved.calibration.clone(), ..Default::default() };
         let cap = if self.live.capacity > 0.0 { self.live.capacity } else { 100.0 };
-        let live = Live { lap: 0, total_laps: 0, frac: 0.0, fuel: cap, capacity: cap, car_code: self.live.car_code, standing: true };
+        let live = Live {
+            lap: 0,
+            total_laps: 0,
+            frac: 0.0,
+            fuel: cap,
+            capacity: cap,
+            car_code: self.live.car_code,
+            standing: true,
+            lap_start_fuel: None,
+        };
         let fpl = race.fuel_per_lap.or(self.fuel_per_lap());
         let mut p = plan(&saved, &live, fpl, None);
         let (pit_loss, source) = pit_loss_of(&saved);
@@ -915,6 +936,7 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
     }
 
     // ---- Fuel ----
+    p.last_lap_fuel = saved.fuel_laps.last().filter(|f| !f.refuel && f.used > 0.0).map(|f| f.used);
     if let (Some(fpl), Some(left)) = (fpl.filter(|f| *f > 0.0), laps_left) {
         let cap = if live.capacity > 0.0 { live.capacity } else { 100.0 };
         let need = (left + p.reserve_laps) * fpl;
@@ -936,6 +958,12 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             if p.stops_needed == 1 && earliest > latest {
                 p.stops_needed = 2;
             }
+            // One stop, not mandatory: how much saving would make it to the finish without one?
+            // Worth it only within reach of lift and coast (up to ~12 % less)
+            if p.stops_needed == 1 && !(race.pit_required && !p.pit_done) {
+                let f = live.fuel / (left + p.reserve_laps);
+                p.no_stop_fpl = (f >= fpl * 0.88).then_some(f);
+            }
             if p.stops_needed == 2 {
                 // How much less fuel per lap would make one stop enough (lift and coast)?
                 p.one_stop_fpl = (1..=150).map(|i| fpl - i as f32 * 0.005).find(|f| one_stop(*f).is_some());
@@ -946,6 +974,13 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
             }
         } else if race.pit_required && !p.pit_done {
             p.window = Some([live.lap.max(1), (total as i16 - 1).max(live.lap.max(1))]);
+        }
+        // The target per lap and how this lap is going against it
+        let target = p.no_stop_fpl.or(p.one_stop_fpl).unwrap_or(fpl);
+        p.fuel_target = Some(target);
+        if let Some(start) = live.lap_start_fuel.filter(|s| *s >= live.fuel) {
+            p.lap_fuel_used = Some(start - live.fuel);
+            p.lap_fuel_allowed = Some(target * live.frac.clamp(0.0, 1.0));
         }
         // Boxing at the end of this lap
         let fuel_at_box = (live.fuel - fpl * (1.0 - live.frac)).max(0.0);
@@ -994,6 +1029,9 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
             None if p.total_laps.is_some() && fpl.is_none() => calls.push(call("info", "Spotřeba: změřím po prvním kole".into())),
             None => {}
         }
+    }
+    if let (Some(target), Some(f)) = (p.no_stop_fpl, fpl) {
+        calls.push(call("info", format!("Bez zastávky při spotřebě {} / kolo (ušetřit {})", fmt2(target), fmt2(f - target))));
     }
     if p.stops_needed > 1 {
         if let (Some(target), Some(f)) = (p.one_stop_fpl, fpl) {
@@ -1050,7 +1088,7 @@ mod tests {
     }
 
     fn live(lap: i16, frac: f32, fuel: f32) -> Live {
-        Live { lap, total_laps: 0, frac, fuel, capacity: 100.0, car_code: 1, standing: false }
+        Live { lap, total_laps: 0, frac, fuel, capacity: 100.0, car_code: 1, standing: false, lap_start_fuel: None }
     }
 
     #[test]
@@ -1193,6 +1231,29 @@ mod tests {
         let target = p.one_stop_fpl.unwrap();
         assert!(target < 7.06 && target > 6.9, "{target}");
         assert!(p.calls.iter().any(|c| c.text.starts_with("1 zastávka stačí při spotřebě")));
+    }
+
+    #[test]
+    fn no_stop_with_fuel_saving_and_lap_meter() {
+        // 20 laps without a mandatory stop, 7.2 per lap, 140 on board at lap 1: one stop at the
+        // current rate, none at 6.6 per lap or less
+        let mut saved = barcelona(20);
+        saved.race.as_mut().unwrap().pit_required = false;
+        let mut l = live(1, 0.5, 136.4);
+        l.capacity = 150.0;
+        l.total_laps = 20;
+        l.lap_start_fuel = Some(140.0);
+        let p = plan(&saved, &l, Some(7.2), None);
+        assert_eq!(p.stops_needed, 1);
+        let t = p.no_stop_fpl.expect("saving target");
+        assert!(t < 7.2 && t > 6.4, "{t}");
+        assert_eq!(p.fuel_target, Some(t));
+        assert!((p.lap_fuel_used.unwrap() - 3.6).abs() < 1e-3);
+        assert!((p.lap_fuel_allowed.unwrap() - t * 0.5).abs() < 1e-3);
+        assert!(p.calls.iter().any(|c| c.text.starts_with("Bez zastávky při spotřebě")));
+        // With the stop mandatory there is nothing to save
+        let p = plan(&barcelona(20), &l, Some(7.2), None);
+        assert!(p.no_stop_fpl.is_none() && p.fuel_target == Some(7.2));
     }
 
     #[test]

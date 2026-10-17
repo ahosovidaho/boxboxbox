@@ -530,6 +530,7 @@ impl Tracker {
                 capacity: p.fuel_capacity,
                 car_code: p.car_code,
                 standing: p.speed_ms < 0.3,
+                lap_start_fuel: self.fuel_at_lap_start,
             };
             let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
             st.update_live(live);

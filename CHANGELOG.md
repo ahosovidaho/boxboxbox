@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Palivo živě v závodě** (závodní stránka): „TOTO KOLO 3,1/3,2“ = palivo spotřebované v tomto
+  kole proti tomu, co povoluje cíl v tomto místě kola (zeleně pod, červeně nad). Když šetření
+  ušetří zastávku (jedna zastávka a není povinná → žádná; dvě → jedna, do ~12 % úspory),
+  objeví se žlutý štítek „ŠETŘI −0,21 → BEZ ZASTÁVKY“ a cílová spotřeba „CÍL“; v pruhu rad
+  „Bez zastávky při spotřebě … / kolo“.
+
 - **Férové srovnání setupů** (stránka Nastavení auta): čistá tréninková kola se proloží
   modelem čas = základ setupu + opotřebení × stáří gum + vliv paliva × (palivo − referenční);
   „Férově“ = čas setupu na nových gumách se stejným palivem ± nejistota a verdikt („o 0,3 s

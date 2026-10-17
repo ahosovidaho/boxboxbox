@@ -378,6 +378,7 @@
   #r_fuelsegs i.mark { outline: 2px solid var(--acc); outline-offset: 2px; }
   #r_fuelkv { margin-left: auto; display: flex; gap: 18px; font-size: 12px; letter-spacing: .14em; color: #8c8c8c; white-space: nowrap; }
   #r_fuelkv b { font-family: var(--rm); color: #f2f2f2; font-size: 17px; letter-spacing: 0; }
+  #r_save { font: 700 13px var(--rm, inherit); letter-spacing: .08em; color: #000; background: var(--yellow); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
   #r_strip { grid-area: strip; display: flex; gap: 14px; align-items: center; font-size: 12px; color: #8c8c8c; white-space: nowrap; overflow: hidden; }
   #r_strip #r_call { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #f2f2f2; font-weight: 600; letter-spacing: .04em; }
   #p7 { display: flex; flex-direction: column; gap: 8px; }
@@ -943,7 +944,8 @@
   <div class="rc" id="r_fuel">
     <div id="r_fueltop">
       <span class="rl">Palivo</span><span id="r_fuelnum" class="rn">–</span>
-      <div id="r_fuelkv"><span>VYSTAČÍ <b id="r_fuellaps">–</b></span><span>L/KOLO <b id="r_fpl">–</b></span><span>REZERVA <b id="r_margin">–</b></span></div>
+      <span id="r_save" hidden></span>
+      <div id="r_fuelkv"><span>VYSTAČÍ <b id="r_fuellaps">–</b></span><span>L/KOLO <b id="r_fpl">–</b></span><span id="r_targetbox" hidden>CÍL <b id="r_target">–</b></span><span>TOTO KOLO <b id="r_lapfuel">–</b></span><span>REZERVA <b id="r_margin">–</b></span></div>
     </div>
     <div id="r_fuelsegs"></div>
   </div>
@@ -2355,6 +2357,18 @@
     setText('r_fuellaps', d.fuel_laps_left != null ? nf(d.fuel_laps_left) : '–');
     const fpl = st && st.fuel_per_lap != null ? st.fuel_per_lap : d.fuel_per_lap;
     setText('r_fpl', fpl != null ? nf(fpl, 2) : '–');
+    // Fuel saving: a target per lap when driving more economically saves a stop, and how this
+    // lap is going against it (fuel used so far / what the target allows at this point)
+    const tgt = st && st.fuel_target;
+    const saving = st && (st.no_stop_fpl != null || st.one_stop_fpl != null);
+    setText('r_target', tgt != null ? nf(tgt, 2) : '–');
+    $('r_target').style.color = 'var(--yellow)';
+    $('r_targetbox').hidden = !saving;
+    const used = st && st.lap_fuel_used, allowed = st && st.lap_fuel_allowed;
+    setText('r_lapfuel', used != null && allowed != null ? `${nf(used, 1)}/${nf(allowed, 1)}` : (st && st.last_lap_fuel != null ? nf(st.last_lap_fuel, 2) : '–'));
+    $('r_lapfuel').style.color = used == null || allowed == null || allowed < 0.3 ? '' : used <= allowed ? '#2fd36b' : used <= allowed * 1.03 ? '' : 'var(--acc)';
+    $('r_save').hidden = !saving;
+    if (saving) setText('r_save', `ŠETŘI −${nf(fpl - tgt, 2)} → ${st.no_stop_fpl != null ? 'BEZ ZASTÁVKY' : '1 ZASTÁVKA'}`);
     const m = st && st.fuel_margin_laps;
     setText('r_margin', m == null ? '–' : (m >= 0 ? '+' : '') + nf(m));
     $('r_margin').style.color = m == null ? '' : m < 0 ? 'var(--acc)' : '#2fd36b';
