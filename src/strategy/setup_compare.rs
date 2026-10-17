@@ -61,12 +61,14 @@ fn solve(mut m: Vec<Vec<f64>>, mut v: Vec<f64>) -> Option<Vec<f64>> {
         }
         m.swap(c, p);
         v.swap(c, p);
-        for r in c + 1..n {
-            let f = m[r][c] / m[c][c];
-            for k in c..n {
-                m[r][k] -= f * m[c][k];
+        let (top, rest) = m.split_at_mut(c + 1);
+        let pivot = &top[c];
+        for (k, row) in rest.iter_mut().enumerate() {
+            let f = row[c] / pivot[c];
+            for (a, b) in row[c..].iter_mut().zip(&pivot[c..]) {
+                *a -= f * b;
             }
-            v[r] -= f * v[c];
+            v[c + 1 + k] -= f * v[c];
         }
     }
     let mut x = vec![0.0; n];
