@@ -310,7 +310,7 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
         let car = meta["car_code"].as_i64().unwrap_or(0) as i32;
-        let setup = meta["lap_setups"].as_object().and_then(|m| m.values().last()).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let setup = meta["lap_setups"].as_object().and_then(|m| m.values().next_back()).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let drive = crate::perf::track::read(&perf_dir, car, &setup).map(|t| crate::coach::shifts::Optimum {
             gears: t.dyno.shifts.iter().map(|s| (s.gear, s.rpm as f64, s.late)).collect(),
             max_rpm: t.dyno.max_rpm as f64,
