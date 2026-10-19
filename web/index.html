@@ -372,6 +372,8 @@
   #r_fuelnum { font-size: min(24px, 5vh); }
   #r_fuelnum small { font-size: 13px; color: #8c8c8c; }
   #r_fuelsegs { flex: 1; display: flex; gap: 5px; min-height: 14px; }
+  #r_fuel.nofuel #r_fuelsegs, #r_fuel.nofuel #r_fuelkv, #r_fuel.nofuel #r_save { display: none; }
+  #r_fuel.nofuel #r_fueltop::after { content: 'závod bez spotřeby paliva'; margin-left: auto; font-size: 12px; letter-spacing: .14em; color: #8c8c8c; text-transform: uppercase; }
   #r_fuelsegs i { flex: 1; border-radius: 4px; background: #1c1c1c; }
   #r_fuelsegs i.need { background: #f2f2f2; } #r_fuelsegs i.res { background: #2fd36b; } #r_fuelsegs i.short { background: var(--acc); }
   #r_fuelsegs i.need, #r_fuelsegs i.res, #r_fuelsegs i.short { box-shadow: 0 0 10px color-mix(in srgb, currentColor 0%, transparent); }
@@ -426,7 +428,15 @@
   .tch .rd { position: absolute; right: 0; top: 2px; background: var(--panel); padding-left: 6px; font: 12px var(--mono); color: var(--dim); pointer-events: none; z-index: 1; text-align: right; }
   .tch .rd b { font-weight: 500; }
   #tCross { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.35); pointer-events: none; display: none; }
-  #tView { align-self: flex-start; }
+  #tView { align-self: flex-start; max-width: 100%; }
+  #tView button { padding: 4px 8px; font-size: 12px; }
+  #tSum .sh { display: block; white-space: normal; margin-top: 2px; }
+  .tshift { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(255,255,255,.4); pointer-events: none; }
+  .tshift span { position: absolute; top: 14px; left: 3px; font: 600 10px var(--mono); color: #fff; white-space: nowrap; }
+  .tshift.nolabel span { display: none; }
+  .tshift.nolabel { border-left-style: dotted; opacity: .5; }
+  .tshift.ref { border-left-color: rgba(178,92,255,.5); }
+  .tshift.ref span { top: auto; bottom: 2px; color: #b25cff; }
   #tInc { flex: none; display: flex; flex-direction: column; gap: 5px; }
   #tInc button { text-align: left; background: #16161a; border: 1px solid #26262c; border-left: 3px solid var(--orange); border-radius: 8px; color: var(--text); padding: 6px 8px; font: 12px/1.35 -apple-system, system-ui, sans-serif; }
   #tInc button.spin { border-left-color: var(--red); }
@@ -986,7 +996,7 @@
   <div id="p9body">
     <div id="tSide">
       <div class="card" id="tMapCard"><svg id="tMap" role="img" aria-label="Mapa trati se zatáčkami"></svg></div>
-      <span class="seg" id="tView"><button data-v="loss" class="on">Ztráta</button><button data-v="cons">Vyrovnanost</button><button data-v="risk">Riziko</button></span>
+      <span class="seg" id="tView"><button data-v="loss" class="on">Ztráta</button><button data-v="cons">Vyrovnanost</button><button data-v="risk">Riziko</button><button data-v="shift">Řazení</button></span>
       <div id="tCorners"></div>
       <div id="tInc"></div>
     </div>
@@ -997,7 +1007,7 @@
         <div class="tch" id="tcSpeed"><span class="lb">Rychlost (km/h)</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
         <div class="tch" id="tcThr"><span class="lb">Plyn (%)</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
         <div class="tch" id="tcBrk"><span class="lb">Brzda (%)</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
-        <div class="tch" id="tcSteer"><span class="lb">Volant (°) · stupeň</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
+        <div class="tch" id="tcSteer"><span class="lb" id="tcSteerLb">Volant (°) · stupeň</span><span class="rd"></span><svg preserveAspectRatio="none"></svg></div>
         <div id="tMarks"></div>
         <div id="tCross"></div>
       </div>
@@ -1093,6 +1103,8 @@
     <label><span>Spotřeba paliva ×</span> <input type="number" id="rFuelMult" inputmode="decimal" step="0.5"></label>
     <label><span>Tankování (l/s)</span> <input type="number" id="rRefuel" inputmode="decimal" step="0.5"></label>
     <label><span>Povinná zastávka</span> <input type="checkbox" id="rPit"></label>
+    <label><span>Gumy se neopotřebovávají <small>(motokáry, sníh, šotolina)</small></span> <input type="checkbox" id="rNoWear"></label>
+    <label><span>Palivo se nespotřebovává</span> <input type="checkbox" id="rNoFuel"></label>
     <label><span>Povinná směs</span> <select id="rMand">
       <option value="">žádná</option><option value="RS">RS – závodní měkké</option><option value="RM">RM – závodní střední</option><option value="RH">RH – závodní tvrdé</option>
       <option value="SS">SS – sportovní měkké</option><option value="SM">SM – sportovní střední</option><option value="SH">SH – sportovní tvrdé</option><option value="CS">CS – komfortní měkké</option><option value="CM">CM – komfortní střední</option><option value="CH">CH – komfortní tvrdé</option></select></label>
@@ -2357,6 +2369,8 @@
   // red = short; the square with the red frame = where the fuel to the finish ends
     const cap = d.fuel_capacity;
     const ev = cap === 100;
+    const noFuel = !!(st && st.no_fuel);
+    $('r_fuel').classList.toggle('nofuel', noFuel);
     setText('r_fuelnum', cap > 0 ? (ev ? `${d.fuel.toFixed(1)} %` : `${U.fl(d.fuel).toFixed(1)}`) : '–');
     if (cap > 0 && !ev && !$('r_fuelnum').querySelector('small')) $('r_fuelnum').insertAdjacentHTML('beforeend', ` <small>${U.fuel}</small>`);
     const need = st && st.fuel_needed;
@@ -2580,6 +2594,22 @@
   }
   function renderTraceSummary(c) {
     const d = tData;
+    if (tView === 'shift') {
+      const o = d.shift_optimum || {}, adv = d.shift_advice || [];
+      const col = v => ({ ok: 'var(--green)', early: 'var(--orange)', late: 'var(--orange)', limiter: 'var(--red)', uneven: 'var(--yellow)' })[v] || 'var(--dim)';
+      const inWin = (arr) => (arr || []).filter(e => e.to > e.from && (!c || (e.s >= tWin[0] && e.s <= tWin[1])));
+      const fmtE = e => `${e.from}→${e.to} ${Math.round(e.rpm).toLocaleString('cs-CZ')}${e.thr < 90 ? ' (částečný plyn)' : ''}`;
+      let html = `<b>${c ? 'Z' + c.n + ' · řazení' : 'Řazení nahoru · normální kola'}</b><span>Optimum: <em>${o.source === 'drive' ? 'z jízdy' : 'kontrolka hry'}</em>${o.max_rpm ? ` · omezovač ~${Math.round(o.max_rpm).toLocaleString('cs-CZ')}` : ''}</span>`;
+      if (c) {
+        html += `<span class="sh">Toto kolo: ${inWin(d.lap_shifts).map(fmtE).join(' · ') || '–'}</span><span class="sh" style="color:#b25cff">Nejlepší kolo: ${inWin(d.ref_shifts).map(fmtE).join(' · ') || '–'}</span>`;
+      } else {
+        html += adv.map(a => `<span class="sh" style="color:${col(a.verdict)}">${esc(a.text)} <span style="color:var(--label)">(${a.count}×)</span></span>`).join('')
+          || '<span class="sh muted">Zatím málo řazení na plný plyn.</span>';
+        if (d.downshifts) html += `<span class="sh" style="color:var(--dim)">Podřazení na omezovač: ${d.overrev} z ${d.downshifts}${d.overrev / d.downshifts > 0.3 ? ' – podřazuj o chvilku později, ať auto na brzdách nerozhodí záď' : ''}</span>`;
+      }
+      $('tSum').innerHTML = html;
+      return;
+    }
     if (!c && tView === 'cons') {
       const nl = d.normal || {};
       const worst = (d.consistency || []).slice().sort((a, b) => b.sd - a.sd).slice(0, 3).map(x => `Z${x.n} ±${nf(x.sd, 2)}`).join(', ');
@@ -2650,9 +2680,30 @@
     let [slo, shi] = range([L.steer, R.steer]); const sm = Math.max(10, Math.abs(slo), Math.abs(shi)) * 1.1;
     const yS = v => 50 - v / sm * 46;
     $('tcSteer').querySelector('svg').setAttribute('viewBox', '0 0 1000 100');
-    $('tcSteer').querySelector('svg').innerHTML = zero(50) + line(R.steer, yS, T_REF) + line(L.steer, yS, T_LAP);
+    if (tView === 'shift') {
+      // Engine speed with the shift points: optimum (yellow dashes) for the gear in use, the
+      // upshifts of this lap (white) and of the best lap (purple)
+      setText('tcSteerLb', 'Otáčky · řazení (žlutá = optimum)');
+      const opt = d.shift_optimum || { gears: [] };
+      const optOf = g => { const o = opt.gears.find(x => x[0] === g); return o ? (o[2] ? opt.max_rpm : o[1]) : null; };
+      let [rlo, rhi] = range([L.rpm, R.rpm]); rlo = Math.max(0, rlo - 300); rhi = Math.max(rhi, opt.max_rpm || 0) + 200;
+      const yR = v => 96 - (v - rlo) / (rhi - rlo) * 92;
+      let optPath = '';
+      for (let i = i0; i <= i1; i++) {
+        const o = optOf(L.gear[i]);
+        if (o != null) optPath += (optPath && optOf(L.gear[i - 1]) === o ? 'L' : 'M') + X(i) + ',' + yR(o).toFixed(1);
+      }
+      $('tcSteer').querySelector('svg').innerHTML = (optPath ? `<path d="${optPath}" fill="none" stroke="#f2c230" stroke-width="1.2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>` : '')
+        + line(R.rpm, yR, T_REF) + line(L.rpm, yR, T_LAP);
+    } else {
+      setText('tcSteerLb', 'Volant (°) · stupeň');
+      $('tcSteer').querySelector('svg').innerHTML = zero(50) + line(R.steer, yS, T_REF) + line(L.steer, yS, T_LAP);
+    }
+    const pos = sv => ((sv - w0) / (w1 - w0) * 100).toFixed(2);
     $('tMarks').innerHTML = lapIncidents().filter(x => x.incident.s >= w0 && x.incident.s <= w1)
-      .map(x => `<div class="tmark ${x.incident.kind}" style="left:${((x.incident.s - w0) / (w1 - w0) * 100).toFixed(2)}%"></div>`).join('');
+      .map(x => `<div class="tmark ${x.incident.kind}" style="left:${pos(x.incident.s)}%"></div>`).join('')
+      + (tView === 'shift' ? [['lap_shifts', ''], ['ref_shifts', 'ref']].map(([k, cls]) => (d[k] || []).filter(e => e.to > e.from && e.s >= w0 && e.s <= w1)
+        .map(e => `<div class="tshift ${cls}${w1 - w0 > 1200 ? ' nolabel' : ''}" style="left:${pos(e.s)}%"><span>${e.from}→${e.to}</span></div>`).join('')).join('') : '');
     const ax = $('tAxis').children;
     ax[0].textContent = Math.round(w0) + ' m'; ax[1].textContent = Math.round((w0 + w1) / 2) + ' m'; ax[2].textContent = Math.round(w1) + ' m';
     traceReadout(null);
@@ -2678,7 +2729,7 @@
     rd('tcSpeed').innerHTML = c2(L.speed[i], R.speed[i]);
     rd('tcThr').innerHTML = c2(L.throttle[i], R.throttle[i]);
     rd('tcBrk').innerHTML = c2(L.brake[i], R.brake[i]);
-    rd('tcSteer').innerHTML = c2(L.steer[i], R.steer[i]) + ` · st. ${c2(L.gear[i], R.gear[i], v => v || 'N')}`;
+    rd('tcSteer').innerHTML = (tView === 'shift' ? c2(L.rpm[i], R.rpm[i]) + ' ot.' : c2(L.steer[i], R.steer[i])) + ` · st. ${c2(L.gear[i], R.gear[i], v => v || 'N')}`;
     drawTraceMap(d.s[i]);
   }
   function drawTraceMap(sAt) {
@@ -2728,7 +2779,7 @@
     if (!b || !tData) return;
     tView = b.dataset.v;
     $$('#tView button').forEach(x => x.classList.toggle('on', x === b));
-    renderTraceHead(); drawTraceMap();
+    renderTraceHead(); drawTraceMap(); drawTraces();
     renderTraceSummary(tData.corners.find(x => x.n === tCorner));
   });
   $('tInc').addEventListener('click', async e => {
@@ -3119,6 +3170,10 @@
     $('rName').value = r.name || ''; $('rTrack').value = r.track || '';
     $('rLaps').value = r.laps ?? ''; $('rWear').value = r.tyre_wear ?? ''; $('rFuelMult').value = r.fuel_mult ?? '';
     $('rRefuel').value = r.refuel_rate ?? ''; $('rPit').checked = !!r.pit_required; $('rMand').value = r.mandatory || '';
+    // A kart burns no fuel and wears no tyres: preset for a race not saved with these yet
+    const kart = !!(lastData && lastData.car_name && lastData.car_name.includes('Kart'));
+    $('rNoWear').checked = r.no_wear ?? kart; $('rNoFuel').checked = r.no_fuel ?? kart;
+    syncNoWearFuel();
     $('rStart').value = r.start_compound || '';
     raceTyres = r.tyres || {};
     $('rDeg').value = r.deg ?? '';
@@ -3179,8 +3234,15 @@
       refuel_rate: numIn($('rRefuel').value), pit_required: $('rPit').checked, mandatory: $('rMand').value || null,
       start_compound: $('rStart').value || null, tyres: readTyres(), deg: numIn($('rDeg').value), pit_loss: numIn($('rPitLoss').value),
       fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), wear_limit: numIn($('rLimit').value),
+      no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked,
     };
   }
+  function syncNoWearFuel() {
+    for (const id of ['rWear', 'rDeg', 'rLimit']) $(id).disabled = $('rNoWear').checked;
+    for (const id of ['rFuelMult', 'rRefuel', 'rFpl', 'rReserve']) $(id).disabled = $('rNoFuel').checked;
+  }
+  $('rNoWear').addEventListener('change', syncNoWearFuel);
+  $('rNoFuel').addEventListener('change', syncNoWearFuel);
   let previewTimer = null;
   function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(runPreview, 300); }
   async function runPreview() {

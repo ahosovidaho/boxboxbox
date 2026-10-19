@@ -44,6 +44,9 @@ pub struct LapResult {
     /// Spins and slides in this lap
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incidents: Vec<super::incident::Incident>,
+    /// Gear changes in this lap
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shifts: Vec<super::shifts::ShiftEv>,
 }
 
 impl LapResult {
@@ -326,7 +329,9 @@ fn evaluate_lap(path: &Path, ms: i64, ref_ms: i64, rows: &[Row], reference: &[Ro
     let sections: Vec<(usize, f64, f64)> =
         corners.iter().map(|c| (c.n, s_of(reference, c.from), s_of(reference, c.to))).collect::<Vec<_>>();
     let incidents = super::incident::detect(rows, reference, &sections);
-    LapResult { file: file_name(path), lap: rows[0].lap as i64, ms, delta_ms: ms - ref_ms, corners: lap_corners, incidents }
+    let max_rpm = rows.iter().map(|r| r.rpm).fold(0.0, f64::max);
+    let shifts = super::shifts::detect(rows, max_rpm);
+    LapResult { file: file_name(path), lap: rows[0].lap as i64, ms, delta_ms: ms - ref_ms, corners: lap_corners, incidents, shifts }
 }
 
 fn dist2(r: &Row, x: f64, z: f64) -> f64 {
@@ -536,25 +541,32 @@ fn trace(rows: &[Row], grid: &[f64], reference: &[Row]) -> serde_json::Value {
     };
     let r1 = |v: f64| (v * 10.0).round() / 10.0;
     let mut speed = Vec::with_capacity(grid.len());
-    let (mut thr, mut brk, mut steer, mut gear, mut delta) = (vec![], vec![], vec![], vec![], vec![]);
+    let (mut thr, mut brk, mut steer, mut gear, mut delta, mut rpm) = (vec![], vec![], vec![], vec![], vec![], vec![]);
     for &s in grid {
         let p = at(rows, s);
         speed.push(r1(lerp(p, &|r| r.speed_kmh)));
         thr.push(lerp(p, &|r| r.throttle_pct()).round());
         brk.push(lerp(p, &|r| r.brake_pct()).round());
         steer.push(r1(lerp(p, &|r| r.steering.to_degrees())));
+        rpm.push(rows[p.0].rpm.round());
         let g = rows[p.0].gear;
         gear.push(if (1.0..15.0).contains(&g) { g } else { 0.0 });
         delta.push(lap::round_to(time_at(rows, s) - time_at(reference, s), 3));
     }
-    serde_json::json!({ "speed": speed, "throttle": thr, "brake": brk, "steer": steer, "gear": gear, "delta": delta })
+    serde_json::json!({ "speed": speed, "throttle": thr, "brake": brk, "steer": steer, "gear": gear, "delta": delta, "rpm": rpm })
 }
 
 impl Comparer {
     /// Speed, pedals, steering, gear and time delta of one lap against the fastest lap of the
     /// session, on a common distance grid – for the corner graphs on the dashboard.
     /// `lap_file` = None: the latest complete lap.
-    pub fn traces(&mut self, session: &Path, lap_file: Option<&str>) -> std::io::Result<serde_json::Value> {
+    /// `drive`: shift points from driving for the car and setup (else the game's shift light).
+    pub fn traces(
+        &mut self,
+        session: &Path,
+        lap_file: Option<&str>,
+        drive: Option<super::shifts::Optimum>,
+    ) -> std::io::Result<serde_json::Value> {
         let laps = self.complete_laps(session);
         let Some((ref_path, ref_ms)) = laps.iter().min_by_key(|(_, ms)| *ms).cloned() else {
             return Ok(serde_json::json!({ "laps": [] }));
@@ -649,6 +661,21 @@ impl Comparer {
             })
             .collect();
         let times: Vec<f64> = normal.iter().map(|l| l.ms as f64).collect();
+        // Shifting: the optimum, and advice over the normal laps
+        let max_rpm = reference.iter().map(|r| r.rpm).fold(0.0, f64::max);
+        let opt = drive.filter(|o| !o.gears.is_empty()).unwrap_or_else(|| {
+            let mut alert: Vec<f64> = reference.iter().map(|r| r.rpm_alert).filter(|a| *a > 0.0).collect();
+            alert.sort_by(f64::total_cmp);
+            let game = alert.get(alert.len() / 2).copied().unwrap_or(0.0);
+            super::shifts::Optimum {
+                gears: if game > 0.0 { (1..10).map(|g| (g, game - 100.0, false)).collect() } else { Vec::new() },
+                max_rpm,
+                source: "game",
+            }
+        });
+        let shift_laps: Vec<&[super::shifts::ShiftEv]> = normal.iter().map(|l| l.shifts.as_slice()).collect();
+        let (shift_advice, overrev) = super::shifts::advice(&shift_laps, &opt);
+        let lap_shifts = |file: &str| res.laps.iter().find(|l| l.file == file).map(|l| l.shifts.clone()).unwrap_or_default();
         // Setup of every lap (written by the recorder) → mean loss per corner and setup
         let meta: serde_json::Value =
             fs::read_to_string(session.join("session.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
@@ -674,6 +701,12 @@ impl Comparer {
         };
         Ok(serde_json::json!({
             "consistency": consistency,
+            "shift_optimum": opt,
+            "shift_advice": shift_advice,
+            "overrev": overrev[0],
+            "downshifts": overrev[1],
+            "lap_shifts": lap_shifts(&file_name(&target.0)),
+            "ref_shifts": lap_shifts(&file_name(&ref_path)),
             "by_setup": by_setup,
             "normal": { "laps": times.len(), "mean_ms": lap::round_i(lap::mean(times.iter().copied())),
                         "sd_ms": lap::round_i(lap::pstdev(&times)), "theoretical_ms": res.theoretical_ms.map(lap::round_i) },

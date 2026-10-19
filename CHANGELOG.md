@@ -2,6 +2,18 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Řazení v Telemetrii** (čtvrtý pohled „Řazení“): otáčky obou kol se žlutým optimem pro
+  zařazený stupeň a značkami řazení (bílé = toto kolo, fialové = nejlepší). Celé kolo: pro každé
+  řazení nahoru na plný plyn medián otáček z normálních kol proti optimu („2→3: řadíš při
+  14 440, optimum 14 790 – řaď o ~350 ot. později“, „motor stojí na omezovači“, „řadíš
+  nepravidelně“) a kolik podřazení skončilo na omezovači. U zatáčky řazení tohoto a nejlepšího
+  kola. Optimum = body řazení z jízdy pro auto a setup session, jinak kontrolka hry.
+- **Závody bez opotřebení a paliva** (motokáry, sníh, šotolina): v „Závod…“ zaškrtávátka „Gumy se
+  neopotřebovávají“ a „Palivo se nespotřebovává“ (u motokáry předvyplněné). Strategie pak plánuje
+  jen podle pravidel (povinná zastávka a směs), na závodní stránce místo paliva „závod bez
+  spotřeby paliva“; příprava na závod nechce opotřebení, výdrž, spotřebu ani dlouhý stint
+  (u motokáry automaticky).
+
 - **Opravy po tréninku 19. 10.** (F3500 Yas Marina, motokára Willow Springs):
   - Ujetí zádi a riziko zatáčky se počítají proti nejlepšímu kolu ve stejné zatáčce (o 6° víc
     než ono) – motokára klouže v každém kole a dřív měla „ujetí zádi“ i v nejrychlejších kolech.

@@ -36,6 +36,12 @@ pub struct Input<'a> {
     pub car_name: Option<String>,
 }
 
+impl Input<'_> {
+    fn kart(&self) -> bool {
+        self.car_name.as_deref().is_some_and(|n| n.contains("Kart"))
+    }
+}
+
 fn item(id: &str, label: &str, status: &'static str, detail: String, todo: &str) -> Item {
     Item { id: id.into(), label: label.into(), status, detail, todo: if status == "ok" { String::new() } else { todo.into() } }
 }
@@ -74,15 +80,17 @@ fn race_compounds(race: &Race) -> Vec<String> {
 pub fn checklist(inp: &Input) -> Vec<Item> {
     let r = inp.race;
     let mut out = Vec::new();
-    // A car that burns no fuel (karts): nothing to measure or set for fuel
-    let no_fuel = inp.laps.len() >= 3 && inp.laps.iter().all(|l| l.fuel < 0.01);
+    // No fuel use / no tyre wear (karts, snow, dirt – or set so in the race): nothing to
+    // measure or set for them, only the rules count
+    let no_fuel = r.no_fuel || inp.kart() || (inp.laps.len() >= 3 && inp.laps.iter().all(|l| l.fuel < 0.01));
+    let no_wear = r.no_wear || inp.kart();
 
     // 1. Race settings
     let mut missing = Vec::new();
     if r.laps.is_none() {
         missing.push("počet kol");
     }
-    if r.tyre_wear.is_none() {
+    if r.tyre_wear.is_none() && !no_wear {
         missing.push("opotřebení gum");
     }
     if r.fuel_mult.is_none() && !no_fuel {
@@ -97,9 +105,9 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
         if missing.is_empty() { "ok" } else { "missing" },
         if missing.is_empty() {
             format!(
-                "{} kol · opotř. ×{}{}{}",
+                "{} kol{}{}{}",
                 r.laps.unwrap_or(0),
-                f1(r.tyre_wear.unwrap_or(0.0)),
+                if no_wear { " · bez opotřebení".to_string() } else { format!(" · opotř. ×{}", f1(r.tyre_wear.unwrap_or(0.0))) },
                 r.fuel_mult.map(|f| format!(" · spotř. ×{}", f1(f))).unwrap_or_default(),
                 r.mandatory.as_deref().map(|m| format!(" · povinně {m}")).unwrap_or_default()
             )
@@ -131,13 +139,26 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
     ));
 
     // 3. Each compound: laps, wear per lap, life
-    for c in race_compounds(r) {
+    let compounds: Vec<String> = race_compounds(r)
+        .into_iter()
+        // Without wear only the compounds the rules ask for matter
+        .filter(|c| !no_wear || r.mandatory.as_deref() == Some(c.as_str()) || r.start_compound.as_deref() == Some(c.as_str()))
+        .collect();
+    for c in compounds {
         let st = inp.summary.and_then(|s| s.compounds.iter().find(|x| x.compound == c));
         let laps = st.map_or(0, |s| s.laps);
         let deg = st.and_then(|s| s.deg);
         let life = st.and_then(|s| s.life).or_else(|| r.tyres.get(&c).and_then(|t| t.life));
         let mandatory = r.mandatory.as_deref() == Some(c.as_str());
-        let status = if laps >= 3 && deg.is_some() && life.is_some() {
+        let status = if no_wear {
+            if laps >= 3 {
+                "ok"
+            } else if laps > 0 {
+                "warn"
+            } else {
+                "missing"
+            }
+        } else if laps >= 3 && deg.is_some() && life.is_some() {
             "ok"
         } else if laps > 0 || life.is_some() {
             "warn"
@@ -148,15 +169,21 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
         if let Some(b) = st.and_then(|s| s.best_ms) {
             parts.push(format!("nejlepší {}", lap_time(b)));
         }
-        parts.push(match deg {
-            Some(d) => format!("ztráta {} s/kolo", format!("{d:.2}").replace('.', ",")),
-            None => "ztráta za kolo zatím neznámá".into(),
-        });
-        parts.push(match life {
-            Some(l) => format!("vydrží {}", laps_cz(l as usize, None)),
-            None => "výdrž nezadaná".into(),
-        });
-        let todo = if laps < 3 || deg.is_none() {
+        if no_wear {
+            parts.push("gumy se neopotřebovávají".into());
+        } else {
+            parts.push(match deg {
+                Some(d) => format!("ztráta {} s/kolo", format!("{d:.2}").replace('.', ",")),
+                None => "ztráta za kolo zatím neznámá".into(),
+            });
+            parts.push(match life {
+                Some(l) => format!("vydrží {}", laps_cz(l as usize, None)),
+                None => "výdrž nezadaná".into(),
+            });
+        }
+        let todo = if no_wear {
+            "Odjeď na této směsi aspoň 3 čistá kola (tempo pro strategii)."
+        } else if laps < 3 || deg.is_none() {
             "Odjeď na jedné sadě aspoň 4 kola v kuse (stáří gum ≥ 3), ať se změří ztráta za kolo."
         } else {
             "Zadej „Vydrží kol“ podle opotřebení v GT7 (Trénink → Výsledky)."
@@ -184,41 +211,46 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
         "Změří se z celých kol bez tankování se stejnou spotřebou ×.",
     ));
 
-    // 5. Pit loss
-    out.push(item(
-        "pit",
-        "Ztráta zastávkou",
-        match inp.pit_loss_source {
-            "manual" | "measured" => "ok",
-            _ => "warn",
-        },
-        format!(
-            "{} s ({})",
-            f1(inp.pit_loss),
+    // 5. Pit loss (only when there is a stop to plan)
+    let stop_matters = r.pit_required || !(no_wear && no_fuel);
+    if stop_matters {
+        out.push(item(
+            "pit",
+            "Ztráta zastávkou",
             match inp.pit_loss_source {
-                "manual" => "zadaná",
-                "measured" => "změřená",
-                _ => "odhad",
-            }
-        ),
-        "Změří se při zastávce v závodě na této trati; nebo ji zadej v „Závod…“ (průjezd boxem proti kolu bez zastávky).",
-    ));
+                "manual" | "measured" => "ok",
+                _ => "warn",
+            },
+            format!(
+                "{} s ({})",
+                f1(inp.pit_loss),
+                match inp.pit_loss_source {
+                    "manual" => "zadaná",
+                    "measured" => "změřená",
+                    _ => "odhad",
+                }
+            ),
+            "Změří se při zastávce v závodě na této trati; nebo ji zadej v „Závod…“ (průjezd boxem proti kolu bez zastávky).",
+        ));
+    }
 
-    // 6. A long run (tyres and fuel over a whole stint)
+    // 6. A long run (tyres and fuel over a whole stint) – pointless without wear and fuel
     let longest = inp.summary.map_or(0, |s| s.compounds.iter().map(|c| c.max_age).max().unwrap_or(0));
-    out.push(item(
-        "stint",
-        "Dlouhý stint",
-        if longest >= 8 {
-            "ok"
-        } else if longest >= 4 {
-            "warn"
-        } else {
-            "missing"
-        },
-        format!("nejdelší jízda na jedné sadě {}", laps_cz(longest as usize, None)),
-        "Odjeď aspoň jeden stint 8+ kol na jedné sadě – ukáže opotřebení i spotřebu v závodním tempu.",
-    ));
+    if !(no_wear && no_fuel) {
+        out.push(item(
+            "stint",
+            "Dlouhý stint",
+            if longest >= 8 {
+                "ok"
+            } else if longest >= 4 {
+                "warn"
+            } else {
+                "missing"
+            },
+            format!("nejdelší jízda na jedné sadě {}", laps_cz(longest as usize, None)),
+            "Odjeď aspoň jeden stint 8+ kol na jedné sadě – ukáže opotřebení i spotřebu v závodním tempu.",
+        ));
+    }
 
     // 7. Setup card and shift points
     out.push(item(
@@ -326,5 +358,50 @@ mod tests {
         assert_eq!(st("shift").0, "warn");
         assert_eq!(st("consistency").0, "missing", "{:?}", st("consistency"));
         assert!(items.iter().filter(|i| i.status == "ok").all(|i| i.todo.is_empty()));
+    }
+
+    #[test]
+    fn kart_race_needs_no_wear_or_fuel() {
+        let race = Race {
+            name: "Márův závod".into(),
+            track: "Willow Springs".into(),
+            laps: Some(45),
+            pit_required: true,
+            mandatory: Some("SS".into()),
+            ..Default::default()
+        };
+        let laps: Vec<PracticeLap> = (0..5).map(|i| PracticeLap { ms: 55_000 + i * 50, ..Default::default() }).collect();
+        let summary = Summary {
+            compounds: vec![CompoundStats {
+                compound: "SS".into(),
+                laps: 5,
+                best_ms: Some(55_000),
+                typical_ms: None,
+                base: None,
+                deg: None,
+                pace: None,
+                fuel_per_lap: None,
+                max_age: 5,
+                life: None,
+            }],
+            ..Default::default()
+        };
+        let items = checklist(&Input {
+            race: &race,
+            summary: Some(&summary),
+            laps: laps.iter().collect(),
+            pit_loss_source: "default",
+            pit_loss: 25.0,
+            setup: None,
+            shift_points: true,
+            car_name: Some("Gran Turismo Racing Kart 125 Shifter".into()),
+        });
+        let st = |id: &str| items.iter().find(|i| i.id == id).map(|i| i.status);
+        assert_eq!(st("race"), Some("ok"));
+        assert_eq!(st("tyre-SS"), Some("ok"));
+        assert_eq!(st("tyre-SM"), None, "only the mandatory compound");
+        assert_eq!(st("fuel"), Some("ok"));
+        assert_eq!(st("stint"), None);
+        assert_eq!(st("pit"), Some("warn"), "the mandatory stop still costs time");
     }
 }

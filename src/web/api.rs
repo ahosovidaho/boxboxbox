@@ -284,6 +284,7 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
     static COMPARER: std::sync::OnceLock<Mutex<crate::coach::compare::Comparer>> = std::sync::OnceLock::new();
     let rec = s.settings.data.recordings.clone();
     let feed = s.settings.data.coach_feed.clone();
+    let perf_dir = s.perf.dir().to_path_buf();
     let body = tokio::task::spawn_blocking(move || {
         let safe = |n: &str| !n.is_empty() && !n.contains(['/', '\\']) && n != ".." && rec.join(n).is_dir();
         let from_feed = || {
@@ -303,7 +304,19 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
         let session = q.session.filter(|n| safe(n)).or_else(|| from_feed().filter(|n| safe(n))).or_else(newest);
         let Some(session) = session else { return json!({ "laps": [] }).to_string() };
         let mut c = COMPARER.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
-        match c.traces(&rec.join(&session), q.lap.as_deref()) {
+        // Shift points from driving for the car and the setup the session was driven with
+        let meta: serde_json::Value = std::fs::read_to_string(rec.join(&session).join("session.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let car = meta["car_code"].as_i64().unwrap_or(0) as i32;
+        let setup = meta["lap_setups"].as_object().and_then(|m| m.values().last()).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let drive = crate::perf::track::read(&perf_dir, car, &setup).map(|t| crate::coach::shifts::Optimum {
+            gears: t.dyno.shifts.iter().map(|s| (s.gear, s.rpm as f64, s.late)).collect(),
+            max_rpm: t.dyno.max_rpm as f64,
+            source: "drive",
+        });
+        match c.traces(&rec.join(&session), q.lap.as_deref(), drive) {
             Ok(v) => v.to_string(),
             Err(e) => json!({ "laps": [], "error": e.to_string() }).to_string(),
         }

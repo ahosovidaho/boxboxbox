@@ -6,5 +6,6 @@ pub mod feedback;
 pub mod incident;
 pub mod lap;
 pub mod report;
+pub mod shifts;
 pub mod trailbrake;
 pub mod worker;

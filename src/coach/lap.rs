@@ -24,6 +24,8 @@ pub struct Row {
     pub flags: u32,
     pub speed_kmh: f64,
     pub rpm: f64,
+    /// Engine speed where the game's shift light ends (0 = unknown)
+    pub rpm_alert: f64,
     pub gear: f64,
     /// Raw pedal values 0–255
     pub throttle: f64,
@@ -113,6 +115,7 @@ pub fn load(path: &Path) -> std::io::Result<Vec<Row>> {
     let rps = wheels.map(|w| c(&format!("wheel_rps_{w}")));
     let radius = wheels.map(|w| c(&format!("tire_radius_{w}")));
     let (fuel, total_laps) = (c("fuel"), c("total_laps"));
+    let rpm_alert = c("rpm_alert_max");
 
     let mut rows = Vec::with_capacity(text.len() / 700);
     for line in lines {
@@ -130,6 +133,7 @@ pub fn load(path: &Path) -> std::io::Result<Vec<Row>> {
             flags: f(flags) as u32,
             speed_kmh: f(speed),
             rpm: f(rpm),
+            rpm_alert: f(rpm_alert),
             gear: f(gear),
             throttle: f(thr),
             brake: f(brk),

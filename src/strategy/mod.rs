@@ -65,6 +65,10 @@ pub struct Race {
     /// Time lost by a stop without refuelling, s (default: measured on this track, else
     /// [`DEFAULT_PIT_LOSS`])
     pub pit_loss: Option<f32>,
+    /// The tyres do not wear / no fuel is used (karts, snow and dirt events): no tyre or fuel
+    /// strategy, only the rules (mandatory stop, mandatory compound)
+    pub no_wear: bool,
+    pub no_fuel: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -199,6 +203,9 @@ pub struct Plan {
     pub reserve_laps: f32,
     pub pit_required: bool,
     pub pit_done: bool,
+    /// Race without tyre wear / fuel use
+    pub no_wear: bool,
+    pub no_fuel: bool,
     pub mandatory: Option<String>,
     pub mandatory_done: bool,
     pub compound: Option<String>,
@@ -838,7 +845,8 @@ fn compounds(race: &Race, current: Option<&str>) -> Vec<planner::Compound> {
 fn planner_input(saved: &Saved, live: &Live, p: &Plan, pit_loss: f32) -> Option<planner::Input> {
     let race = saved.race.as_ref()?;
     let total = p.total_laps? as i16;
-    let fpl = p.fuel_per_lap.filter(|f| *f > 0.0)?;
+    // Without fuel use a tiny figure keeps the planner's fuel checks out of the way
+    let fpl = if race.no_fuel { 0.001 } else { p.fuel_per_lap.filter(|f| *f > 0.0)? };
     let cap = if live.capacity > 0.0 { live.capacity } else { 100.0 };
     let current = p.compound.clone();
     let mut inp = planner::Input {
@@ -850,14 +858,21 @@ fn planner_input(saved: &Saved, live: &Live, p: &Plan, pit_loss: f32) -> Option<
         reserve: p.reserve_laps,
         refuel_rate: race.refuel_rate.unwrap_or(0.0),
         pit_loss,
-        deg: race.deg.unwrap_or(DEFAULT_DEG),
+        deg: if race.no_wear { 0.0 } else { race.deg.unwrap_or(DEFAULT_DEG) },
         current: current.clone(),
         current_age: p.stint_laps.floor() as u32,
         stop_now: false,
         need_compound: race.mandatory.clone().filter(|_| !p.mandatory_done),
         need_stop: race.pit_required && !p.pit_done,
-        compounds: compounds(race, current.as_deref()),
+        compounds: compounds(race, current.as_deref())
+            .into_iter()
+            .map(|c| if race.no_wear { planner::Compound { deg: Some(0.0), life: None, ..c } } else { c })
+            .collect(),
     };
+    if race.no_fuel {
+        inp.fuel = cap;
+        inp.refuel_rate = 0.0;
+    }
     if live.lap <= 0 {
         // Before the start: full race, fuel on board (full tank if unknown)
         inp.first_lap = 1;
@@ -922,6 +937,8 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
         reserve_laps: race.reserve_laps.unwrap_or(DEFAULT_RESERVE),
         wear_limit: race.wear_limit.unwrap_or(DEFAULT_WEAR_LIMIT),
         pit_required: race.pit_required,
+        no_wear: race.no_wear,
+        no_fuel: race.no_fuel,
         pit_done: !saved.stops.is_empty(),
         mandatory: race.mandatory.clone(),
         ..Default::default()
@@ -1060,7 +1077,9 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
     } else if p.stops_needed == 0 && p.stop_add.is_none() {
         match p.fuel_margin_laps {
             Some(m) => calls.push(call("info", format!("Palivo do cíle stačí (+{} kola)", fmt1(m)))),
-            None if p.total_laps.is_some() && fpl.is_none() => calls.push(call("info", "Spotřeba: změřím po prvním kole".into())),
+            None if p.total_laps.is_some() && fpl.is_none() && !p.no_fuel => {
+                calls.push(call("info", "Spotřeba: změřím po prvním kole".into()))
+            }
             None => {}
         }
     }
@@ -1288,6 +1307,28 @@ mod tests {
         // With the stop mandatory there is nothing to save
         let p = plan(&barcelona(20), &l, Some(7.2), None);
         assert!(p.no_stop_fpl.is_none() && p.fuel_target == Some(7.2));
+    }
+
+    #[test]
+    fn kart_race_without_wear_and_fuel_still_plans_the_mandatory_stop() {
+        let mut saved = barcelona(45);
+        {
+            let r = saved.race.as_mut().unwrap();
+            r.no_wear = true;
+            r.no_fuel = true;
+            r.mandatory = Some("SS".into());
+            r.start_compound = Some("SS".into());
+            r.tyre_wear = None;
+            r.fuel_mult = None;
+            r.refuel_rate = None;
+        }
+        let mut l = live(0, 0.0, 5.0);
+        l.capacity = 5.0;
+        l.total_laps = 45;
+        let p = full(&saved, &l, 0.0);
+        let best = p.options.best.as_ref().expect("a plan with the mandatory stop");
+        assert_eq!(best.stops.len(), 1, "{best:?}");
+        assert!(!p.calls.iter().any(|c| c.text.contains("Spotřeba")), "{:?}", p.calls);
     }
 
     #[test]
