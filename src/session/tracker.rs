@@ -151,6 +151,8 @@ pub struct Tracker {
     session_car: Option<i32>,
     session_open: bool,
     paused_since: Option<Instant>,
+    /// Standing still on track since (long waits in the pit box are not recorded)
+    standing_since: Option<Instant>,
     off_track_since: Option<Instant>,
     last_packet: Option<Instant>,
     perf: perf::Detector,
@@ -197,12 +199,13 @@ impl Tracker {
             fuel_at_lap_start: None,
             fuel_used: Vec::new(),
             balance: None,
-            steer_cal: Default::default(),
+            steer_cal: dynamics::SteerCalibration::with_dir(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
             track: Track::default(),
             recorder,
             session_car: None,
             session_open: false,
             paused_since: None,
+            standing_since: None,
             off_track_since: None,
             last_packet: None,
             perf: perf::Detector::default(),
@@ -412,7 +415,15 @@ impl Tracker {
                 delta = self.track.delta(x, z, ms);
                 self.track.segment(x, z, ms);
             }
-            if let (Some(r), true) = (&self.recorder, self.session_open) {
+            // Standing more than a minute (garage, setup menu in the pit): no rows, otherwise a
+            // long wait fills a lap file with hundreds of MB (19 Oct: 92 MB of standing)
+            if p.speed_ms < 0.5 {
+                self.standing_since.get_or_insert_with(Instant::now);
+            } else {
+                self.standing_since = None;
+            }
+            let idle = self.standing_since.is_some_and(|t| t.elapsed() > Duration::from_secs(60));
+            if let (Some(r), true, false) = (&self.recorder, self.session_open, idle) {
                 r.send(Msg::Row(Recorder::row(p, &dyn_, lap_ms, delta)));
             }
         }
@@ -639,7 +650,11 @@ impl Tracker {
             track.lap_started(None, false);
         }
         let session_car = if full { None } else { self.session_car };
-        let steer_cal = if full { Default::default() } else { std::mem::take(&mut self.steer_cal) };
+        let steer_cal = if full {
+            dynamics::SteerCalibration::with_dir(self.perf_store.as_ref().map(|s| s.dir().to_path_buf()))
+        } else {
+            std::mem::take(&mut self.steer_cal)
+        };
         let snap = Snapshot { link: std::mem::take(&mut self.snap.link), ..Default::default() };
         *self = Tracker {
             snap,

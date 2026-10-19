@@ -342,10 +342,17 @@ async fn setups_list(State(s): State<AppState>, Query(q): Query<SetupQuery>) -> 
 
 fn setups_json(st: &strategy::Strategy, car: i32) -> String {
     let active = st.setups.active_id(car);
-    let track = st.advice_track();
+    // The current track, or where the car was last driven with this setup
+    let mut track = st.advice_track();
+    if st.handling.last(car, &active, &track).is_empty() {
+        if let Some(t) = st.handling.last_track(car, &active) {
+            track = t;
+        }
+    }
     let setup = st.setups.active(car);
     let laps = st.handling.last(car, &active, &track);
-    let report = strategy::handling::advice(&laps, setup, setup.is_some_and(|s| s.bop));
+    let kart = crate::telemetry::cars::name(car).is_some_and(|n| n.contains("Kart"));
+    let report = strategy::handling::advice(&laps, setup, setup.is_some_and(|s| s.bop), !kart);
     json!({
         "car": car,
         "active": active,

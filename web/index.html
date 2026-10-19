@@ -2817,8 +2817,9 @@
       const bal = `<div class="subal"><span>Vjezd <b>↗${pc(a.entry[0])} ↘${pc(a.entry[1])}</b></span><span>Střed <b>↗${pc(a.mid[0])} ↘${pc(a.mid[1])}</b></span>
         <span>Výjezd <b>↗${pc(a.exit[0])} ↘${pc(a.exit[1])}</b></span><span>Blokování P/Z <b>${pc(a.lock_f)} / ${pc(a.lock_r)}</b></span><span>Prokluz <b>${pc(a.spin)}</b></span>
         <span class="muted">↗ nedotáčivost · ↘ přetáčivost</span></div>`;
+      const balNote = a.balance_note ? `<div class="pnote" style="margin:6px 0 0">${esc(a.balance_note)}</div>` : '';
       const items = (a.advice || []).map(x => `<div><b>${esc(x.finding)}</b>${x.setup ? `<span class="k">Nastavení</span>${esc(x.setup)}<br>` : ''}${x.driving ? `<span class="k">Jízda</span>${esc(x.driving)}` : ''}</div>`).join('');
-      body = bal + (items ? `<div class="suadv">${items}</div><div class="pnote">Měň vždy jen jednu věc: Duplikovat → upravit → Uložit (nová karta je aktivní), pak 3+ kola a porovnej níže.</div>`
+      body = bal + balNote + (items ? `<div class="suadv">${items}</div><div class="pnote">Měň vždy jen jednu věc: Duplikovat → upravit → Uložit (nová karta je aktivní), pak 3+ kola a porovnej níže.</div>`
         : '<div class="pnote">Auto je vyvážené – žádná výrazná nedotáčivost, přetáčivost, blokování ani prokluz. Hledej čas v jízdě (kouč na stránce 1).</div>');
     }
     const cmp = r.compare || {}, rows = cmp.rows || [];

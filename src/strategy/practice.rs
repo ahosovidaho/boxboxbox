@@ -23,6 +23,8 @@ const OUTLIER_S: f32 = 2.0;
 const OUTLIER_SHARE: f32 = 0.02;
 /// Degradation is fitted from at least this many laps spanning this many laps of tyre age
 const FIT_LAPS: usize = 4;
+/// A break this long between laps (minutes) means a new session on new tyres
+const NEW_SESSION_MIN: i64 = 15;
 const FIT_SPAN: u32 = 3;
 const MAX_LAPS: usize = 3000;
 
@@ -239,8 +241,15 @@ impl Practice {
         if self.saved.track.is_empty() {
             return;
         }
-        // Another car or track than the last lap: new tyres
-        if self.saved.laps.last().is_some_and(|l| l.car != car || track_key(&l.track) != track_key(&self.saved.track)) {
+        // Another car or track than the last lap, or a break (a new session, another day): new tyres.
+        // Without the break rule the first set of 19 Oct counted on from 16 Oct (age 8 instead of 0).
+        let lap_start = chrono::Local::now().naive_local() - chrono::TimeDelta::milliseconds(ms as i64);
+        let after_break = |l: &PracticeLap| {
+            chrono::NaiveDateTime::parse_from_str(&l.at, "%Y-%m-%d %H:%M")
+                .map(|at| lap_start - at > chrono::TimeDelta::minutes(NEW_SESSION_MIN))
+                .unwrap_or(false)
+        };
+        if self.saved.laps.last().is_some_and(|l| l.car != car || track_key(&l.track) != track_key(&self.saved.track) || after_break(l)) {
             self.saved.set_age = 0;
         }
         let s = &mut self.saved;

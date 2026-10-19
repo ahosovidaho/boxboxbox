@@ -185,6 +185,11 @@ impl Handling {
         }
     }
 
+    /// Track of the latest stored lap of a car with a setup
+    pub fn last_track(&self, car: i32, setup: &str) -> Option<String> {
+        self.laps.iter().rev().find(|l| l.car == car && l.setup == setup).map(|l| l.track.clone())
+    }
+
     /// The last laps of a car with a setup on a track ("" track = any)
     pub fn last(&self, car: i32, setup: &str, track: &str) -> Vec<&LapStats> {
         let key = track_key(track);
@@ -226,6 +231,8 @@ pub struct Report {
     pub lock_f: f32,
     pub lock_r: f32,
     pub spin: f32,
+    /// The balance cannot be judged for this car (shown instead of the balance advice)
+    pub balance_note: Option<String>,
 }
 
 fn pct(a: u32, n: u32) -> f32 {
@@ -262,7 +269,9 @@ fn fmt(v: f32) -> String {
 }
 
 /// What to try for the laps. `bop`: the setup cannot be changed, driving tips only.
-pub fn advice(laps: &[&LapStats], setup: Option<&Setup>, bop: bool) -> Report {
+/// `balance`: understeer/oversteer can be judged for the car (not for karts: the slip angles
+/// assume a car's wheelbase).
+pub fn advice(laps: &[&LapStats], setup: Option<&Setup>, bop: bool, balance: bool) -> Report {
     let mut r = Report { laps: laps.len(), needed: MIN_LAPS, ..Default::default() };
     let mut t = LapStats::default();
     for l in laps {
@@ -293,8 +302,11 @@ pub fn advice(laps: &[&LapStats], setup: Option<&Setup>, bop: bool) -> Report {
     // Balance per phase: clear when one side dominates
     let phases =
         [("entry", &t.entry, "na brzdách při vjezdu"), ("mid", &t.mid, "ve středu zatáčky"), ("exit", &t.exit, "na plynu při výjezdu")];
+    if !balance {
+        r.balance_note = Some("U motokáry nedotáčivost a přetáčivost neměřím spolehlivě (výpočet počítá s rozvorem auta).".into());
+    }
     for (area, ph, where_) in phases {
-        if ph.n < 300 {
+        if ph.n < 300 || !balance {
             continue;
         }
         let (us, os) = (pct(ph.us, ph.n), pct(ph.os, ph.n));
@@ -440,7 +452,7 @@ mod tests {
         let laps = [&l, &l, &l];
         let mut s = Setup::default();
         s.values.insert("arb_f".into(), "6".into());
-        let r = advice(&laps, Some(&s), false);
+        let r = advice(&laps, Some(&s), false, true);
         assert_eq!(r.advice.len(), 1, "{:?}", r.advice);
         let a = &r.advice[0];
         assert_eq!(a.area, "mid");
@@ -448,19 +460,19 @@ mod tests {
         assert!(a.setup.as_deref().unwrap().contains("přední stabilizátor 6 → 5"), "{:?}", a.setup);
         assert!(a.setup.as_deref().unwrap().contains("zadní stabilizátor o 1 tvrdší"), "{:?}", a.setup);
         // BoP: the same finding, driving tip only
-        let r = advice(&laps, Some(&s), true);
+        let r = advice(&laps, Some(&s), true, true);
         assert!(r.advice[0].setup.is_none() && r.advice[0].driving.is_some());
     }
 
     #[test]
     fn balanced_car_and_too_few_laps() {
         let l = lap(Phase { n: 400, us: 10, os: 30 }, Phase { n: 900, us: 80, os: 45 }, Phase { n: 800, us: 48, os: 16 });
-        assert!(advice(&[&l, &l, &l], None, false).advice.is_empty());
+        assert!(advice(&[&l, &l, &l], None, false, true).advice.is_empty());
         let mut over = lap(Phase { n: 400, us: 0, os: 120 }, Phase::default(), Phase::default());
-        assert!(advice(&[&over, &over], None, false).advice.is_empty(), "2 laps are not enough");
+        assert!(advice(&[&over, &over], None, false, true).advice.is_empty(), "2 laps are not enough");
         over.brake = 300;
         over.lock_f = 40;
-        let r = advice(&[&over, &over, &over], None, false);
+        let r = advice(&[&over, &over, &over], None, false, true);
         let areas: Vec<_> = r.advice.iter().map(|a| a.area).collect();
         assert_eq!(areas, ["entry", "brakes"]);
         assert!(r.advice[0].finding.starts_with("Přetáčivost"));
@@ -473,12 +485,12 @@ mod tests {
         l.limiter = 30;
         let mut s = Setup::default();
         s.values.insert("top_speed".into(), "280".into());
-        let r = advice(&[&l, &l, &l], Some(&s), false);
+        let r = advice(&[&l, &l, &l], Some(&s), false, true);
         assert_eq!(r.advice[0].setup.as_deref(), Some("max. rychlost převodovky 280 → 290"));
-        assert!(advice(&[&l, &l, &l], Some(&s), true).advice.is_empty(), "BoP: no gearing tip");
+        assert!(advice(&[&l, &l, &l], Some(&s), true, true).advice.is_empty(), "BoP: no gearing tip");
         let mut l = lap(Phase::default(), Phase::default(), Phase::default());
         l.max_gear = 4;
-        assert!(advice(&[&l, &l, &l], None, false).advice[0].finding.contains("4. z 6"));
+        assert!(advice(&[&l, &l, &l], None, false, true).advice[0].finding.contains("4. z 6"));
     }
 
     #[test]

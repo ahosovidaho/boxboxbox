@@ -611,7 +611,10 @@ impl Comparer {
             .corners
             .iter()
             .map(|c| {
-                let slides = res.laps.iter().filter(|l| l.corner(c.n).stats.as_ref().is_some_and(|s| s.rear_slide >= RISK_SLIDE)).count();
+                // Beyond what the best lap itself does there (karts slide on every lap)
+                let base = res.reference_lap().and_then(|r| r.corner(c.n).stats.as_ref()).map_or(0.0, |s| s.rear_slide);
+                let limit = RISK_SLIDE.max(base + 6.0);
+                let slides = res.laps.iter().filter(|l| l.corner(c.n).stats.as_ref().is_some_and(|s| s.rear_slide >= limit)).count();
                 let spins = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "spin").count();
                 let moments = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "slide").count();
                 let n = res.laps.len().max(1);

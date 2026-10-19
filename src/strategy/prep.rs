@@ -74,6 +74,8 @@ fn race_compounds(race: &Race) -> Vec<String> {
 pub fn checklist(inp: &Input) -> Vec<Item> {
     let r = inp.race;
     let mut out = Vec::new();
+    // A car that burns no fuel (karts): nothing to measure or set for fuel
+    let no_fuel = inp.laps.len() >= 3 && inp.laps.iter().all(|l| l.fuel < 0.01);
 
     // 1. Race settings
     let mut missing = Vec::new();
@@ -83,10 +85,10 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
     if r.tyre_wear.is_none() {
         missing.push("opotřebení gum");
     }
-    if r.fuel_mult.is_none() {
+    if r.fuel_mult.is_none() && !no_fuel {
         missing.push("spotřeba paliva");
     }
-    if r.refuel_rate.is_none() {
+    if r.refuel_rate.is_none() && !no_fuel {
         missing.push("rychlost tankování");
     }
     out.push(item(
@@ -95,10 +97,10 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
         if missing.is_empty() { "ok" } else { "missing" },
         if missing.is_empty() {
             format!(
-                "{} kol · opotř. ×{} · spotř. ×{}{}",
+                "{} kol · opotř. ×{}{}{}",
                 r.laps.unwrap_or(0),
                 f1(r.tyre_wear.unwrap_or(0.0)),
-                f1(r.fuel_mult.unwrap_or(0.0)),
+                r.fuel_mult.map(|f| format!(" · spotř. ×{}", f1(f))).unwrap_or_default(),
                 r.mandatory.as_deref().map(|m| format!(" · povinně {m}")).unwrap_or_default()
             )
         } else {
@@ -173,8 +175,12 @@ pub fn checklist(inp: &Input) -> Vec<Item> {
     out.push(item(
         "fuel",
         "Spotřeba na kolo",
-        if fpl.is_some() { "ok" } else { "missing" },
-        fpl.map_or("zatím neměřená".into(), |f| format!("{} l/kolo", format!("{f:.2}").replace('.', ","))),
+        if fpl.is_some() || no_fuel { "ok" } else { "missing" },
+        if no_fuel {
+            "auto palivo nespotřebovává".into()
+        } else {
+            fpl.map_or("zatím neměřená".into(), |f| format!("{} l/kolo", format!("{f:.2}").replace('.', ",")))
+        },
         "Změří se z celých kol bez tankování se stejnou spotřebou ×.",
     ));
 

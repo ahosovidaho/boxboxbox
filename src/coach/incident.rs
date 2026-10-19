@@ -11,9 +11,14 @@ use serde::{Deserialize, Serialize};
 
 const SPIN_SLIP: f64 = 30.0;
 const SLIDE_REAR: f64 = 12.0;
+/// A slide must go this far (°) beyond the rear slip of the best lap in the same corner
+const REF_MARGIN: f64 = 6.0;
 const SLIDE_MIN: usize = (HZ * 0.25) as usize;
 /// Events closer than this are one event (samples)
 const MERGE: usize = (HZ * 3.0) as usize;
+/// Wheelspin before a slide: rear wheels this much faster than the car, at least this long
+const WHEELSPIN: f64 = 1.15;
+const WHEELSPIN_MIN: usize = (HZ * 0.2) as usize;
 const LOOK_BACK: usize = (HZ * 1.5) as usize;
 /// Back to normal driving: this long at speed without sliding (samples)
 const RECOVERED: usize = HZ as usize;
@@ -40,6 +45,19 @@ pub fn detect(rows: &[Row], reference: &[Row], corners: &[(usize, f64, f64)]) ->
         return Vec::new();
     }
     let length = reference.last().map_or(0.0, |r| r.s_ref);
+    // What the best lap itself does in each corner: a car that always slides a little there (a
+    // kart, a drift-happy setup) only has a "slide" when it goes clearly beyond that
+    let ref_slide: Vec<(f64, f64, f64)> = corners
+        .iter()
+        .map(|&(_, a, b)| {
+            let m = reference.iter().filter(|r| a <= r.s_ref && r.s_ref <= b).filter_map(|r| r.ar).map(f64::abs).fold(0.0, f64::max);
+            (a, b, m)
+        })
+        .collect();
+    let slide_limit = |s: f64| {
+        let m = ref_slide.iter().find(|(a, b, _)| *a <= s && s <= *b).map_or(0.0, |c| c.2);
+        SLIDE_REAR.max(m + REF_MARGIN)
+    };
     let mut starts: Vec<(usize, bool, usize)> = Vec::new(); // onset, spin, end
     let mut i = 0;
     while i < n {
@@ -48,8 +66,9 @@ pub fn detect(rows: &[Row], reference: &[Row], corners: &[(usize, f64, f64)]) ->
         // Almost stopped on track after being fast
         let stopped = on_lap && r.speed_kmh < 25.0 && rows[i.saturating_sub(180)..i].iter().any(|p| p.speed_kmh > 80.0);
         let spin = r.beta.is_some_and(|b| b.abs() > SPIN_SLIP) || stopped;
-        let slide = r.ar.is_some_and(|a| a.abs() > SLIDE_REAR)
-            && (i..(i + SLIDE_MIN).min(n)).all(|k| rows[k].ar.is_some_and(|a| a.abs() > SLIDE_REAR * 0.7));
+        let limit = slide_limit(r.s_ref);
+        let slide =
+            r.ar.is_some_and(|a| a.abs() > limit) && (i..(i + SLIDE_MIN).min(n)).all(|k| rows[k].ar.is_some_and(|a| a.abs() > limit * 0.7));
         if on_lap && (spin || slide) {
             // Onset: walk back to where the rear started to slide
             let mut k = i;
@@ -106,6 +125,17 @@ fn describe(rows: &[Row], reference: &[Row], corners: &[(usize, f64, f64)], k: u
     let steer = recent.iter().map(|r| r.steering.abs()).fold(0.0, f64::max);
     let dv = ref_speed(reference, r.s_ref).map(|v| r.speed_kmh - v);
     let corner = corners.iter().find(|(_, a, b)| *a <= r.s_ref && r.s_ref <= *b).map(|c| c.0);
+    // Rear wheels clearly turning faster than the car moves, on the throttle, for a while in the
+    // 1.5 s before (short peaks up to ~1.1 are normal hard acceleration, also on the best laps)
+    let rear_spin = win
+        .iter()
+        .filter(|p| thr(p) > 50.0 && p.speed_kmh > 20.0)
+        .filter(|p| (2..4).map(|w| p.wheel_rps[w].abs() * p.tire_radius[w]).fold(0.0, f64::max) / (p.speed_kmh / 3.6) > WHEELSPIN)
+        .count()
+        >= WHEELSPIN_MIN;
+    // Much throttle while the wheel was still turned a lot, in the last second
+    let last_s = &rows[k.saturating_sub(HZ as usize)..=k];
+    let thr_turned = last_s.iter().any(|p| thr(p) > 60.0 && p.steering.abs() > steer_max * 0.5);
 
     let (cause, tip) = if brake_now > 20.0 && downshift {
         ("podřazení na brzdách – záď se odlehčila", "Podřazuj až když auto zpomalí, a brzdu povoluj dřív, než začneš zatáčet.")
@@ -114,9 +144,14 @@ fn describe(rows: &[Row], reference: &[Row], corners: &[(usize, f64, f64)], k: u
             "brzdění s natočeným volantem – záď se odlehčila",
             "Většinu brzdění udělej rovně; do zatáčky už jen dobrzďuj a brzdu plynule pouštěj.",
         )
+    } else if rear_spin {
+        (
+            "prokluz zadních kol na plynu",
+            "Na výjezdu přidávej plyn postupněji, ve 2.–3. stupni zvlášť; pomůže i kontrola trakce o stupeň výš.",
+        )
     } else if lift {
         ("prudké ubrání plynu v zatáčce", "Plyn v zatáčce ubírej postupně – náhlé puštění odlehčí záď.")
-    } else if thr(r) > 50.0 && steer > steer_max * 0.5 {
+    } else if thr_turned || (thr(r) > 50.0 && steer > steer_max * 0.5) {
         ("plyn s ještě natočeným volantem", "Plný plyn až když narovnáváš volant; do té doby jen jemně a postupně.")
     } else if thr_rise > 50.0 {
         ("prudké přidání plynu", "Plyn přidávej plynule, ne skokem – zvlášť na nízkém stupni.")

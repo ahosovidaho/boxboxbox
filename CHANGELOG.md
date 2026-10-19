@@ -2,6 +2,19 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Opravy po tréninku 19. 10.** (F3500 Yas Marina, motokára Willow Springs):
+  - Ujetí zádi a riziko zatáčky se počítají proti nejlepšímu kolu ve stejné zatáčce (o 6° víc
+    než ono) – motokára klouže v každém kole a dřív měla „ujetí zádi“ i v nejrychlejších kolech.
+  - Příčina „prokluz zadních kol“ jen při skutečném prokluzu (zadní kola o 15 % rychleji aspoň
+    0,2 s); krátké špičky do ~1,1 má i nejlepší kolo.
+  - Motokára: nedotáčivost/přetáčivost se nevyhodnocuje (výpočet počítá s rozvorem auta), místo
+    toho poznámka. Příprava na závod: u auta bez spotřeby paliva se palivo nevyžaduje.
+  - Doporučení setupu se ukážou i pro auto, které se teď nejede na aktuální trati (poslední trať).
+  - Záznam nezapisuje stání déle než minutu (19. 10.: soubor 92 MB ze stání v boxu).
+  - Převzato z neuložených úprav v pracovní kopii (19. 10. 14:00): převod řízení se pro auto
+    naučí jednou a uloží (`perf/<auto>/steer.json`), nová sada gum po přestávce 15+ minut,
+    příčina „plyn s natočeným volantem“ hledaná v poslední sekundě.
+
 - **Příprava na závod** (Strategie → Trénink, nahoře): pro vybraný závod co je hotové (✓),
   částečně (!) a co chybí (○) – nastavení závodu, čistá kola na trati se stejnými násobiči,
   každá směs (kola, ztráta za kolo, výdrž), spotřeba, ztráta zastávkou, dlouhý stint, karta
