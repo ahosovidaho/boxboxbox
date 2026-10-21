@@ -427,7 +427,9 @@ impl Tracker {
                 r.send(Msg::Row(Recorder::row(p, &dyn_, lap_ms, delta)));
             }
         }
-        self.balance = match (dyn_.balance, self.balance) {
+        // Karts (tyre radius under 0.2 m): the balance assumes a car's wheelbase, show none
+        let kart = p.tire_radius[0] > 0.0 && p.tire_radius[0] < 0.2;
+        self.balance = match (dyn_.balance.filter(|_| !kart), self.balance) {
             (Some(b), Some(prev)) => Some(prev + (b - prev) / BALANCE_SMOOTHING),
             (b, _) => b,
         };

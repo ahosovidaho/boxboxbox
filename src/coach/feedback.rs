@@ -193,11 +193,13 @@ pub fn causes(lc: &CornerStats, rc: &CornerStats) -> Vec<String> {
             tr!("Ausgang {v} langsamer", "exit {v} slower", "výjezd o {v} pomaleji")
         });
     }
-    if lc.under > 30.0 {
+    // Balance against the comparison lap in the same corner: a corner (or a car – karts) where the
+    // rear always slides a little is no cause; only clearly more than in the best lap is
+    if lc.under > 30.0 && lc.under > rc.under + 20.0 {
         let u = lc.under;
         out.push(tr!("{u:.0} % Untersteuern", "{u:.0} % understeer", "{u:.0} % nedotáčivost"));
     }
-    if lc.over > 25.0 || lc.rear_slide > 7.0 {
+    if (lc.over > 25.0 && lc.over > rc.over + 20.0) || lc.rear_slide > 7.0f64.max(rc.rear_slide + 6.0) {
         out.push(issue_label("Heck kommt"));
     }
     out

@@ -83,7 +83,8 @@ pub fn zones(rows: &[Row]) -> Vec<(usize, usize, usize, usize)> {
     out
 }
 
-fn evaluate_zone(rows: &[Row], s: usize, turn: usize, e: usize, apex: usize) -> Zone {
+/// `balance`: understeer and the sliding rear can be judged (not for karts).
+fn evaluate_zone(rows: &[Row], s: usize, turn: usize, e: usize, apex: usize, balance: bool) -> Zone {
     let peak_brake = (s..=e).map(|i| rows[i].brake).fold(f64::MIN, f64::max) / 2.55;
     let brake_at_turn = rows[turn].brake_pct();
     let trail_end = if e >= turn { e } else { turn };
@@ -135,8 +136,8 @@ fn evaluate_zone(rows: &[Row], s: usize, turn: usize, e: usize, apex: usize) -> 
     let trail_rows: Vec<&Row> = (turn..=trail_end).map(|i| &rows[i]).collect();
     let share = |pred: &dyn Fn(&Row) -> bool| trail_rows.iter().filter(|r| pred(r)).count() as f64 / trail_rows.len() as f64 * 100.0;
     let lock = share(&front_lock);
-    let under = share(&|r: &Row| r.bal.is_some_and(|b| b > 2.5));
-    let rear = share(&|r: &Row| r.ar.is_some_and(|a| a.abs() > 5.0));
+    let under = if balance { share(&|r: &Row| r.bal.is_some_and(|b| b > 2.5)) } else { 0.0 };
+    let rear = if balance { share(&|r: &Row| r.ar.is_some_and(|a| a.abs() > 5.0)) } else { 0.0 };
 
     let mut score = 100.0;
     let mut issues: Vec<(String, String)> = Vec::new();
@@ -248,7 +249,8 @@ fn evaluate_zone(rows: &[Row], s: usize, turn: usize, e: usize, apex: usize) -> 
 
 /// All braking zones of a lap; `rows` need `lap::add_dynamics`.
 pub fn evaluate(rows: &[Row]) -> TrailBraking {
-    let zones: Vec<Zone> = zones(rows).into_iter().map(|(s, t, e, a)| evaluate_zone(rows, s, t, e, a)).collect();
+    let balance = !lap::is_kart(rows);
+    let zones: Vec<Zone> = zones(rows).into_iter().map(|(s, t, e, a)| evaluate_zone(rows, s, t, e, a, balance)).collect();
     if zones.is_empty() {
         return TrailBraking::default();
     }

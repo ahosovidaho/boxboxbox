@@ -244,6 +244,14 @@ pub fn add_dynamics(rows: &mut [Row], ratio: f64) {
     }
 }
 
+/// A kart (tyre radius under 0.2 m; cars have 0.3 m and more). Its slip angles and balance are
+/// not meaningful: they assume a car's wheelbase.
+pub fn is_kart(rows: &[Row]) -> bool {
+    let mut r: Vec<f64> = rows.iter().map(|r| r.tire_radius[0]).filter(|v| *v > 0.0).collect();
+    r.sort_by(f64::total_cmp);
+    r.get(r.len() / 2).is_some_and(|m| *m < 0.2)
+}
+
 /// Cumulative driven distance along the file.
 pub fn with_distance(rows: &mut [Row]) {
     let mut d = 0.0;

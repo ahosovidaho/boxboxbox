@@ -2,6 +2,16 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Kontrola dalších míst po chybě s podřazením** (motokára 20. 10., F3500 19. 10.):
+  - Kouč: „ujíždějící záď“ a „nedotáčivost“ v hodnocení kola jen když je výrazně víc než
+    v nejlepším kole ve stejné zatáčce (motokára: dřív 116× za 32 kol, teď 10×).
+  - Motokára (poloměr kol pod 0,2 m): trail braking nehodnotí nedotáčivost a záď, živá
+    šipka na mapě se nebarví podle vyvážení.
+  - Zatáčky session se znovu určí z nejlepšího kola, když byly vzaté z kola se spinem nebo
+    výletem (20. 10.: zatáčka „vrchol 0 km/h“, ztráta −12 s v Z4); teoretické kolo jen
+    z normálních kol (bylo 0:34,8 místo 0:53,1).
+  - Telemetrie: po restartu v GT7 se čísla kol opakují – v seznamu „Kolo 2 · jízda 3“.
+
 - **Řazení dolů v Telemetrii**: pohled Řazení ukazuje i podřazení (↓5→4 se otáčkami, na které
   motor po podřazení vyskočil, a místem v m), dřív jen řazení nahoru – před zatáčkou tak
   vypadalo, že se neřadí. Žluté optimum jen na plném plynu bez brzdy (ne při meziplynu).

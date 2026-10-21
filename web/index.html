@@ -2555,9 +2555,9 @@
   }
   function renderTraceHead() {
     const d = tData;
-    $('tLap').innerHTML = d.laps.slice().reverse().map(l => `<option value="${esc(l.file)}" ${l.file === d.lap.file ? 'selected' : ''}>Kolo ${l.lap} · ${fmtLap(l.ms)}${l.file === d.reference.file ? ' ★' : ''}${l.ms > d.reference.ms * 1.07 ? ' ⚠' : ''}</option>`).join('');
-    setText('tLapName', `kolo ${d.lap.lap}`);
-    setText('tRefName', `nejlepší (kolo ${d.reference.lap} · ${fmtLap(d.reference.ms)})`);
+    $('tLap').innerHTML = d.laps.slice().reverse().map(l => `<option value="${esc(l.file)}" ${l.file === d.lap.file ? 'selected' : ''}>${lapName(l.file)} · ${fmtLap(l.ms)}${l.file === d.reference.file ? ' ★' : ''}${l.ms > d.reference.ms * 1.07 ? ' ⚠' : ''}</option>`).join('');
+    setText('tLapName', lapName(d.lap.file).toLowerCase());
+    setText('tRefName', `nejlepší (${lapName(d.reference.file).toLowerCase()} · ${fmtLap(d.reference.ms)})`);
     const dtc = v => v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)';
     $('tCorners').innerHTML = `<button class="all ${tCorner == null ? 'on' : ''}" data-n="">Celé kolo <small style="color:${dtc(d.lap.ms - d.reference.ms > 0 ? 1 : 0)}">${tsg((d.lap.ms - d.reference.ms) / 1000, 3)}</small></button>`
       + d.corners.map(c => {
@@ -2581,8 +2581,15 @@
     const list = (tData.incidents || []);
     $('tInc').innerHTML = list.length ? '<h4>Spiny a ujetí zádi</h4>' + list.map((x, k) => {
       const i = x.incident;
-      return `<button data-k="${k}" class="${i.kind}"><b>${i.kind === 'spin' ? 'Spin' : 'Ujetí zádi'} · kolo ${x.lap}${i.corner ? ' · Z' + i.corner : ''}</b><br><span>${esc(i.cause)}</span></button>`;
+      return `<button data-k="${k}" class="${i.kind}"><b>${i.kind === 'spin' ? 'Spin' : 'Ujetí zádi'} · ${lapName(x.file).toLowerCase()}${i.corner ? ' · Z' + i.corner : ''}</b><br><span>${esc(i.cause)}</span></button>`;
     }).join('') : (tView === 'risk' ? '<h4>Žádné spiny ani ujetí zádi</h4>' : '');
+  }
+  // "Kolo 2", or "Kolo 2 · jízda 3" when GT7 was restarted and lap numbers repeat in the session
+  function lapName(file) {
+    const l = tData && tData.laps.find(x => x.file === file);
+    if (!l) return 'Kolo ?';
+    const runs = Math.max(...tData.laps.map(x => x.run || 1));
+    return `Kolo ${l.lap}${runs > 1 ? ` · jízda ${l.run}` : ''}`;
   }
   const tsg = (v, d) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(d).replace('.', ',');
   function setTraceWindow() {

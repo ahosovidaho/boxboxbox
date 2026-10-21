@@ -123,6 +123,9 @@ struct CornerDef {
 #[derive(Serialize, Deserialize)]
 struct CornerFile {
     source: i64,
+    /// Lap time of the lap the corners were taken from (older files: none)
+    #[serde(default)]
+    source_ms: Option<i64>,
     corners: Vec<CornerDef>,
 }
 
@@ -245,14 +248,24 @@ impl Comparer {
         project(&mut reference, None);
 
         let corners_path = session.join("corners.json");
-        if !corners_path.exists() {
-            // Corners are defined once per session from the first complete lap
-            if laps[0].0 == ref_path {
-                write_corner_defs(&corners_path, &reference)?;
-            } else {
+        // Corners are defined once per session from the first complete lap – unless that lap had
+        // a spin or an excursion (over 107 % of the best): then again from the best lap, else a
+        // corner sits where the car stood (20 Oct: "Z4 apex 0 km/h", a 12 s gain in Z4)
+        let stale = match fs::read_to_string(&corners_path).ok().and_then(|t| serde_json::from_str::<CornerFile>(&t).ok()) {
+            None => None,
+            Some(f) => {
+                let ms = f.source_ms.or_else(|| laps.iter().find(|(p, _)| meta_lap(p) == f.source).map(|(_, ms)| *ms));
+                Some(ms.is_some_and(|ms| ms as f64 > ref_ms as f64 * 1.07))
+            }
+        };
+        match stale {
+            Some(false) => {}
+            Some(true) => write_corner_defs(&corners_path, &reference, ref_ms)?,
+            None if laps[0].0 == ref_path => write_corner_defs(&corners_path, &reference, ref_ms)?,
+            None => {
                 let mut first = lap::load(&laps[0].0)?;
                 prepare(&mut first, ratio);
-                write_corner_defs(&corners_path, &first)?;
+                write_corner_defs(&corners_path, &first, laps[0].1)?;
             }
         }
         let corners = map_corner_defs(&corners_path, &reference)?;
@@ -301,7 +314,16 @@ impl Comparer {
                     * result
                         .corners
                         .iter()
-                        .map(|c| result.laps.iter().map(|l| l.corner(c.n).dt).fold(f64::INFINITY, f64::min))
+                        // Best corner of the normal laps only: a lap with a spin can show a
+                        // nonsense "gain" where the car stood in another section
+                        .map(|c| {
+                            result
+                                .laps
+                                .iter()
+                                .filter(|l| l.ms as f64 <= ref_ms as f64 * 1.07)
+                                .map(|l| l.corner(c.n).dt)
+                                .fold(0.0f64, f64::min)
+                        })
                         .sum::<f64>(),
         );
         Ok(result)
@@ -427,13 +449,13 @@ fn corners_of(rows: &[Row]) -> Vec<Corner> {
         .collect()
 }
 
-fn write_corner_defs(path: &Path, rows: &[Row]) -> std::io::Result<()> {
+fn write_corner_defs(path: &Path, rows: &[Row], ms: i64) -> std::io::Result<()> {
     let pos = |i: usize| [lap::round_to(rows[i].pos_x, 2), lap::round_to(rows[i].pos_z, 2)];
     let defs = corners_of(rows)
         .iter()
         .map(|c| CornerDef { n: c.n, dir: c.dir.clone(), from: pos(c.from), apex: pos(c.apex), to: pos(c.to) })
         .collect();
-    let file = CornerFile { source: rows[0].lap as i64, corners: defs };
+    let file = CornerFile { source: rows[0].lap as i64, source_ms: Some(ms), corners: defs };
     fs::write(path, serde_json::to_string_pretty(&file).unwrap_or_default())
 }
 
@@ -567,6 +589,8 @@ impl Comparer {
         lap_file: Option<&str>,
         drive: Option<super::shifts::Optimum>,
     ) -> std::io::Result<serde_json::Value> {
+        // First the comparison: it may redefine the corners of the session (see `compare`)
+        let res = self.compare(session)?;
         let laps = self.complete_laps(session);
         let Some((ref_path, ref_ms)) = laps.iter().min_by_key(|(_, ms)| *ms).cloned() else {
             return Ok(serde_json::json!({ "laps": [] }));
@@ -612,7 +636,6 @@ impl Comparer {
             .collect();
         let lap_of = |p: &Path| meta_lap(p);
         // Risk per corner over all laps of the session, and every spin / slide
-        let res = self.compare(session)?;
         let mut incidents = Vec::new();
         for l in &res.laps {
             for i in &l.incidents {
@@ -699,6 +722,19 @@ impl Comparer {
                 })
                 .collect()
         };
+        // A restart in GT7 starts the lap count again: "run" tells the laps 2 apart
+        let (mut run, mut prev) = (1, i64::MIN);
+        let lap_list: Vec<serde_json::Value> = laps
+            .iter()
+            .map(|(p, ms)| {
+                let n = lap_of(p);
+                if n <= prev {
+                    run += 1;
+                }
+                prev = n;
+                serde_json::json!({ "file": file_name(p), "lap": n, "ms": ms, "run": run })
+            })
+            .collect();
         Ok(serde_json::json!({
             "consistency": consistency,
             "shift_optimum": opt,
@@ -713,7 +749,7 @@ impl Comparer {
             "risk": risk,
             "incidents": incidents,
             "session": file_name(session),
-            "laps": laps.iter().map(|(p, ms)| serde_json::json!({ "file": file_name(p), "lap": lap_of(p), "ms": ms })).collect::<Vec<_>>(),
+            "laps": lap_list,
             "reference": { "file": file_name(&ref_path), "lap": lap_of(&ref_path), "ms": ref_ms },
             "lap": { "file": file_name(&target.0), "lap": lap_of(&target.0), "ms": target.1 },
             "step": TRACE_STEP,
