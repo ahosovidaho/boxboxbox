@@ -2,6 +2,23 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Nová stránka „Trať“** (trénink i závod, za Strategií): dvě záložky.
+  - **Briefing** pro vybraný závod na jednu obrazovku: pravidla, auto a setup, **závodní tempo**
+    (medián normálních kol z nejrychlejšího tréninku), nejlepší a ideální kolo, strategie
+    A/B, palivo (kolik ušetřit a kde zvednout nohu, kolik to stojí za celý závod proti času
+    zastávky → „šetřit se vyplatí / radši zastav“; jinak ceník šetření), gumy (směsi z tréninku,
+    zatáčky, kde trpí, nejdelší stint), **kde je čas** (3 zatáčky s konkrétní radou), **pozor**
+    (2 rizikové zatáčky s příčinou spinů), start a co v přípravě ještě chybí.
+  - **Zápisník trati**: rekordy po autech, nejlepší / ideální / typické kolo, kde je čas, kde
+    pozor, gumy a dlouhé stinty, starty, setupy na trati s časy, pokus se setupem (dva setupy
+    v jedné session: o kolik je nový lepší v každé zatáčce) a **vlastní poznámky** (uloží se
+    do `notebook.json`). Trať jde vybrat z nabídky. API `/api/notebook`, `/api/briefing`.
+- **Dlouhé stinty**: u každé jízdy (mezi restarty) trend tempa za kolo, které zatáčky se
+  zhoršují nejrychleji (tam šetřit gumy) a **zlom** (od kterého kola gumy nedrží). Ve
+  Vyrovnanosti v Telemetrii a v Zápisníku.
+- **Starty**: start závodu se pozná v nahrávce (GT7 posílá počet kol závodu). Z místa: 0–100,
+  prokluz kol, otáčky při rozjezdu, propad otáček, řazení na omezovači – s radou; letmý start
+  se jen označí. Časování světel v telemetrii není, reakce se neměří.
 - **Kde šetřit palivo** (závod): když je potřeba šetřit (ušetří se zastávka), ukáže se pod
   palivem, kde zvednout nohu před brzděním a o kolik – „Zvedni nohu Z7 60 m · Z10 60 m · Z5 50 m
   před brzděním · ≈ +0,08 s/kolo“ – a na mapě žluté body s metry. Spotřeba se počítá z tvých

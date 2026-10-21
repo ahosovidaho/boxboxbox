@@ -16,6 +16,9 @@
 //! | GET  | `/api/prep` | preparation checklist for the chosen race |
 //! | GET  | `/api/traces?session=&lap=` | speed, pedals, steering and delta of a lap against the best lap of the session (corner graphs) |
 //! | GET  | `/api/fuelsave?save=` | where to lift and coast to save fuel per lap, priced in time (best session of the race track) |
+//! | GET  | `/api/notebook?track=&car=` | track notebook: records, ideal lap, reserves, risk, tyres, long runs, starts, setups, notes |
+//! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
+//! | GET  | `/api/briefing` | one-page briefing for the chosen race |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
 use super::Feeds;
@@ -65,6 +68,9 @@ pub fn routes() -> Router<AppState> {
         .route("/api/map", get(map))
         .route("/api/traces", get(traces))
         .route("/api/fuelsave", get(fuelsave))
+        .route("/api/notebook", get(notebook))
+        .route("/api/notebook/note", axum::routing::post(notebook_note))
+        .route("/api/briefing", get(briefing))
         .route("/api/prep", get(prep))
         .route("/api/perf", get(perf_overview))
         .route("/api/settings", get(settings).post(update_settings))
@@ -305,6 +311,162 @@ fn knowledge_session(s: &AppState, c: &mut crate::coach::compare::Comparer) -> O
         .and_then(|v| v["session"].as_str().map(str::to_string));
     let pick = feed.and_then(|f| all.iter().find(|i| i.session == f)).or(all.first())?;
     Some((pick.session.clone(), pick.track.clone(), Some(pick.car_code)))
+}
+
+/// Notes per track, `notebook.json` in the data folder: track key → {track, text, updated}.
+fn notes_path(s: &AppState) -> PathBuf {
+    s.settings.data.root.join("notebook.json")
+}
+
+fn read_notes(s: &AppState) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(notes_path(s)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// The track asked for, else the race track, else the practice track; and the car for it.
+fn track_and_car(s: &AppState, track: Option<String>, car: Option<i32>) -> (String, Option<i32>) {
+    let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    let track = track.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| {
+        st.saved.race.as_ref().map(|r| r.track.clone()).filter(|t| !t.trim().is_empty()).unwrap_or_else(|| st.practice.saved.track.clone())
+    });
+    let car = car.or_else(|| st.practice_car(&track));
+    (track, car)
+}
+
+fn notebook_json(s: &AppState, track: Option<String>, car: Option<i32>) -> serde_json::Value {
+    let (track, car) = track_and_car(s, track, car);
+    let (track_of, layouts) = track_matcher(&s.strategy);
+    let mut c = comparer();
+    let rec = &s.settings.data.recordings;
+    let all = crate::coach::library::index(rec, &mut c, &track_of, layouts);
+    // Tracks known from the recordings (for the picker)
+    let mut tracks: Vec<String> = all.iter().filter_map(|i| i.track.clone()).collect();
+    tracks.sort();
+    tracks.dedup();
+    let names = {
+        let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+        let ids: Vec<(i32, String, Option<String>)> = all
+            .iter()
+            .flat_map(|i| {
+                let meta: serde_json::Value = std::fs::read_to_string(rec.join(&i.session).join("session.json"))
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .unwrap_or_default();
+                meta["lap_setups"]
+                    .as_object()
+                    .map(|m| m.values().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(move |id| (i.car_code, id))
+            })
+            .map(|(c, id)| {
+                let n = st.setups.name_of(c, &id);
+                (c, id, n)
+            })
+            .collect();
+        ids
+    };
+    let setup_name = |c: i32, id: &str| names.iter().find(|n| n.0 == c && n.1 == id).and_then(|n| n.2.clone());
+    let mut v = if track.trim().is_empty() {
+        json!({ "track": "", "records": [] })
+    } else {
+        crate::coach::notebook::build(rec, &all, &track, car, &mut c, &setup_name)
+    };
+    v["tracks"] = json!(tracks);
+    v["note"] = read_notes(s).get(&strategy::practice::track_key(&track)).cloned().unwrap_or(json!(null));
+    v
+}
+
+#[derive(Deserialize)]
+struct NotebookQuery {
+    track: Option<String>,
+    car: Option<i32>,
+}
+
+async fn notebook(State(s): State<AppState>, Query(q): Query<NotebookQuery>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || notebook_json(&s, q.track, q.car).to_string()).await.unwrap_or_default();
+    json_body(body)
+}
+
+#[derive(Deserialize)]
+struct NoteBody {
+    track: String,
+    text: String,
+}
+
+async fn notebook_note(State(s): State<AppState>, Json(b): Json<NoteBody>) -> impl IntoResponse {
+    let key = strategy::practice::track_key(&b.track);
+    if key.is_empty() {
+        return (StatusCode::BAD_REQUEST, "track missing").into_response();
+    }
+    let mut notes = read_notes(&s);
+    let text: String = b.text.chars().take(20_000).collect();
+    if text.trim().is_empty() {
+        notes.remove(&key);
+    } else {
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        notes.insert(key, json!({ "track": b.track, "text": text, "updated": now }));
+    }
+    let path = notes_path(&s);
+    let tmp = path.with_extension("json.tmp");
+    let ok = std::fs::write(&tmp, serde_json::to_string_pretty(&notes).unwrap_or_default()).and_then(|_| std::fs::rename(&tmp, &path));
+    match ok {
+        Ok(()) => json_body(json!({ "ok": true }).to_string()).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Briefing for the chosen race: the plan (strategy, fuel, tyres), the target lap times, where
+/// the time is, where it gets dangerous, the start, and what is still open in the preparation.
+async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || {
+        let race = s.strategy.lock().unwrap_or_else(|e| e.into_inner()).saved.race.clone().filter(|r| !r.track.trim().is_empty());
+        let Some(race) = race else { return json!({ "error": "no_race" }).to_string() };
+        let (track, car) = track_and_car(&s, Some(race.track.clone()), None);
+        let book = notebook_json(&s, Some(track.clone()), car);
+        let (options, plan, setup, prep) = {
+            let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+            let (o, p) = st.preview(&race);
+            let setup = car.and_then(|c| st.setups.active(c)).map(|x| json!({ "name": x.name, "bop": x.bop }));
+            let perf = s.perf.clone();
+            let prep = st.prep(|car, setup| crate::perf::track::read(perf.dir(), car, setup).is_some());
+            (o, p, setup, prep)
+        };
+        // Fuel: what saving costs (lift and coast), for the amount that saves a stop if there is one
+        let target = plan.no_stop_fpl.or(plan.one_stop_fpl);
+        let save = match (plan.fuel_per_lap, target) {
+            (Some(f), Some(t)) if f > t => Some((f - t) as f64),
+            _ => None,
+        };
+        let fuel = if race.no_fuel {
+            json!(null)
+        } else {
+            let mut c = comparer();
+            let book_session = book["best"]["session"].as_str().map(str::to_string);
+            book_session
+                .and_then(|sess| crate::coach::fuelsave::analyse(&s.settings.data.recordings.join(sess), &mut c, save).ok())
+                .unwrap_or(json!(null))
+        };
+        json!({
+            "race": race,
+            "track": track,
+            "car": car,
+            "car_name": car.and_then(crate::telemetry::cars::name),
+            "setup": setup,
+            "options": options,
+            "plan": {
+                "fuel_per_lap": plan.fuel_per_lap, "fuel_source": plan.fuel_source, "stops_needed": plan.stops_needed,
+                "one_stop_fpl": plan.one_stop_fpl, "no_stop_fpl": plan.no_stop_fpl, "pit_loss": plan.pit_loss,
+                "total_laps": plan.total_laps, "practice_use": plan.practice_use, "save": save,
+            },
+            "fuel": fuel,
+            "book": book,
+            "prep": prep,
+        })
+        .to_string()
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
 }
 
 #[derive(Deserialize)]

@@ -621,6 +621,31 @@ fn plausible(c: &LapCorner, reference: Option<&CornerStats>) -> bool {
     }
 }
 
+/// Risk per corner over all laps of a session: laps where the rear stepped out (beyond what the
+/// best lap does there), spins and moments; level 0 (fine), 1 (watch it), 2 (danger).
+pub fn risk(res: &Comparison) -> Vec<serde_json::Value> {
+    res.corners
+        .iter()
+        .map(|c| {
+            // Beyond what the best lap itself does there (karts slide on every lap)
+            let base = res.reference_lap().and_then(|r| r.corner(c.n).stats.as_ref()).map_or(0.0, |s| s.rear_slide);
+            let limit = RISK_SLIDE.max(base + 6.0);
+            let slides = res.laps.iter().filter(|l| l.corner(c.n).stats.as_ref().is_some_and(|s| s.rear_slide >= limit)).count();
+            let spins = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "spin").count();
+            let moments = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "slide").count();
+            let n = res.laps.len().max(1);
+            let level = if spins > 0 || slides * 10 >= n * 4 {
+                2
+            } else if moments > 0 || slides * 10 >= n * 2 {
+                1
+            } else {
+                0
+            };
+            serde_json::json!({ "n": c.n, "laps": res.laps.len(), "slides": slides, "spins": spins, "moments": moments, "level": level })
+        })
+        .collect()
+}
+
 /// What a lap is compared with in the corner graphs.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Versus {
@@ -759,27 +784,7 @@ impl Comparer {
                 incidents.push(serde_json::json!({ "file": l.file, "lap": l.lap, "ms": l.ms, "incident": i }));
             }
         }
-        let risk: Vec<serde_json::Value> = res
-            .corners
-            .iter()
-            .map(|c| {
-                // Beyond what the best lap itself does there (karts slide on every lap)
-                let base = res.reference_lap().and_then(|r| r.corner(c.n).stats.as_ref()).map_or(0.0, |s| s.rear_slide);
-                let limit = RISK_SLIDE.max(base + 6.0);
-                let slides = res.laps.iter().filter(|l| l.corner(c.n).stats.as_ref().is_some_and(|s| s.rear_slide >= limit)).count();
-                let spins = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "spin").count();
-                let moments = res.laps.iter().flat_map(|l| &l.incidents).filter(|i| i.corner == Some(c.n) && i.kind == "slide").count();
-                let n = res.laps.len().max(1);
-                let level = if spins > 0 || slides * 10 >= n * 4 {
-                    2
-                } else if moments > 0 || slides * 10 >= n * 2 {
-                    1
-                } else {
-                    0
-                };
-                serde_json::json!({ "n": c.n, "laps": res.laps.len(), "slides": slides, "spins": spins, "moments": moments, "level": level })
-            })
-            .collect();
+        let risk = risk(&res);
         // Consistency: spread of every corner over the normal laps (incidents left out)
         let best = res.laps.iter().map(|l| l.ms).min().unwrap_or(0) as f64;
         let normal: Vec<&LapResult> = res.laps.iter().filter(|l| (l.ms as f64) <= best * NORMAL_LAP).collect();
@@ -854,6 +859,7 @@ impl Comparer {
             .collect();
         Ok(serde_json::json!({
             "consistency": consistency,
+            "stint": super::stint::analyse(&res, !lap::is_kart(&reference)),
             "shift_optimum": opt,
             "shift_advice": shift_advice,
             "overrev": overrev[0],

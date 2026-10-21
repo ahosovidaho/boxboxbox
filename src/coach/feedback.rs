@@ -406,7 +406,7 @@ fn tips_text(l: &CornerStats, r: &CornerStats) -> Option<String> {
 
 /// The typical corner of the normal laps (not the best one) and the instruction for it, with how
 /// many of the laps show the main pattern.
-fn typical_tips(res: &Comparison, cn: usize, limit: f64) -> Option<String> {
+pub fn typical_tips(res: &Comparison, cn: usize, limit: f64) -> Option<String> {
     let reference = res.reference_lap()?;
     let rc = reference.corner(cn).stats.as_ref()?;
     let laps: Vec<&CornerStats> = res

@@ -496,6 +496,40 @@
   .sucmp tr.on td:first-child { font-weight: 700; }
   .sucmp .best { color: var(--green); }
 
+  /* ---------- Track: briefing and notebook (p10) ---------- */
+  #p10 { display: flex; flex-direction: column; gap: 8px; }
+  #p10head { display: flex; align-items: center; gap: 10px; min-height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); flex-wrap: wrap; }
+  #p10head b { color: var(--text); font-weight: 600; }
+  #p10head select { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 5px 8px; font: 14px -apple-system, system-ui, sans-serif; }
+  #p10head .grow { flex: 1; }
+  #bkTabs { display: inline-flex; background: #1c1c21; border-radius: 9px; padding: 2px; }
+  #bkTabs button { background: none; border: 0; color: var(--dim); font: 600 13px -apple-system, system-ui, sans-serif; padding: 5px 12px; border-radius: 7px; }
+  #bkTabs button.on { background: #2c2c33; color: var(--text); }
+  #p10body { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); grid-auto-rows: max-content; align-content: start; align-items: start; padding-bottom: 8px; }
+  #p10body .card { padding: 10px 13px; }
+  #p10body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 7px; }
+  #p10body .wide { grid-column: 1 / -1; }
+  .bk { font-size: 13px; line-height: 1.45; color: var(--dim); }
+  .bk b, .bk em { color: var(--text); font-style: normal; }
+  .bk em { font-family: var(--mono); }
+  .bk .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+  .bk .row span { white-space: nowrap; }
+  .bk .item { background: #16161a; border-radius: 9px; padding: 7px 10px; margin-top: 6px; }
+  .bk .item b.z { display: inline-block; min-width: 30px; color: #f2c230; font-family: var(--mono); }
+  .bk .item.risk b.z { color: var(--red); }
+  .bk .muted { color: var(--label); }
+  .bkhero { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .bkhero .big { font: 700 26px var(--mono); color: var(--text); }
+  .bkhero .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); }
+  #bkNote { width: 100%; min-height: 110px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 7px 9px; font: 13px -apple-system, system-ui, sans-serif; resize: vertical; }
+  .bktab { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .bktab td, .bktab th { padding: 3px 6px; text-align: right; }
+  .bktab th { color: var(--label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 500; }
+  .bktab td:first-child, .bktab th:first-child { text-align: left; }
+  .bktab td { font-family: var(--mono); color: var(--text); }
+  .bktab td:first-child { font-family: inherit; }
+
   /* ---------- Page 5: strategy ---------- */
   #boxcall { font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 6px; }
   #boxcall.box { background: var(--red); color: #000; }
@@ -1043,6 +1077,20 @@
   <div id="p8body"><div id="suInfo"></div><div id="suForm"><span class="muted">Jeď s autem, ať vím, které to je.</span></div></div>
 </section>
 
+<!-- ======================= Track: briefing and notebook ======================= -->
+<section class="page" id="p10" hidden>
+  <div id="p10head">
+    <b>Trať</b>
+    <select id="bkTrack" aria-label="Trať"></select>
+    <span id="bkTabs"><button data-v="brief" class="on">Briefing</button><button data-v="book">Zápisník</button></span>
+    <span id="bkState"></span>
+    <span class="grow"></span>
+    <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+    <span class="dots"></span>
+  </div>
+  <div id="p10body"><span class="muted">Načítám…</span></div>
+</section>
+
 <!-- ======================= Race mode: recap ======================= -->
 <section class="page" id="p7" hidden>
   <div id="p7head">
@@ -1267,8 +1315,10 @@
   let tData = null, tCorner = null, tWin = [0, 1], tFile = null, tUpdated = null, tBusy = false, tView = 'loss', tVs = '';
   // Race: lift-and-coast plan (see loadLift)
   let liftPlan = null, liftKey = '', liftAt = 0;
-  const ORDER = { practice: [1, 3, 9, 4, 5, 8, 2], race: [6, 7, 5] };
-  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  // Track page: briefing or notebook, chosen track ('' = race / practice track)
+  let bkView = 'brief', bkTrack = '', bkBusy = false;
+  const ORDER = { practice: [1, 3, 9, 4, 5, 10, 8, 2], race: [6, 7, 5, 10] };
+  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
   let page = ORDER[appMode][0];
   { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
@@ -1305,6 +1355,7 @@
     if (n === 8) loadSetups(true);
     if (n === 9) loadTraces();
     if (n === 5) loadPrep();
+    if (n === 10) loadTrackPage();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
@@ -1313,7 +1364,7 @@
   let press = null;
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
-    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #tCharts, #tSide, button, input, select, textarea');
+    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #tCharts, #tSide, button, input, select, textarea');
     // Horizontal drags on a chart move its cursor instead of switching pages
     press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
@@ -2438,6 +2489,161 @@
     setText('r_call', c ? c.text : radio ? 'Rádio: ' + radio.text : info ? info.text : '');
   }
 
+  // ---------- Track page (10): briefing before the race, notebook of the track ----------
+  const dayOf = iso => iso ? iso.slice(8, 10).replace(/^0/, '') + '. ' + iso.slice(5, 7).replace(/^0/, '') + '.' : '';
+  const zItem = (z, html, cls = '') => `<div class="item ${cls}"><b class="z">${z}</b>${html}</div>`;
+  async function loadTrackPage() {
+    if (bkBusy) return;
+    bkBusy = true;
+    setText('bkState', 'počítám…');
+    $$('#bkTabs button').forEach(b => b.classList.toggle('on', b.dataset.v === bkView));
+    try {
+      if (bkView === 'brief') {
+        const b = await (await fetch('api/briefing', { cache: 'no-store' })).json();
+        renderBriefing(b);
+        fillTracks(b.book ? b.book.tracks : [], b.track);
+      } else {
+        const n = await (await fetch('api/notebook' + (bkTrack ? '?track=' + encodeURIComponent(bkTrack) : ''), { cache: 'no-store' })).json();
+        renderNotebook(n);
+        fillTracks(n.tracks, n.track);
+      }
+      setText('bkState', '');
+    } catch { setText('bkState', 'nepodařilo se načíst'); }
+    bkBusy = false;
+  }
+  function fillTracks(list, cur) {
+    const all = (list || []).slice();
+    if (cur && !all.includes(cur)) all.unshift(cur);
+    $('bkTrack').innerHTML = all.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('') || '<option>–</option>';
+  }
+  function itemsReserves(list) {
+    return (list || []).map(r => zItem('Z' + r.n, `<b>+${nf(r.loss, 2)} s</b> na kolo v průměru. ${esc(r.tip || '')}`)).join('') || '<div class="muted">Žádná zatáčka, kde bys pravidelně ztrácel víc než 0,05 s.</div>';
+  }
+  function itemsRisk(list, max) {
+    return (list || []).slice(0, max).map(r => {
+      const what = [r.spins ? `${r.spins}× spin` : '', r.moments ? `${r.moments}× ujetí` : '', r.slides ? `${r.slides}× smyk zádi` : ''].filter(Boolean).join(', ');
+      return zItem('Z' + r.n, `<b>${what}</b>${r.cause ? ' – ' + esc(r.cause) + '.' : ''} ${r.tip ? esc(r.tip) : ''}`, 'risk');
+    }).join('') || '<div class="muted">Bez spinů a ujetí – drž to tak.</div>';
+  }
+  function itemsTyres(n) {
+    if (n.kart) return '<div class="muted">Motokára – gumy se neopotřebují.</div>' + (n.runs || []).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('');
+    const t = (n.tyres || []).map(x => zItem('Z' + x.n, esc(x.text.replace(/^Z\d+: /, '')))).join('');
+    const runs = (n.runs || []).slice(0, 1).map(r => `<div class="item"><b>Nejdelší stint (${dayOf(r.started)})</b> ${esc(r.text)}</div>`).join('');
+    return (t + runs) || '<div class="muted">Zatím bez dlouhého stintu – na tréninku zajeď aspoň 6 kol v kuse.</div>';
+  }
+  function startHtml(starts) {
+    const s = (starts || []).slice(-1)[0];
+    if (!s) return '<div class="muted">Start ještě nemám v datech (zaznamená se v závodě).</div>';
+    if (s.kind === 'rolling') return `<div>Poslední start byl <b>letmý</b> (závod na ${s.race_laps} kol). Rozjezd z místa zatím v datech není.</div>`;
+    return `<div class="row"><span>0–100 <em>${s.to_100 != null ? nf(s.to_100, 2) + ' s' : '–'}</em></span><span>Prokluz <em>${nf(s.spin_s, 1)} s</em></span><span>Otáčky při rozjezdu <em>${s.launch_rpm != null ? Math.round(s.launch_rpm) : '–'}</em></span></div>`
+      + s.advice.map(a => `<div class="item">${esc(a)}</div>`).join('');
+  }
+  function renderBriefing(b) {
+    const body = $('p10body');
+    if (b.error === 'no_race') {
+      body.innerHTML = '<div class="card wide bk"><h2>Briefing</h2>Vyber závod (Strategie → Závod…). Briefing se poskládá z tréninku na té trati: strategie, palivo, gumy, kde je čas, kde pozor a start. Zápisník trati je ve vedlejší záložce.</div>';
+      return;
+    }
+    const r = b.race, n = b.book || {}, p = b.plan || {};
+    const rules = [r.laps ? `${r.laps} kol` : '', r.pit_required ? 'povinná zastávka' : '', r.mandatory ? `povinná směs ${esc(r.mandatory)}` : '',
+      r.tyre_wear ? `opotřebení ×${nf(r.tyre_wear, 1)}` : '', r.fuel_mult ? `spotřeba ×${nf(r.fuel_mult, 1)}` : '',
+      r.no_wear ? 'gumy se neopotřebují' : '', r.no_fuel ? 'bez spotřeby paliva' : ''].filter(Boolean).join(' · ');
+    const setup = b.setup ? `${esc(b.setup.name)}${b.setup.bop && !/bop/i.test(b.setup.name) ? ' (BoP)' : ''}` : 'bez karty setupu';
+    let html = `<div class="card wide bk"><h2>Briefing · ${esc(r.name || 'závod')}</h2>
+      <div class="row"><span><b>${esc(b.track)}</b></span><span>${rules}</span><span>${esc(b.car_name || '')} · ${setup}</span></div>
+      <div class="bkhero">
+        <span><span class="lbl">Závodní tempo</span><br><span class="big">${fmtLap(n.typical_ms)}</span></span>
+        <span><span class="lbl">Nejlepší kolo</span><br><span class="big">${fmtLap(n.best && n.best.ms)}</span></span>
+        <span><span class="lbl">Ideální kolo</span><br><span class="big">${fmtLap(n.ideal_ms)}</span></span>
+        <span class="muted">Závodní tempo = medián normálních kol z nejrychlejšího tréninku${n.normal_laps ? ` (${n.normal_laps} kol)` : ''}. Drž ho celý závod – nejlepší kolo se nehoní.</span>
+      </div></div>`;
+    // Strategy
+    html += `<div class="card bk"><h2>Strategie</h2>${plansHtml(b.options) || '<div class="muted">Chybí data pro plán – zadej v závodě kola a pravidla.</div>'}
+      <div class="row" style="margin-top:6px"><span>Palivo/kolo <em>${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) : '–'}</em></span><span>Ztráta v boxech <em>${nf(p.pit_loss || 0, 1)} s</em></span></div></div>`;
+    // Fuel
+    let fuel = '';
+    if (r.no_fuel) fuel = '<div class="muted">Závod bez spotřeby paliva.</div>';
+    else if (!b.fuel || b.fuel.error) fuel = '<div class="muted">Na šetření paliva potřebuju z tréninku na trati aspoň pár kol s tímhle autem.</div>';
+    else {
+      const plans = b.fuel.plans || [];
+      const lifts = pl => pl.lifts.map(l => `Z${l.corner || '?'} ${l.lift_m} m`).join(' · ');
+      if (p.save && plans[0]) {
+        const pl = plans[0].plan, laps = r.laps || p.total_laps || 0, total = pl.cost_s * laps;
+        const what = p.no_stop_fpl != null ? 'dojedeš bez zastávky' : 'stačí 1 zastávka';
+        const worth = total < (p.pit_loss || 0);
+        fuel = `<div>Když ušetříš <b>${nf(p.save, 2)}/kolo</b>, ${what}.</div>`
+          + `<div class="item">Zvedni nohu před brzděním: <b>${lifts(pl)}</b> – stojí ≈ <b>+${nf(pl.cost_s, 2)} s/kolo</b>${pl.short ? ' (samo to nestačí)' : ''}.</div>`
+          + `<div class="item">Za ${laps} kol ≈ <b>${nf(total, 1)} s</b> proti <b>${nf(p.pit_loss || 0, 1)} s</b> za zastávku → <b>${worth ? 'šetřit se vyplatí' : 'radši zastav, šetření je dražší'}</b>.</div>`;
+      } else {
+        fuel = '<div>Šetřit není potřeba. Kdyby bylo (safety car, víc kol):</div>'
+          + plans.map(x => `<div class="item"><b>−${nf(x.save, 2)}/kolo</b> = +${nf(x.plan.cost_s, 2)} s/kolo · ${lifts(x.plan)}</div>`).join('');
+      }
+    }
+    html += `<div class="card bk"><h2>Palivo</h2>${fuel}</div>`;
+    // Tyres
+    let tyres = r.no_wear ? '<div class="muted">Gumy se v tomhle závodě neopotřebují.</div>' : '';
+    if (!r.no_wear) {
+      const pu = p.practice_use && p.practice_use.compounds || [];
+      tyres = pu.map(c => `<div class="row"><span><b>${esc(c.compound)}</b></span><span>${c.laps} kol z tréninku</span>${c.life ? `<span>vydrží ~${c.life} kol</span>` : ''}${c.deg != null ? `<span>+${nf(c.deg, 2)} s/kolo stáří</span>` : ''}</div>`).join('') + itemsTyres(n);
+    }
+    html += `<div class="card bk"><h2>Gumy</h2>${tyres}</div>`;
+    html += `<div class="card bk"><h2>Kde je čas</h2>${itemsReserves(n.reserves)}</div>`;
+    html += `<div class="card bk"><h2>Pozor</h2>${itemsRisk(n.risk, 2)}</div>`;
+    html += `<div class="card bk"><h2>Start</h2>${startHtml(n.starts)}</div>`;
+    const prep = b.prep;
+    if (prep && prep.items) {
+      const open = prep.items.filter(i => i.status !== 'ok');
+      html += `<div class="card bk"><h2>Příprava · hotovo ${prep.done}/${prep.total}</h2>${open.map(i => `<div class="item"><b>${esc(i.label)}</b> ${esc(i.todo || i.detail)}</div>`).join('') || '<div>Všechno připraveno.</div>'}</div>`;
+    }
+    if (n.note && n.note.text) html += `<div class="card wide bk"><h2>Tvoje poznámky k trati</h2><div style="white-space:pre-wrap">${esc(n.note.text)}</div></div>`;
+    body.innerHTML = html;
+  }
+  function renderNotebook(n) {
+    const body = $('p10body');
+    if (!n.track) { body.innerHTML = '<div class="card wide bk"><h2>Zápisník</h2>Zatím nevím, na které trati jezdíš – v tréninku zadej trať, nebo vyber závod.</div>'; return; }
+    let html = `<div class="card wide bk"><h2>Rekordy · ${esc(n.track)} · ${n.sessions || 0} sessions</h2>`
+      + ((n.records || []).length ? `<table class="bktab"><tr><th>Auto</th><th>Nejlepší</th><th>Kdy</th><th>Sessions</th><th>Kol</th></tr>`
+        + n.records.map(r => `<tr><td>${esc(r.name || r.car)}${r.car === n.car ? ' ●' : ''}</td><td>${fmtLap(r.best_ms)}</td><td>${dayOf(r.best_started)}</td><td>${r.sessions}</td><td>${r.laps}</td></tr>`).join('') + '</table>'
+        : '<div class="muted">Na téhle trati ještě nemám nahrané kolo (trať se pozná podle tvaru – musí být uložená z tréninku).</div>')
+      + '</div>';
+    if (n.best) {
+      html += `<div class="card bk"><h2>Tempo (● auto)</h2><div class="bkhero">
+        <span><span class="lbl">Nejlepší</span><br><span class="big">${fmtLap(n.best.ms)}</span></span>
+        <span><span class="lbl">Ideální</span><br><span class="big">${fmtLap(n.ideal_ms)}</span></span>
+        <span><span class="lbl">Typické</span><br><span class="big">${fmtLap(n.typical_ms)}</span></span></div>
+        <div class="muted">Z nejrychlejší session (${dayOf(n.best.started)}). Ideální = nejlepší zatáčky poskládané; typické = medián normálních kol.</div></div>`;
+      html += `<div class="card bk"><h2>Kde je čas</h2>${itemsReserves(n.reserves)}</div>`;
+      html += `<div class="card bk"><h2>Pozor</h2>${itemsRisk(n.risk, 3)}</div>`;
+      html += `<div class="card bk"><h2>Gumy a dlouhé stinty</h2>${itemsTyres(n)}${(n.kart ? [] : n.runs || []).slice(1).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('')}</div>`;
+      html += `<div class="card bk"><h2>Starty</h2>${startHtml(n.starts)}${(n.starts || []).length > 1 ? `<div class="muted" style="margin-top:6px">Startů v datech: ${n.starts.length}</div>` : ''}</div>`;
+      const ex = n.experiment;
+      if (ex) {
+        const nm = x => esc(x.name || x.id);
+        const list = ex.corners.map(c => `<span style="color:${c.d < 0 ? 'var(--green)' : 'var(--red)'}">Z${c.n} ${tsg(c.d, 2)}</span>`).join(' · ');
+        html += `<div class="card bk"><h2>Pokus se setupem (${dayOf(ex.started)})</h2><div><b>${nm(ex.from)}</b> (${ex.from.laps} kol) → <b>${nm(ex.to)}</b> (${ex.to.laps} kol): kolo <b>${tsg(ex.lap, 2)} s</b></div>`
+          + `<div class="item">${list || 'v zatáčkách bez rozdílu nad 0,03 s'}</div><div class="muted">Průměr normálních kol; palivo a gumy neopraveno – férové porovnání je v Nastavení auta.</div></div>`;
+      }
+      const su = n.setups || [];
+      html += `<div class="card bk"><h2>Setupy na téhle trati</h2>${su.length ? `<table class="bktab"><tr><th>Setup</th><th>Kol</th><th>Nejlepší</th></tr>`
+        + su.map(x => `<tr><td>${esc(x.name || (x.id ? x.id : 'bez karty'))}</td><td>${x.laps}</td><td>${fmtLap(x.best_ms)}</td></tr>`).join('') + '</table>' : '<div class="muted">–</div>'}</div>`;
+    }
+    html += `<div class="card wide bk"><h2>Poznámky</h2><textarea id="bkNote" placeholder="Co fungovalo, brzdné body, nastavení, na co si dát pozor…">${esc((n.note && n.note.text) || '')}</textarea>
+      <div class="row" style="margin-top:6px"><button class="stbtn small" id="bkNoteSave">Uložit poznámky</button><span id="bkNoteState" class="muted">${n.note && n.note.updated ? 'uloženo ' + esc(n.note.updated) : ''}</span></div></div>`;
+    body.innerHTML = html;
+    $('bkNoteSave').onclick = async () => {
+      setText('bkNoteState', 'ukládám…');
+      try {
+        const r = await fetch('api/notebook/note', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ track: n.track, text: $('bkNote').value }) });
+        setText('bkNoteState', r.ok ? 'uloženo' : 'nepodařilo se uložit');
+      } catch { setText('bkNoteState', 'nepodařilo se uložit'); }
+    };
+  }
+  $('bkTabs').addEventListener('click', e => {
+    const v = e.target.closest('button') && e.target.closest('button').dataset.v;
+    if (v && v !== bkView) { bkView = v; loadTrackPage(); }
+  });
+  $('bkTrack').addEventListener('change', e => { bkTrack = e.target.value; bkView = 'book'; loadTrackPage(); });
+
   // Fuel saving plan for the race page (lift and coast), fetched when the amount to save changes
   async function loadLift(save) {
     const key = save.toFixed(2);
@@ -2684,7 +2890,8 @@
       const worst = (d.consistency || []).slice().sort((a, b) => b.sd - a.sd).slice(0, 3).map(x => `Z${x.n} ±${nf(x.sd, 2)}`).join(', ');
       $('tSum').innerHTML = `<b>Normální kola: ${nl.laps || 0}</b><span>Průměr <em>${fmtLap(nl.mean_ms)}</em> ±${nf((nl.sd_ms || 0) / 1000, 2)} s</span>`
         + `<span>Teoreticky <em>${fmtLap(nl.theoretical_ms)}</em></span><span>Nejrozkolísanější: <em>${worst || '–'}</em></span>`
-        + `<span class="cons" style="color:var(--dim)">Normální kolo = do 107 % nejlepšího (bez spinů a zastávek). Cíl do závodu: 10 kol v rozmezí 0,3 s.</span>`;
+        + `<span class="cons" style="color:var(--dim)">Normální kolo = do 107 % nejlepšího (bez spinů a zastávek). Cíl do závodu: 10 kol v rozmezí 0,3 s.</span>`
+        + (d.stint || []).slice(0, 2).map(r => `<span class="cons"><b>Stint${(d.stint.length > 1 ? ' (jízda ' + r.run + ')' : '')}:</b> ${esc(r.text)}</span>`).join('');
       return;
     }
     if (!c) {
