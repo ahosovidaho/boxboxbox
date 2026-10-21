@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Nastavení auta u motokáry**: bez čísel nedotáčivosti/přetáčivosti (jen blokování a prokluz),
+  bez „Auto je vyvážené“. Férové srovnání u motokáry = průměr čistých kol (gumy ani palivo se
+  nemění, nic se nepřepočítává). Setup, který je na své směsi sám, má „jediný setup na SS – není
+  s čím srovnat“ místo „nejrychlejší“. Záporné opotřebení (kola rychlejší se stářím gum = jezdec
+  se rozjíždí) se už nepoužívá.
+
 - **Řazení v Telemetrii** (čtvrtý pohled „Řazení“): otáčky obou kol se žlutým optimem pro
   zařazený stupeň a značkami řazení (bílé = toto kolo, fialové = nejlepší). Celé kolo: pro každé
   řazení nahoru na plný plyn medián otáček z normálních kol proti optimu („2→3: řadíš při

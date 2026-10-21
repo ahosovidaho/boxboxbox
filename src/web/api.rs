@@ -388,7 +388,8 @@ fn setup_compare(st: &strategy::Strategy, car: i32, track: &str) -> serde_json::
         .iter()
         .filter(|l| l.car == car && l.clean && l.counted && !l.wrong_layout && l.ms > 0 && strategy::practice::track_key(&l.track) == key)
         .collect();
-    let fair = strategy::setup_compare::fair(&laps);
+    let kart = crate::telemetry::cars::name(car).is_some_and(|n| n.contains("Kart"));
+    let fair = strategy::setup_compare::fair(&laps, kart);
     let name = |id: &str| {
         if id.is_empty() {
             "bez setupu".to_string()
@@ -407,7 +408,7 @@ fn setup_compare(st: &strategy::Strategy, car: i32, track: &str) -> serde_json::
         })
         .collect();
     json!({ "rows": rows, "wear": fair.wear, "fuel_effect": fair.fuel_effect, "reference_fuel": fair.reference_fuel,
-            "wear_from_data": fair.wear_from_data, "fuel_from_data": fair.fuel_from_data })
+            "wear_from_data": fair.wear_from_data, "fuel_from_data": fair.fuel_from_data, "fixed": fair.fixed })
 }
 
 /// Saves a setup card (new without `id`); a new card becomes active.

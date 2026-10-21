@@ -2865,17 +2865,20 @@
     if (!r.track) body = '<div class="pnote" style="margin:0">Zadej trať v Tréninku (nebo vyber závod) – doporučení jsou pro konkrétní trať.</div>';
     else if (a.laps < a.needed) body = `<div class="pnote" style="margin:0">Odjeď ještě ${a.needed - a.laps} ${a.needed - a.laps === 1 ? 'celé kolo' : 'celá kola'} se setupem „${esc(name)}“ (bez zastávky v boxu), pak ukážu, kde auto nedotáčí nebo přetáčí a co zkusit změnit.</div>`;
     else {
-      const bal = `<div class="subal"><span>Vjezd <b>↗${pc(a.entry[0])} ↘${pc(a.entry[1])}</b></span><span>Střed <b>↗${pc(a.mid[0])} ↘${pc(a.mid[1])}</b></span>
-        <span>Výjezd <b>↗${pc(a.exit[0])} ↘${pc(a.exit[1])}</b></span><span>Blokování P/Z <b>${pc(a.lock_f)} / ${pc(a.lock_r)}</b></span><span>Prokluz <b>${pc(a.spin)}</b></span>
-        <span class="muted">↗ nedotáčivost · ↘ přetáčivost</span></div>`;
+      // Without a reliable balance (karts) only locking and wheelspin are shown
+      const balParts = a.balance_note ? '' : `<span>Vjezd <b>↗${pc(a.entry[0])} ↘${pc(a.entry[1])}</b></span><span>Střed <b>↗${pc(a.mid[0])} ↘${pc(a.mid[1])}</b></span>
+        <span>Výjezd <b>↗${pc(a.exit[0])} ↘${pc(a.exit[1])}</b></span>`;
+      const bal = `<div class="subal">${balParts}<span>Blokování P/Z <b>${pc(a.lock_f)} / ${pc(a.lock_r)}</b></span><span>Prokluz <b>${pc(a.spin)}</b></span>
+        ${a.balance_note ? '' : '<span class="muted">↗ nedotáčivost · ↘ přetáčivost</span>'}</div>`;
       const balNote = a.balance_note ? `<div class="pnote" style="margin:6px 0 0">${esc(a.balance_note)}</div>` : '';
       const items = (a.advice || []).map(x => `<div><b>${esc(x.finding)}</b>${x.setup ? `<span class="k">Nastavení</span>${esc(x.setup)}<br>` : ''}${x.driving ? `<span class="k">Jízda</span>${esc(x.driving)}` : ''}</div>`).join('');
       body = bal + balNote + (items ? `<div class="suadv">${items}</div><div class="pnote">Měň vždy jen jednu věc: Duplikovat → upravit → Uložit (nová karta je aktivní), pak 3+ kola a porovnej níže.</div>`
-        : '<div class="pnote">Auto je vyvážené – žádná výrazná nedotáčivost, přetáčivost, blokování ani prokluz. Hledej čas v jízdě (kouč na stránce 1).</div>');
+        : `<div class="pnote">${a.balance_note ? 'Žádné výrazné blokování kol ani prokluz.' : 'Auto je vyvážené – žádná výrazná nedotáčivost, přetáčivost, blokování ani prokluz.'} Hledej čas v jízdě (kouč na stránce 1, Telemetrie).</div>`);
     }
     const cmp = r.compare || {}, rows = cmp.rows || [];
     const many = new Set(rows.map(c => c.compound)).size > 1;
-    const verdict = c => c.gap_ms === 0 ? '<span class="best">nejrychlejší</span>'
+    const verdict = c => c.alone ? `<span style="color:var(--dim)">jediný setup na ${c.compound} – není s čím srovnat</span>`
+      : c.gap_ms === 0 ? '<span class="best">nejrychlejší</span>'
       : c.sure ? `<span style="color:var(--red)">o ${nf(c.gap_ms / 1000, 2)} s pomalejší</span>`
       : `<span style="color:var(--dim)">+${nf(c.gap_ms / 1000, 2)} s – zatím nerozhodnuto</span>`;
     const wear = (cmp.wear || []).map(([c, w]) => `${c} ${nf(w, 2)} s/kolo`).join(', ');
@@ -2884,7 +2887,7 @@
         ${rows.map(c => `<tr class="${c.id === suActive ? 'on' : ''}"><td>${esc(c.name)}${c.id === suActive ? ' ✓' : ''}</td>${many ? `<td>${c.compound}</td>` : ''}<td>${c.laps}</td>
           <td>${fmtLap(c.best_ms)}</td><td>${fmtLap(c.median_ms)}</td><td><b>${fmtLap(c.fair_ms)}</b> <span style="color:var(--label)">±${nf(c.se_ms / 1000, 2)}</span></td>
           <td style="text-align:left;font-family:inherit">${verdict(c)}</td></tr>`).join('')}</table>
-        <div class="pnote">„Férově“ = čas na nových gumách${cmp.reference_fuel != null ? ` a s ${cmp.reference_fuel} l paliva` : ''}: přepočteno opotřebením ${wear || '–'}${cmp.wear_from_data ? '' : ' (odhad)'} a palivem ${nf(cmp.fuel_effect, 3)} s/l${cmp.fuel_from_data ? '' : ' (odhad – málo rozdílů v palivu)'}.
+        <div class="pnote">${cmp.fixed ? '„Férově“ = průměr čistých kol bez chyb (motokára: gumy ani palivo se nemění, není co přepočítat). Srovnávají se jen setupy na stejné směsi.' : `„Férově“ = čas na nových gumách${cmp.reference_fuel != null ? ` a s ${cmp.reference_fuel} l paliva` : ''}: přepočteno opotřebením ${wear || '–'}${cmp.wear_from_data ? '' : ' (odhad)'} a palivem ${nf(cmp.fuel_effect, 3)} s/l${cmp.fuel_from_data ? '' : ' (odhad – málo rozdílů v palivu)'}. Srovnávají se jen setupy na stejné směsi.`}
           Verdikt platí, až je rozdíl větší než dvojnásobek nejistoty (±); jinak odjeď víc kol.</div>
         <div id="suCorners"></div></div>` : '';
     $('suInfo').innerHTML = `<div class="card suwide"><h2>Doporučení · ${esc(name)}${r.track ? ' · ' + esc(r.track) : ''}${a.laps ? ` · z ${a.laps} kol` : ''}</h2>${body}</div>` + cmpHtml;

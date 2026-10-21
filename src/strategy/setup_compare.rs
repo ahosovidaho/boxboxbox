@@ -37,6 +37,8 @@ pub struct SetupRow {
     /// larger than twice its uncertainty
     pub gap_ms: i32,
     pub sure: bool,
+    /// The only setup driven on this compound (nothing to compare it with)
+    pub alone: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
@@ -49,6 +51,8 @@ pub struct Fair {
     /// The laps had enough spread in tyre age / fuel for the values to come from the data
     pub wear_from_data: bool,
     pub fuel_from_data: bool,
+    /// No tyre wear and no fuel use (karts): plain average of the clean laps
+    pub fixed: bool,
 }
 
 /// Solves `m · x = v` (small, dense; Gaussian elimination with partial pivoting).
@@ -80,7 +84,8 @@ fn solve(mut m: Vec<Vec<f64>>, mut v: Vec<f64>) -> Option<Vec<f64>> {
 }
 
 /// `laps`: the clean, counted laps of one car on one track (laps with a mistake are left out here).
-pub fn fair(laps: &[&PracticeLap]) -> Fair {
+/// `fixed`: the tyres do not wear and no fuel is used (karts) – nothing to correct.
+pub fn fair(laps: &[&PracticeLap], fixed: bool) -> Fair {
     // Laps with a mistake (spin, excursion) say nothing about the setup: like the practice
     // figures, a lap more than 2 s or 2 % slower than the typical lap of its setup is left out
     let typical = |l: &PracticeLap| {
@@ -128,14 +133,27 @@ pub fn fair(laps: &[&PracticeLap]) -> Fair {
             }
         }
     }
-    // Hold wear and fuel effect towards the typical values
-    for c in 0..nc {
-        m[ng + c][ng + c] += LAMBDA_WEAR;
-        v[ng + c] += LAMBDA_WEAR * PRIOR_WEAR;
+    // Hold wear and fuel effect towards the typical values; without wear and fuel (karts), or for
+    // a compound whose laps got faster with age (the driver warming up, not the tyres), held at 0
+    let fit = |zero_wear: &[bool]| {
+        let (mut m, mut v) = (m.clone(), v.clone());
+        for c in 0..nc {
+            let (lam, prior) = if fixed || zero_wear[c] { (1e9, 0.0) } else { (LAMBDA_WEAR, PRIOR_WEAR) };
+            m[ng + c][ng + c] += lam;
+            v[ng + c] += lam * prior;
+        }
+        let (lam, prior) = if fixed { (1e9, 0.0) } else { (LAMBDA_FUEL, PRIOR_FUEL) };
+        m[n - 1][n - 1] += lam;
+        v[n - 1] += lam * prior;
+        solve(m, v)
+    };
+    let Some(mut theta) = fit(&vec![false; nc]) else { return Fair::default() };
+    let negative: Vec<bool> = (0..nc).map(|c| theta[ng + c] < 0.0).collect();
+    if negative.iter().any(|x| *x) {
+        if let Some(t) = fit(&negative) {
+            theta = t;
+        }
     }
-    m[n - 1][n - 1] += LAMBDA_FUEL;
-    v[n - 1] += LAMBDA_FUEL * PRIOR_FUEL;
-    let Some(theta) = solve(m, v) else { return Fair::default() };
 
     // Residual spread → uncertainty of each setup's base time
     let predict = |l: &PracticeLap| {
@@ -167,10 +185,13 @@ pub fn fair(laps: &[&PracticeLap]) -> Fair {
                 se_ms: (sigma / (ms.len() as f64).sqrt() * 1000.0).round() as i32,
                 gap_ms: 0,
                 sure: false,
+                alone: false,
             }
         })
         .collect();
     for c in &compounds {
+        let alone = rows.iter().filter(|r| r.compound == *c).count() == 1;
+        rows.iter_mut().filter(|r| r.compound == *c).for_each(|r| r.alone = alone);
         let Some(best) = rows.iter().filter(|r| r.compound == *c).min_by_key(|r| r.fair_ms).cloned() else { continue };
         for r in rows.iter_mut().filter(|r| r.compound == *c) {
             r.gap_ms = r.fair_ms - best.fair_ms;
@@ -189,6 +210,7 @@ pub fn fair(laps: &[&PracticeLap]) -> Fair {
         reference_fuel: reference_fuel.map(|f| f.round()),
         wear_from_data: laps.len() >= 6 && spread(&ages) >= 4.0,
         fuel_from_data: fuels.len() >= 6 && spread(&fuels) >= 10.0,
+        fixed,
     }
 }
 
@@ -223,7 +245,7 @@ mod tests {
             laps.push(lap("B", age, fuel, t(94.7, age, fuel)));
         }
         let refs: Vec<&PracticeLap> = laps.iter().collect();
-        let f = fair(&refs);
+        let f = fair(&refs, false);
         let a = f.rows.iter().find(|r| r.setup == "A").unwrap();
         let b = f.rows.iter().find(|r| r.setup == "B").unwrap();
         assert!(b.median_ms > a.median_ms, "raw: B looks slower");
@@ -234,10 +256,28 @@ mod tests {
     }
 
     #[test]
+    fn karts_and_drivers_warming_up() {
+        // Kart: lap times fall with "age" (the driver warming up), nothing to correct
+        let laps = [lap("A", 0, 5.0, 56_000), lap("A", 1, 5.0, 55_600), lap("A", 2, 5.0, 55_400), lap("B", 0, 5.0, 55_200)];
+        let refs: Vec<&PracticeLap> = laps.iter().collect();
+        let f = fair(&refs, true);
+        let a = f.rows.iter().find(|r| r.setup == "A").unwrap();
+        assert!((a.fair_ms - 55_667).abs() <= 2, "plain mean: {f:?}");
+        assert!(f.wear.iter().all(|w| w.1 == 0.0) && f.fuel_effect == 0.0 && f.fixed);
+        // Not a kart: a negative wear is not used either
+        let f = fair(&refs, false);
+        assert!(f.wear.iter().all(|w| w.1 >= 0.0), "{f:?}");
+        // One setup per compound: nothing to compare
+        let one = [lap("A", 0, 40.0, 95_000), lap("A", 1, 34.0, 95_200)];
+        let refs: Vec<&PracticeLap> = one.iter().collect();
+        assert!(fair(&refs, false).rows[0].alone);
+    }
+
+    #[test]
     fn few_laps_are_not_sure() {
         let laps = [lap("A", 0, 40.0, 95_000), lap("A", 1, 34.0, 95_400), lap("B", 0, 40.0, 94_900)];
         let refs: Vec<&PracticeLap> = laps.iter().collect();
-        let f = fair(&refs);
+        let f = fair(&refs, false);
         assert!(f.rows.iter().all(|r| !r.sure), "{f:?}");
         assert!(!f.fuel_from_data && !f.wear_from_data);
     }
