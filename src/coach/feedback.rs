@@ -286,7 +286,8 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
         tone = "warn";
     }
 
-    let others: Vec<&LapResult> = res.laps.iter().filter(|l| l.file != lap.file).collect();
+    // Other normal laps (a lap with a spin is no example to follow)
+    let others: Vec<&LapResult> = res.laps.iter().filter(|l| l.file != lap.file && (l.ms as f64) <= ms as f64 * INCIDENT).collect();
     if is_best && !others.is_empty() {
         // Where were other laps faster than this new best lap?
         let mut gains: Vec<(f64, usize, &LapResult)> = Vec::new();
@@ -304,6 +305,15 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
         }
         gains.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         for (dt, cn, other) in gains.into_iter().take(3) {
+            if let (Some(o), Some(l), true) = (&other.corner(cn).stats, &lap.corner(cn).stats, i18n::czech()) {
+                if let Some(t) = tips_text(l, o) {
+                    let (c, ol, d) = (corner(cn), other.lap, secs(-dt, 2));
+                    // The comparison here is that other lap, not the best one
+                    let t = t.replace("nejlepším kole", &format!("kole {ol}")).replace("nejlepší kolo", &format!("kolo {ol}"));
+                    points.push(format!("{c}: v kole {ol} o {d} s rychleji – {t}"));
+                    continue;
+                }
+            }
             let why = match (&other.corner(cn).stats, &lap.corner(cn).stats) {
                 (Some(o), Some(l)) => causes(o, l),
                 _ => Vec::new(),
@@ -320,13 +330,36 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
         if let Some(reference) = res.reference_lap() {
             let mut losses: Vec<(f64, usize)> = res.corners.iter().map(|c| (lap.corner(c.n).dt, c.n)).collect();
             losses.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
+            if (lap.ms as f64) > reference.ms as f64 * INCIDENT {
+                points.push(tr!(
+                    "Runde mit Fehler oder Boxenstopp (über 107 % der Bestzeit): keine Kurvenanalyse.",
+                    "Lap with a mistake or a pit stop (over 107 % of the best): no corner advice.",
+                    "Kolo s chybou nebo zastávkou (o víc než 7 % pomalejší než nejlepší) – zatáčky nehodnotím, rady platí pro normální kola."
+                ));
+            }
             for (dt, cn) in losses.into_iter().take(3) {
                 let Some(lc) = &lap.corner(cn).stats else { break };
                 if dt < 0.05 {
                     break;
                 }
-                let why = reference.corner(cn).stats.as_ref().map(|rc| causes(lc, rc)).unwrap_or_default();
                 let (c, d) = (corner(cn), secs(dt, 2));
+                // A spin / slide there: the warning above says it all, the figures are nonsense
+                if lap.incidents.iter().any(|i| i.corner == Some(cn)) {
+                    points.push(tr!("{c}: {d} s verloren (siehe oben).", "{c}: {d} s lost (see above).", "{c}: ztráta {d} s (viz výše)."));
+                    continue;
+                }
+                // Czech: what to do (the engineer); other languages: what was different. Not for a
+                // lap with a mistake or a pit stop (over 107 %): its corners are no lesson
+                let normal = (lap.ms as f64) <= reference.ms as f64 * INCIDENT;
+                if !normal {
+                    points.push(tr!("{c}: {d} s verloren.", "{c}: {d} s lost.", "{c}: ztráta {d} s."));
+                    continue;
+                }
+                if let Some(t) = reference.corner(cn).stats.as_ref().filter(|_| i18n::czech() && normal).and_then(|rc| tips_text(lc, rc)) {
+                    points.push(format!("{c} (ztráta {d} s): {t}"));
+                    continue;
+                }
+                let why = reference.corner(cn).stats.as_ref().map(|rc| causes(lc, rc)).unwrap_or_default();
                 points.push(with_causes(tr!("{c}: {d} s verloren", "{c}: {d} s lost", "{c}: ztráta {d} s"), &why, " – ", "."));
             }
         }
@@ -363,6 +396,31 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
         "id": format!("lap-{n}-{ms}"), "kind": "lap", "lap": n, "tone": tone, "title": title, "text": text,
         "points": points, "stats": stats, "time": now_hm(),
     })
+}
+
+/// The engineer's instructions for a corner (Czech): the two most important.
+fn tips_text(l: &CornerStats, r: &CornerStats) -> Option<String> {
+    let tips = super::advice::corner_tips(l, r);
+    (!tips.is_empty()).then(|| tips.iter().take(2).map(|t| t.text.as_str()).collect::<Vec<_>>().join(" "))
+}
+
+/// The typical corner of the normal laps (not the best one) and the instruction for it, with how
+/// many of the laps show the main pattern.
+fn typical_tips(res: &Comparison, cn: usize, limit: f64) -> Option<String> {
+    let reference = res.reference_lap()?;
+    let rc = reference.corner(cn).stats.as_ref()?;
+    let laps: Vec<&CornerStats> = res
+        .laps
+        .iter()
+        .filter(|l| l.file != reference.file && (l.ms as f64) <= limit)
+        .filter_map(|l| l.corner(cn).stats.as_ref())
+        .collect();
+    let typ = super::advice::typical(&laps)?;
+    let tips = super::advice::corner_tips(&typ, rc);
+    let main = tips.first()?;
+    let n = laps.iter().filter(|l| super::advice::corner_tips(l, rc).iter().any(|t| t.key == main.key)).count();
+    let text = tips.iter().take(2).map(|t| t.text.as_str()).collect::<Vec<_>>().join(" ");
+    Some(if laps.len() >= 3 { format!("{text} (tak to vypadá v {n} z {} kol)", laps.len()) } else { text })
 }
 
 /// Laps slower than this × the best lap are incidents and left out of the focus.
@@ -406,6 +464,13 @@ pub fn focus_for(res: &Comparison, latest: &LapResult) -> Option<Value> {
         _ => Vec::new(),
     };
     let d = secs(loss, 2);
+    if i18n::czech() {
+        if let Some(t) = typical_tips(res, cn, limit) {
+            let c = corner(cn);
+            return Some(json!({"title": tr!("Fokus: {c}", "Focus: {c}", "Cíl: {c}"),
+                               "text": format!("Tady ztrácíš na své nejlepší průměrně {d} s. {t}"), "corner": cn}));
+        }
+    }
     let text = with_causes(
         tr!(
             "Hier verlierst du im Schnitt {d} s auf deine Bestzeit",
@@ -541,6 +606,15 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     if !top.is_empty() {
         let top = top.join(", ");
         points.push(tr!("Größtes Potenzial: {top}.", "Biggest potential: {top}.", "Největší rezerva: {top}."));
+        // … and what to do there
+        if i18n::czech() {
+            for (v, n) in pot.iter().take(3).filter(|(v, _)| *v > 0.03) {
+                if let Some(t) = typical_tips(res, *n, best * INCIDENT) {
+                    let (c, d) = (corner(*n), secs(*v, 2));
+                    points.push(format!("{c} (prům. {d} s): {t}"));
+                }
+            }
+        }
     }
     let tbs: Vec<(i64, i64)> =
         laps.iter().filter_map(|l| metrics.get(&l.file).and_then(|m| m.trail_braking.score).map(|s| (l.lap, s))).collect();

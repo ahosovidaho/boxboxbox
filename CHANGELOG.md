@@ -2,6 +2,17 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Kouč jako závodní inženýr** (česky): u zatáček místo „ztráta 0,15 s – vrchol o 4 km/h
+  pomaleji“ co dělat jinak, kde a o kolik – podle porovnání s nejlepším kolem ve stejné zatáčce:
+  přejetý vjezd (brzdí později, vrchol pomalejší), zbytečně brzké brzdění (s rychlostí, při které
+  brzdí nejlepší kolo), moc zpomalený vrchol (i pozdě puštěná brzda), stupeň v zatáčce („Zůstaň
+  na 4. stupni“ / „Podřaď na 2.“), brzký či pozdní vrchol, jízda bez pedálu, pozdní / pomalý
+  plný plyn, ujíždějící záď na výjezdu, rychlá zatáčka bez brzdy (ubírání plynu, stopa).
+  Souhrn „Největší rezerva“ a „Cíl“ říkají, co v zatáčce dělá typické kolo (medián normálních
+  kol) a v kolika kolech se to opakuje. Kola s chybou nebo zastávkou se nehodnotí; zatáčka se
+  spinem odkazuje na varování. Zatáčky mají nově i bod puštění brzdy, místo vrcholu, první plyn,
+  jízdu bez pedálu a stupeň na vjezdu.
+
 - **Kontrola dalších míst po chybě s podřazením** (motokára 20. 10., F3500 19. 10.):
   - Kouč: „ujíždějící záď“ a „nedotáčivost“ v hodnocení kola jen když je výrazně víc než
     v nejlepším kole ve stejné zatáčce (motokára: dřív 116× za 32 kol, teď 10×).

@@ -23,6 +23,23 @@ pub struct CornerStats {
     pub rear_slide: f64,
     pub glat: f64,
     pub tcs: f64,
+    /// Where the speed is lowest (m along the best lap)
+    #[serde(default)]
+    pub apex_at: Option<f64>,
+    /// Speed when the brake goes on (km/h) and where the brake is let off again (m)
+    #[serde(default)]
+    pub brake_kmh: Option<f64>,
+    #[serde(default)]
+    pub brake_off: Option<f64>,
+    /// First half throttle after the apex area (m)
+    #[serde(default)]
+    pub pickup_at: Option<f64>,
+    /// Distance without brake or throttle in the corner (m)
+    #[serde(default)]
+    pub coast_m: f64,
+    /// Gear when entering the section
+    #[serde(default)]
+    pub gear_entry: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -513,6 +530,15 @@ fn corner_stats(rows: &[Row], s_from: f64, s_to: f64, s_apex: f64) -> Option<Cor
     let full_at = seg.iter().filter(|r| r.s_ref > s_apex - 20.0).find(|r| r.throttle > 245.0).map(|r| r.s_ref);
     let bals: Vec<f64> = seg.iter().filter(|r| r.sway.abs() > 6.0).filter_map(|r| r.bal).collect();
     let pct = |count: usize, total: usize| if total == 0 { 0.0 } else { count as f64 / total as f64 * 100.0 };
+    let apex = near_apex.iter().copied().min_by(|a, b| a.speed_kmh.total_cmp(&b.speed_kmh));
+    let brake_on = seg.iter().position(|r| r.brake > 25.0 && r.s_ref <= s_apex + 30.0);
+    // Brake let off: after the brake went on, the first point below ~5 %
+    let brake_off = brake_on.and_then(|i| seg[i..].iter().find(|r| r.brake < 13.0)).map(|r| r.s_ref);
+    let coast_m = seg
+        .windows(2)
+        .filter(|w| w[1].throttle < 13.0 && w[1].brake < 13.0 && w[1].speed_kmh > 30.0)
+        .map(|w| (w[1].s_ref - w[0].s_ref).clamp(0.0, 10.0))
+        .sum::<f64>();
     Some(CornerStats {
         brake_at,
         brake_max: seg.iter().map(|r| r.brake).fold(f64::MIN, f64::max) / 2.55,
@@ -526,6 +552,12 @@ fn corner_stats(rows: &[Row], s_from: f64, s_to: f64, s_apex: f64) -> Option<Cor
         rear_slide: seg.iter().filter_map(|r| r.ar).map(f64::abs).fold(0.0, f64::max),
         glat: seg.iter().map(|r| r.sway.abs()).fold(f64::MIN, f64::max) / G,
         tcs: pct(seg.iter().filter(|r| r.has_flag(11)).count(), seg.len()),
+        apex_at: apex.map(|r| r.s_ref),
+        brake_kmh: brake_on.map(|i| seg[i].speed_kmh),
+        brake_off,
+        pickup_at: seg.iter().filter(|r| r.s_ref > s_apex - 20.0).find(|r| r.throttle > 128.0).map(|r| r.s_ref),
+        coast_m,
+        gear_entry: seg.iter().map(|r| r.gear).find(|g| (1.0..15.0).contains(g)).map(|g| g as i64),
     })
 }
 
