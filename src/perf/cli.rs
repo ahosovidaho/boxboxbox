@@ -120,7 +120,7 @@ fn details(r: &Run) -> Vec<String> {
 
 /// Reads the channels a measurement needs from a recorded lap file.
 fn samples(path: &Path) -> io::Result<Vec<(Sample, f32)>> {
-    let text = fs::read_to_string(path)?;
+    let text = crate::coach::lap::read_text(path)?;
     let mut lines = text.lines();
     let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
     let col = |name: &str| header.iter().position(|c| *c == name);

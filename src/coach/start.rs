@@ -50,7 +50,7 @@ pub fn analyse_file(session: &str, path: &Path) -> Option<Start> {
     if rows.len() < (HZ * 10.0) as usize || rows[0].lap > 1.0 {
         return None;
     }
-    let file = path.file_name()?.to_string_lossy().into_owned();
+    let file = lap::lap_name(path);
     let max_rpm = rows.iter().map(|r| r.rpm).fold(0.0, f64::max);
     if rows[0].speed_kmh > 3.0 {
         return Some(Start {
@@ -115,7 +115,7 @@ pub fn of_session(session: &Path) -> Vec<Start> {
     let mut out: Vec<Start> = Vec::new();
     let mut prev_zero = false;
     for f in lap_files(session) {
-        let n = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let n = lap::lap_name(&f);
         let zero = n.ends_with("_lap00.csv");
         // Lap 1 right after a lap-0 file is the same race (the start was in the lap-0 file)
         let first = zero || (n.ends_with("_lap01.csv") && !(prev_zero && out.last().is_some()));

@@ -2,6 +2,23 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Správa dat – nová stránka „Data“** (poslední v obou režimech). Nahrávky už se nehromadí:
+  - **Balení**: uzavřená session se sama zabalí (`.csv` → `.csv.gz`, ~4× menší, nic se
+    neztratí – každý soubor se po zabalení zkontroluje, než zmizí originál). Dělá se na pozadí,
+    po jedné session za minutu a jen když se nejezdí. Vše v programu čte zabalené i nezabalené.
+  - **Souhrn session** (`analysis/summary.json`): všechna kola, zatáčky, spiny, řazení, starty.
+    Zápisník, briefing i statistiky z něj fungují i po pročištění.
+  - **Pročištění** sessions starších než 31 dní (nastavitelné): zůstane nejrychlejší kolo, souhrn
+    a v rekordní session auta na trati ještě 3 kola pro model paliva. Sessions bez celého kola
+    jdou pryč celé.
+  - Stránka ukazuje, kolik co zabírá (nezabalené / zabalené / pročištěné / koš / ostatní), volné
+    místo na disku, kolik přibylo za 30 dní a na jak dlouho disk vystačí; **doporučený úklid**
+    s náhledem, co se stane a kolik se uvolní; tabulku sessions (řazení podle data, trati,
+    velikosti; rekordy ★) s tlačítky Zabalit / Pročistit / 📌 Připíchnout / Smazat.
+  - **Nic se nemaže hned**: vše jde do **koše** (`trash/`), odkud jde obnovit; koš se vysype po
+    7 dnech nebo tlačítkem. Připíchnuté sessions se nikdy nečistí. **Automatický úklid je
+    vypnutý**, dokud ho nezapneš; balení je zapnuté. Nastavení v `storage.json`.
+    API `/api/storage`, `/api/storage/action`.
 - **Nová stránka „Trať“** (trénink i závod, za Strategií): dvě záložky.
   - **Briefing** pro vybraný závod na jednu obrazovku: pravidla, auto a setup, **závodní tempo**
     (medián normálních kol z nejrychlejšího tréninku), nejlepší a ideální kolo, strategie

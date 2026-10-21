@@ -4,6 +4,7 @@ mod demo;
 mod i18n;
 mod perf;
 mod session;
+mod storage;
 mod strategy;
 mod telemetry;
 mod web;

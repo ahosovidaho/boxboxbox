@@ -105,7 +105,7 @@ pub fn build(
     let mut out = json!({ "track": track, "car": car, "records": records, "sessions": sessions.len() });
     let Some(best) = library::best(&mine) else { return out };
     let dir = recordings.join(&best.session);
-    let Ok(res) = comparer.compare(&dir) else { return out };
+    let Ok(res) = crate::storage::comparison(&dir, comparer) else { return out };
     let kart = best.best_file.as_ref().and_then(|f| super::lap::load(&dir.join(f)).ok()).is_some_and(|rows| super::lap::is_kart(&rows));
     out["kart"] = json!(kart);
     out["best"] = json!({ "session": best.session, "ms": best.best_ms, "started": best.started });
@@ -137,13 +137,16 @@ pub fn build(
     let mut starts: Vec<Value> = Vec::new();
     for s in mine.iter().take(RECENT) {
         let d = recordings.join(&s.session);
-        if let Ok(r) = comparer.compare(&d) {
+        if let Ok(r) = crate::storage::comparison(&d, comparer) {
             for run in super::stint::analyse(&r, !kart) {
                 runs.push(json!({ "session": s.session, "started": s.started, "laps": run.laps, "per_lap": run.per_lap,
                                   "cliff": run.cliff, "corners": run.corners, "text": run.text }));
             }
         }
-        starts.extend(super::start::of_session(&d).into_iter().map(|st| json!(st)));
+        match crate::storage::read_summary(&d).filter(|x| x.pruned) {
+            Some(x) => starts.extend(x.starts),
+            None => starts.extend(super::start::of_session(&d).into_iter().map(|st| json!(st))),
+        }
     }
     runs.sort_by_key(|r| std::cmp::Reverse(r["laps"].as_u64().unwrap_or(0)));
     runs.truncate(3);
@@ -155,7 +158,7 @@ pub fn build(
         let d = recordings.join(&s.session);
         let meta: Value =
             std::fs::read_to_string(d.join("session.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        let Ok(r) = comparer.compare(&d) else { continue };
+        let Ok(r) = crate::storage::comparison(&d, comparer) else { continue };
         for l in &r.laps {
             let id = meta["lap_setups"][&l.file].as_str().unwrap_or("").to_string();
             let e = setups.entry(id).or_default();
@@ -179,7 +182,7 @@ fn experiment(recordings: &Path, sessions: &[&SessionInfo], comparer: &mut Compa
         let d = recordings.join(&s.session);
         let meta: Value =
             std::fs::read_to_string(d.join("session.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        let Ok(res) = comparer.compare(&d) else { continue };
+        let Ok(res) = crate::storage::comparison(&d, comparer) else { continue };
         let Some(reference) = res.reference_lap() else { continue };
         let limit = reference.ms as f64 * 1.07;
         let setup_of = |file: &str| meta["lap_setups"][file].as_str().unwrap_or("").to_string();

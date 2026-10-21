@@ -530,6 +530,43 @@
   .bktab td { font-family: var(--mono); color: var(--text); }
   .bktab td:first-child { font-family: inherit; }
 
+  /* ---------- Data / storage (p11) ---------- */
+  #p11 { display: flex; flex-direction: column; gap: 8px; }
+  #p11head { display: flex; align-items: center; gap: 10px; min-height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); flex-wrap: wrap; }
+  #p11head b { color: var(--text); font-weight: 600; }
+  #p11head .grow { flex: 1; }
+  #dsMsg.err { color: var(--red); } #dsMsg.ok { color: var(--green); }
+  #p11body { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); grid-auto-rows: max-content; align-content: start; align-items: start; padding-bottom: 8px; }
+  #p11body .card { padding: 10px 13px; }
+  #p11body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 7px; }
+  #p11body .wide { grid-column: 1 / -1; }
+  .dsnums { display: flex; gap: 26px; flex-wrap: wrap; align-items: baseline; }
+  .dsnums .big { font: 700 26px var(--mono); color: var(--text); }
+  .dsnums .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); display: block; }
+  .dsnums .sub { font-size: 12px; color: var(--dim); }
+  .dsbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: #1c1c21; margin: 10px 0 6px; }
+  .dsbar i { display: block; height: 100%; }
+  .dsleg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+  .dsleg span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; background: var(--c); }
+  .dsleg b { color: var(--text); font-family: var(--mono); font-weight: 500; }
+  .dstab { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .dstab th { color: var(--label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 500; text-align: left; padding: 3px 6px; cursor: pointer; white-space: nowrap; }
+  .dstab td { padding: 5px 6px; border-top: 1px solid #1f1f25; color: var(--dim); vertical-align: middle; }
+  .dstab td.n { font-family: var(--mono); color: var(--text); text-align: right; white-space: nowrap; }
+  .dstab td b { color: var(--text); font-weight: 600; }
+  .dstab .acts { white-space: nowrap; text-align: right; }
+  .dstab .acts button { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; font: 12px -apple-system, system-ui, sans-serif; padding: 4px 8px; margin-left: 3px; }
+  .dstab .acts button.del { color: #ff8a80; }
+  .dsst { font-size: 11px; padding: 2px 7px; border-radius: 6px; background: #1c1c21; white-space: nowrap; }
+  .dsst.raw { color: var(--orange); } .dsst.packed { color: var(--green); } .dsst.pruned { color: #8fb8ff; } .dsst.live { color: var(--red); }
+  .dsrules label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; color: var(--text); }
+  .dsrules input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--green); }
+  .dsrules input[type=number] { width: 64px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; padding: 4px 6px; font: 13px var(--mono); }
+  .dsstep { display: flex; gap: 10px; align-items: baseline; padding: 5px 0; border-top: 1px solid #1f1f25; font-size: 13px; color: var(--dim); }
+  .dsstep b { color: var(--text); }
+  .dsstep .n { margin-left: auto; font-family: var(--mono); color: var(--green); white-space: nowrap; }
+
   /* ---------- Page 5: strategy ---------- */
   #boxcall { font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 6px; }
   #boxcall.box { background: var(--red); color: #000; }
@@ -1091,6 +1128,19 @@
   <div id="p10body"><span class="muted">Načítám…</span></div>
 </section>
 
+<!-- ======================= Data: what the recordings take, clean-up ======================= -->
+<section class="page" id="p11" hidden>
+  <div id="p11head">
+    <b>Data</b>
+    <span id="dsHead"></span>
+    <span id="dsMsg"></span>
+    <span class="grow"></span>
+    <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+    <span class="dots"></span>
+  </div>
+  <div id="p11body"><span class="muted">Načítám…</span></div>
+</section>
+
 <!-- ======================= Race mode: recap ======================= -->
 <section class="page" id="p7" hidden>
   <div id="p7head">
@@ -1317,8 +1367,10 @@
   let liftPlan = null, liftKey = '', liftAt = 0;
   // Track page: briefing or notebook, chosen track ('' = race / practice track)
   let bkView = 'brief', bkTrack = '', bkBusy = false;
-  const ORDER = { practice: [1, 3, 9, 4, 5, 10, 8, 2], race: [6, 7, 5, 10] };
-  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  // Data page: last state from the server, sort of the session table
+  let dsData = null, dsSort = 'date', dsBusy = false;
+  const ORDER = { practice: [1, 3, 9, 4, 5, 10, 8, 2, 11], race: [6, 7, 5, 10, 11] };
+  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
   let page = ORDER[appMode][0];
   { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
@@ -1356,6 +1408,7 @@
     if (n === 9) loadTraces();
     if (n === 5) loadPrep();
     if (n === 10) loadTrackPage();
+    if (n === 11) loadStorage();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
@@ -1364,7 +1417,7 @@
   let press = null;
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
-    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #tCharts, #tSide, button, input, select, textarea');
+    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #p11body, #tCharts, #tSide, button, input, select, textarea');
     // Horizontal drags on a chart move its cursor instead of switching pages
     press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
@@ -2643,6 +2696,96 @@
     if (v && v !== bkView) { bkView = v; loadTrackPage(); }
   });
   $('bkTrack').addEventListener('change', e => { bkTrack = e.target.value; bkView = 'book'; loadTrackPage(); });
+
+  // ---------- Data page (11): what takes how much, packing, clean-up, bin ----------
+  const gb = b => b >= 1e9 ? nf(b / 1e9, 1) + ' GB' : b >= 1e6 ? Math.round(b / 1e6) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' kB';
+  const DS_STATE = { live: 'nahrává se', raw: 'nezabaleno', packed: 'zabaleno', pruned: 'pročištěno' };
+  const DS_ACT = { pack: 'Zabalit', prune: 'Pročistit', remove: 'Smazat (bez celého kola)' };
+  async function loadStorage() {
+    try { dsData = await (await fetch('api/storage', { cache: 'no-store' })).json(); renderStorage(); } catch { setText('dsMsg', 'nepodařilo se načíst'); }
+  }
+  async function dsAction(body, ask) {
+    if (ask && !confirm(ask)) return;
+    if (dsBusy) return;
+    dsBusy = true;
+    const m = $('dsMsg'); m.className = ''; m.textContent = 'pracuju…';
+    try {
+      const d = await (await fetch('api/storage/action', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+      dsData = d; renderStorage();
+      m.className = d.error ? 'err' : 'ok'; m.textContent = d.error || d.message || '';
+    } catch { m.className = 'err'; m.textContent = 'chyba'; }
+    dsBusy = false;
+  }
+  const dsLabel = r => `${dayOf(r.started)} ${(r.started || '').slice(11, 16)} · ${esc(r.car || '?')}`;
+  function renderStorage() {
+    const d = dsData; if (!d) return;
+    const t = d.totals, disk = d.disk;
+    setText('dsHead', `nahrávky ${gb(t.recordings)}${disk ? ` · volno ${gb(disk.free)}` : ''}`);
+    // How long the disk lasts at the pace of the last 30 days (packing included)
+    const monthly = t.month * (d.config.compress ? 0.27 : 1);
+    const months = disk && monthly > 0 ? disk.free / monthly : null;
+    const parts = [['Nezabalené', t.raw, '#ff8a2a'], ['Zabalené', t.packed, '#2fd36b'], ['Pročištěné', t.pruned, '#8fb8ff'],
+      ['Právě nahrávané', t.live, '#ff4a3d'], ['Koš', t.trash, '#6b6b75'], ['Ostatní (strategie, měření)', t.other, '#b25cff']];
+    const sum = parts.reduce((a, p) => a + p[1], 0) || 1;
+    let html = `<div class="card wide"><h2>Přehled</h2><div class="dsnums">
+      <span><span class="lbl">Data celkem</span><span class="big">${gb(sum)}</span></span>
+      ${disk ? `<span><span class="lbl">Volno na disku</span><span class="big">${gb(disk.free)}</span> <span class="sub">z ${gb(disk.total)}</span></span>` : ''}
+      <span><span class="lbl">Za 30 dní přibylo</span><span class="big">${gb(t.month)}</span>${d.config.compress ? ` <span class="sub">po zabalení ~${gb(t.month * 0.27)}</span>` : ''}</span>
+      ${months != null ? `<span><span class="lbl">Disk vystačí</span><span class="big">${months > 120 ? '10+ let' : months >= 24 ? Math.round(months / 12) + ' let' : Math.round(months) + ' měs.'}</span> <span class="sub">při tomhle tempu</span></span>` : ''}
+      </div><div class="dsbar">${parts.filter(p => p[1] > 0).map(p => `<i style="width:${p[1] / sum * 100}%;background:${p[2]}" title="${p[0]}"></i>`).join('')}</div>
+      <div class="dsleg">${parts.filter(p => p[1] > 0).map(p => `<span style="--c:${p[2]}">${p[0]} <b>${gb(p[1])}</b></span>`).join('')}</div></div>`;
+    // Recommended clean-up
+    const name = s => { const r = d.sessions.find(x => x.session === s); return r ? dsLabel(r) : esc(s); };
+    html += `<div class="card"><h2>Doporučený úklid${d.plan.length ? ' · uvolní ~' + gb(d.plan_frees) : ''}</h2>`
+      + (d.plan.length ? d.plan.map(x => `<div class="dsstep"><b>${DS_ACT[x.action]}</b><span>${name(x.session)} – ${esc(x.why)}</span><span class="n">−${gb(x.frees)}</span></div>`).join('')
+        + `<div style="margin-top:8px"><button class="stbtn small" id="dsRun">Provést úklid</button> <span class="muted" style="font-size:12px">Smazané jde nejdřív do koše (${d.config.trash_days} dní).</span></div>`
+        : '<div class="muted">Není co uklízet.</div>') + '</div>';
+    // Rules
+    const c = d.config;
+    html += `<div class="card dsrules"><h2>Pravidla</h2>
+      <label><input type="checkbox" id="dsCompress" ${c.compress ? 'checked' : ''}> Balit uzavřené sessions (asi 4× menší, nic se neztratí)</label>
+      <label><input type="checkbox" id="dsAuto" ${c.auto_clean ? 'checked' : ''}> Uklízet automaticky</label>
+      <label>Pročistit sessions starší než <input type="number" id="dsDays" min="7" max="3650" value="${c.keep_days}"> dní</label>
+      <label>Koš vysypat po <input type="number" id="dsTrash" min="1" max="90" value="${c.trash_days}"> dnech</label>
+      <div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">Z pročištěné session zůstane nejrychlejší kolo, souhrn pro Zápisník a briefing (všechna kola, zatáčky, spiny, starty) a u rekordní session auta na trati ještě 3 kola pro model paliva. Připíchnuté sessions (📌) se nikdy nečistí.</div>
+      <div style="margin-top:8px"><button class="stbtn small" id="dsSaveCfg">Uložit pravidla</button></div></div>`;
+    // Bin
+    const tr = d.trash || [];
+    html += `<div class="card"><h2>Koš · ${gb(t.trash)}</h2>` + (tr.length
+      ? `<table class="dstab">${tr.map((x, k) => `<tr><td>${dayOf(x.date)}</td><td>${esc(x.session.replace(/_/g, ' ').slice(0, 44))}</td><td class="n">${gb(x.bytes)}</td><td class="acts"><button data-restore="${k}">Obnovit</button></td></tr>`).join('')}</table>
+         <div style="margin-top:8px"><button class="stbtn small" id="dsEmpty">Vysypat koš</button></div>`
+      : '<div class="muted">Koš je prázdný.</div>') + '</div>';
+    // Sessions
+    const rows = d.sessions.slice().sort((a, b) => dsSort === 'size' ? b.bytes - a.bytes : dsSort === 'track' ? String(a.track || '~').localeCompare(String(b.track || '~')) : (b.started || '').localeCompare(a.started || ''));
+    html += `<div class="card wide"><h2>Sessions · ${d.sessions.length}</h2><table class="dstab"><tr>
+      <th data-sort="date">Kdy ${dsSort === 'date' ? '▾' : ''}</th><th data-sort="track">Trať ${dsSort === 'track' ? '▾' : ''}</th><th>Kol</th><th>Nejlepší</th><th data-sort="size">Velikost ${dsSort === 'size' ? '▾' : ''}</th><th>Stav</th><th></th></tr>`
+      + rows.map(r => `<tr><td><b>${dsLabel(r)}</b></td><td>${esc(r.track || '–')}${r.record ? ' <span title="rekord auta na trati">★</span>' : ''}</td>
+        <td class="n">${r.laps}</td><td class="n">${fmtLap(r.best_ms)}</td><td class="n">${gb(r.bytes)}</td>
+        <td><span class="dsst ${r.state}">${DS_STATE[r.state]}</span>${r.pinned ? ' 📌' : ''}</td>
+        <td class="acts">${r.state === 'live' ? '' : `${r.state === 'raw' ? `<button data-a="pack" data-s="${esc(r.session)}">Zabalit</button>` : ''}`
+          + `${r.state !== 'pruned' && !r.empty && !r.pinned ? `<button data-a="prune" data-s="${esc(r.session)}">Pročistit</button>` : ''}`
+          + `<button data-a="${r.pinned ? 'unpin' : 'pin'}" data-s="${esc(r.session)}">${r.pinned ? 'Odepnout' : '📌'}</button>`
+          + `${r.pinned ? '' : `<button class="del" data-a="remove" data-s="${esc(r.session)}">Smazat</button>`}`}</td></tr>`).join('')
+      + '</table></div>';
+    $('p11body').innerHTML = html;
+    if ($('dsRun')) $('dsRun').onclick = () => dsAction({ action: 'run_plan' }, `Provést doporučený úklid (${d.plan.length} kroků, uvolní ~${gb(d.plan_frees)})? Mazané soubory půjdou do koše.`);
+    if ($('dsEmpty')) $('dsEmpty').onclick = () => dsAction({ action: 'empty_trash' }, `Vysypat koš (${gb(t.trash)})? Tohle už nejde vrátit.`);
+    $('dsSaveCfg').onclick = () => dsAction({ action: 'config', config: { compress: $('dsCompress').checked, auto_clean: $('dsAuto').checked,
+      keep_days: +$('dsDays').value || 31, trash_days: +$('dsTrash').value || 7, pinned: [] } });
+  }
+  $('p11body').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (th) { dsSort = th.dataset.sort; renderStorage(); return; }
+    const rb = e.target.closest('button[data-restore]');
+    if (rb) { const x = dsData.trash[+rb.dataset.restore]; dsAction({ action: 'restore', session: x.session, date: x.date }); return; }
+    const b = e.target.closest('button[data-a]');
+    if (!b) return;
+    const r = dsData.sessions.find(x => x.session === b.dataset.s);
+    const lbl = r ? `${dayOf(r.started)} ${r.car}` : b.dataset.s;
+    const ask = { remove: `Smazat celou session ${lbl} (${gb(r ? r.bytes : 0)})? Půjde do koše.`,
+      prune: `Pročistit ${lbl}? Zůstane nejrychlejší kolo a souhrn, ostatní kola půjdou do koše.` }[b.dataset.a];
+    dsAction({ action: b.dataset.a, session: b.dataset.s }, ask);
+  });
 
   // Fuel saving plan for the race page (lift and coast), fetched when the amount to save changes
   async function loadLift(save) {

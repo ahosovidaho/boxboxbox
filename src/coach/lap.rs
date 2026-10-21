@@ -97,9 +97,47 @@ fn field(cells: &[&str], idx: Option<usize>) -> Option<f64> {
     }
 }
 
-/// Loads a recorded lap file.
+/// A lap file may be stored compressed (`x.csv.gz`, sessions are packed when they are closed):
+/// the path with ".gz" appended.
+pub fn gz_path(path: &Path) -> std::path::PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".gz");
+    s.into()
+}
+
+fn read_gz(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(std::io::BufReader::new(fs::File::open(path)?)).read_to_string(&mut text)?;
+    Ok(text)
+}
+
+/// Text of a lap file, packed or not: `x.csv.gz` is read as well when `x.csv` is asked for.
+pub fn read_text(path: &Path) -> std::io::Result<String> {
+    if path.extension().is_some_and(|e| e == "gz") {
+        return read_gz(path);
+    }
+    match fs::read_to_string(path) {
+        Ok(t) => Ok(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && gz_path(path).is_file() => read_gz(&gz_path(path)),
+        Err(e) => Err(e),
+    }
+}
+
+/// The lap file exists, packed or not.
+pub fn exists(path: &Path) -> bool {
+    path.is_file() || gz_path(path).is_file()
+}
+
+/// Name of a lap file as the laps are known by ("010_lap06.csv", also for "010_lap06.csv.gz").
+pub fn lap_name(path: &Path) -> String {
+    let n = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    n.strip_suffix(".gz").map(str::to_string).unwrap_or(n)
+}
+
+/// Loads a recorded lap file (packed or not).
 pub fn load(path: &Path) -> std::io::Result<Vec<Row>> {
-    let text = fs::read_to_string(path)?;
+    let text = read_text(path)?;
     let mut lines = text.lines();
     let header = lines.next().unwrap_or_default();
     let cols = Columns(header.split(',').enumerate().map(|(i, c)| (c.to_string(), i)).collect());

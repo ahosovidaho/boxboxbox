@@ -57,7 +57,11 @@ pub fn info(session: &Path, comparer: &mut Comparer, track_of: &dyn Fn(&[[f32; 2
     let mut out = match cached.filter(|c| c.key == key) {
         Some(c) => c,
         None => {
-            let laps = comparer.complete_laps(session);
+            // A cleaned session counts its laps from the summary
+            let laps = match crate::storage::read_summary(session).filter(|s| s.pruned) {
+                Some(s) => s.complete.iter().map(|(f, ms)| (session.join(f), *ms)).collect(),
+                None => comparer.complete_laps(session),
+            };
             let best = laps.iter().min_by_key(|(_, ms)| *ms);
             SessionInfo {
                 session: session.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
@@ -67,7 +71,7 @@ pub fn info(session: &Path, comparer: &mut Comparer, track_of: &dyn Fn(&[[f32; 2
                 track: None,
                 laps: laps.len(),
                 best_ms: best.map(|b| b.1),
-                best_file: best.map(|b| b.0.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                best_file: best.map(|b| lap::lap_name(&b.0)),
                 key,
                 layouts,
             }

@@ -177,14 +177,18 @@ pub fn lap_files(session: &Path) -> Vec<PathBuf> {
         .flatten()
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "csv"))
+        .filter(|p| {
+            let n = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            n.ends_with(".csv") || n.ends_with(".csv.gz")
+        })
         .collect();
-    files.sort();
+    files.sort_by_key(|p| lap::lap_name(p));
     files
 }
 
+/// Name a lap is known by (without ".gz" of a packed file).
 fn file_name(p: &Path) -> String {
-    p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    lap::lap_name(p)
 }
 
 impl Comparer {
@@ -198,7 +202,7 @@ impl Comparer {
         if let Some(m) = self.meta.get(&key) {
             return m.clone();
         }
-        let text = fs::read_to_string(path).unwrap_or_default();
+        let text = lap::read_text(path).unwrap_or_default();
         let mut lines = text.lines();
         let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
         let col = |n: &str| header.iter().position(|c| *c == n);
@@ -235,6 +239,10 @@ impl Comparer {
     /// All complete laps `(file, official ms)`: started at the line, ended where they started and
     /// the recorded duration matches the official time (sent as `last_lap_ms` in the following lap).
     pub fn complete_laps(&mut self, session: &Path) -> Vec<(PathBuf, i64)> {
+        // A cleaned session: the laps kept (their neighbours that proved them complete are gone)
+        if let Some(kept) = crate::storage::kept_laps(session) {
+            return kept.into_iter().map(|(f, ms)| (session.join(f), ms)).filter(|(p, _)| lap::exists(p)).collect();
+        }
         let files = lap_files(session);
         let mut out = Vec::new();
         for pair in files.windows(2) {

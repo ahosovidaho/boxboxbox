@@ -44,6 +44,8 @@ pub struct Coach {
     record_dir: PathBuf,
     feed_path: PathBuf,
     comparer: Comparer,
+    /// Last storage housekeeping (packing, clean-up)
+    housekept: Option<std::time::Instant>,
 }
 
 fn log(msg: impl AsRef<str>) {
@@ -59,6 +61,9 @@ fn name_of(p: &Path) -> String {
 }
 
 fn line_count(path: &Path) -> usize {
+    if path.extension().is_some_and(|e| e == "gz") {
+        return super::lap::read_text(path).map(|t| bytecount(t.as_bytes())).unwrap_or(0);
+    }
     fs::read(path).map(|b| bytecount(&b)).unwrap_or(0)
 }
 
@@ -79,7 +84,7 @@ fn session_ended(session: &Path, idle: Duration) -> bool {
 
 impl Coach {
     pub fn new(record_dir: PathBuf, feed_path: PathBuf) -> Self {
-        Coach { record_dir, feed_path, comparer: Comparer::default() }
+        Coach { record_dir, feed_path, comparer: Comparer::default(), housekept: None }
     }
 
     /// Runs forever: one pass now, then on every wake-up or poll interval.
@@ -88,10 +93,35 @@ impl Coach {
         log(tr!("gestartet ({dir})", "started ({dir})", "spuštěno ({dir})"));
         loop {
             self.tick();
+            self.housekeeping();
             match wake.recv_timeout(POLL) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => std::thread::sleep(POLL),
             }
+        }
+    }
+
+    /// Storage housekeeping once a minute while nothing is driven: pack closed sessions, and
+    /// with automatic clean-up clean old ones (see [`crate::storage`]).
+    fn housekeeping(&mut self) {
+        if self.housekept.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60)) {
+            return;
+        }
+        self.housekept = Some(std::time::Instant::now());
+        let Some(root) = self.record_dir.parent().map(Path::to_path_buf) else { return };
+        let rec = self.record_dir.clone();
+        let practice = root.join("practice.json");
+        let all = move |c: &mut Comparer| {
+            let shapes: Vec<crate::strategy::practice::Shape> = fs::read_to_string(&practice)
+                .ok()
+                .and_then(|t| serde_json::from_str::<crate::strategy::practice::PracticeSaved>(&t).ok())
+                .map(|p| p.shapes)
+                .unwrap_or_default();
+            let n = shapes.len();
+            super::library::index(&rec, c, &|pts| crate::strategy::practice::track_of(&shapes, pts), n)
+        };
+        if let Some(msg) = crate::storage::housekeeping(&root, &mut self.comparer, &all) {
+            log(msg);
         }
     }
 
@@ -130,7 +160,7 @@ impl Coach {
 
     fn analyze_session(&mut self, session: &Path, state: &mut State, fin: bool) -> std::io::Result<()> {
         let files = lap_files(session);
-        let names: Vec<String> = files.iter().map(|f| name_of(f)).collect();
+        let names: Vec<String> = files.iter().map(|f| super::lap::lap_name(f)).collect();
         // The last file is still being written; a lap is complete once the next file has data.
         let ready: Vec<String> = if fin {
             names.clone()

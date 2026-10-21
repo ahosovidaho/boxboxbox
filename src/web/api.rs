@@ -19,6 +19,8 @@
 //! | GET  | `/api/notebook?track=&car=` | track notebook: records, ideal lap, reserves, risk, tyres, long runs, starts, setups, notes |
 //! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
+//! | GET  | `/api/storage` | what takes how much space: sessions, bin, disk; the recommended clean-up |
+//! | POST | `/api/storage/action` | `{"action": "pack"/"prune"/"remove"/"pin"/"unpin"/"restore"/"empty_trash"/"run_plan"/"config", …}` |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
 use super::Feeds;
@@ -71,6 +73,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/notebook", get(notebook))
         .route("/api/notebook/note", axum::routing::post(notebook_note))
         .route("/api/briefing", get(briefing))
+        .route("/api/storage", get(storage_state))
+        .route("/api/storage/action", axum::routing::post(storage_action))
         .route("/api/prep", get(prep))
         .route("/api/perf", get(perf_overview))
         .route("/api/settings", get(settings).post(update_settings))
@@ -469,6 +473,129 @@ async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
     json_body(body)
 }
 
+fn storage_json(s: &AppState) -> serde_json::Value {
+    let p = crate::storage::Paths::new(&s.settings.data.root);
+    let cfg = crate::storage::load_config(&p);
+    let (track_of, layouts) = track_matcher(&s.strategy);
+    let all = {
+        let mut c = comparer();
+        crate::coach::library::index(&p.recordings, &mut c, &track_of, layouts)
+    };
+    let rows = crate::storage::session_rows(&p, &cfg, &all);
+    let plan = crate::storage::plan(&rows, &cfg);
+    let trash: Vec<serde_json::Value> = crate::storage::trash_entries(&p)
+        .into_iter()
+        .map(|(date, name, bytes, files)| json!({ "date": date, "session": name, "bytes": bytes, "files": files }))
+        .collect();
+    let total_rec: u64 = rows.iter().map(|r| r.bytes).sum();
+    let by_state = |st: &str| rows.iter().filter(|r| r.state == st).map(|r| r.bytes).sum::<u64>();
+    let trash_bytes: u64 = trash.iter().map(|t| t["bytes"].as_u64().unwrap_or(0)).sum();
+    let other = crate::storage::size_of(&p.root).saturating_sub(total_rec + trash_bytes);
+    // Growth: what the sessions of the last 30 days take
+    let month: u64 = rows.iter().filter(|r| r.age_days <= 30.0).map(|r| r.bytes).sum();
+    let disk = crate::storage::disk(&p.root);
+    json!({
+        "config": cfg,
+        "disk": disk.map(|(free, total)| json!({ "free": free, "total": total })),
+        "totals": { "live": by_state("live"), "raw": by_state("raw"), "packed": by_state("packed"), "pruned": by_state("pruned"),
+                    "trash": trash_bytes, "other": other, "recordings": total_rec, "month": month },
+        "sessions": rows,
+        "plan": plan,
+        "plan_frees": plan.iter().map(|x| x.frees).sum::<u64>(),
+        "trash": trash,
+    })
+}
+
+async fn storage_state(State(s): State<AppState>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || storage_json(&s).to_string()).await.unwrap_or_default();
+    json_body(body)
+}
+
+#[derive(Deserialize)]
+struct StorageAction {
+    action: String,
+    session: Option<String>,
+    date: Option<String>,
+    config: Option<crate::storage::Config>,
+}
+
+/// Storage actions. Nothing is deleted for good except "empty_trash"; everything else moves to
+/// the bin or packs.
+async fn storage_action(State(s): State<AppState>, Json(a): Json<StorageAction>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || {
+        let p = crate::storage::Paths::new(&s.settings.data.root);
+        let mut cfg = crate::storage::load_config(&p);
+        let session = a.session.clone().unwrap_or_default();
+        let step_of = |action: &'static str| crate::storage::Step { session: session.clone(), action, frees: 0, why: String::new() };
+        // Record sessions keep more laps when cleaned
+        let is_record = |name: &str| {
+            let (track_of, layouts) = track_matcher(&s.strategy);
+            let all = crate::coach::library::index(&p.recordings, &mut comparer(), &track_of, layouts);
+            crate::storage::session_rows(&p, &cfg, &all).iter().any(|r| r.session == name && r.record)
+        };
+        let result: std::io::Result<String> = match a.action.as_str() {
+            "pack" => crate::storage::run_step(&p, &step_of("pack"), false, &mut comparer())
+                .map(|b| format!("zabaleno, ušetřeno {} MB", b / 1_000_000)),
+            "prune" => {
+                let rec = is_record(&session);
+                crate::storage::run_step(&p, &step_of("prune"), rec, &mut comparer())
+                    .map(|b| format!("pročištěno, {} MB v koši", b / 1_000_000))
+            }
+            "remove" => {
+                crate::storage::run_step(&p, &step_of("remove"), false, &mut comparer()).map(|b| format!("v koši ({} MB)", b / 1_000_000))
+            }
+            "pin" | "unpin" => {
+                if a.action == "pin" {
+                    cfg.pinned.insert(session.clone());
+                } else {
+                    cfg.pinned.remove(&session);
+                }
+                crate::storage::save_config(&p, &cfg).map(|_| "uloženo".into())
+            }
+            "restore" => crate::storage::restore(&p, a.date.as_deref().unwrap_or(""), &session).map(|_| "obnoveno".into()),
+            "empty_trash" => crate::storage::purge(&p, None).map(|b| format!("koš vysypán ({} MB)", b / 1_000_000)),
+            "config" => match a.config {
+                Some(mut c) => {
+                    c.pinned = cfg.pinned.clone();
+                    c.keep_days = c.keep_days.clamp(7, 3650);
+                    c.trash_days = c.trash_days.clamp(1, 90);
+                    crate::storage::save_config(&p, &c).map(|_| "uloženo".into())
+                }
+                None => Ok(String::new()),
+            },
+            "run_plan" => {
+                let (track_of, layouts) = track_matcher(&s.strategy);
+                let all = crate::coach::library::index(&p.recordings, &mut comparer(), &track_of, layouts);
+                let rows = crate::storage::session_rows(&p, &cfg, &all);
+                let mut done = 0u64;
+                let mut errors = Vec::new();
+                for step in crate::storage::plan(&rows, &cfg) {
+                    let rec = rows.iter().any(|r| r.session == step.session && r.record);
+                    match crate::storage::run_step(&p, &step, rec, &mut comparer()) {
+                        Ok(b) => done += b,
+                        Err(e) => errors.push(format!("{}: {e}", step.session)),
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(format!("hotovo, uvolněno ~{} MB", done / 1_000_000))
+                } else {
+                    Err(std::io::Error::other(errors.join("; ")))
+                }
+            }
+            _ => Err(std::io::Error::other("neznámá akce")),
+        };
+        let mut v = storage_json(&s);
+        match result {
+            Ok(m) => v["message"] = json!(m),
+            Err(e) => v["error"] = json!(e.to_string()),
+        }
+        v.to_string()
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
+}
+
 #[derive(Deserialize)]
 struct FuelSaveQuery {
     /// Fuel to save per lap; none: plans for 2, 4 and 6 %
@@ -559,7 +686,7 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
                 _ => crate::coach::compare::Versus::Session,
             },
             Some(other) => match other.split_once('/') {
-                Some((sess, file)) if safe(sess) && safe_file(file) && rec.join(sess).join(file).is_file() => {
+                Some((sess, file)) if safe(sess) && safe_file(file) && crate::coach::lap::exists(&rec.join(sess).join(file)) => {
                     crate::coach::compare::Versus::Lap(rec.join(sess).join(file))
                 }
                 _ => crate::coach::compare::Versus::Session,
@@ -589,7 +716,7 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
                     v["versus"]["session"] = json!(sess);
                     let other = all.iter().find(|i| i.session == sess);
                     v["versus"]["started"] = json!(other.map(|i| i.started.clone()));
-                    let file = p.file_name().map(|n| n.to_string_lossy().into_owned());
+                    let file = Some(crate::coach::lap::lap_name(p));
                     if other.is_some_and(|o| o.best_file == file) {
                         v["versus"]["ms"] = json!(other.and_then(|o| o.best_ms));
                     }
