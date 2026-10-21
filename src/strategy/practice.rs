@@ -447,6 +447,19 @@ fn order(c: &str) -> (usize, usize) {
     (kind, hard)
 }
 
+/// Layout among `shapes` that the positions of a lap fit, if any.
+pub fn track_of(shapes: &[Shape], pts: &[[f32; 2]]) -> Option<String> {
+    if pts.len() < 50 {
+        return None;
+    }
+    shapes
+        .iter()
+        .map(|s| (s, shape_distance(pts, &s.pts)))
+        .filter(|(_, d)| *d < SHAPE_MATCH_M)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(s, _)| s.track.clone())
+}
+
 /// Average distance from the points of `a` to the nearest point of `b` (m).
 fn shape_distance(a: &[[f32; 2]], b: &[[f32; 2]]) -> f32 {
     if a.is_empty() || b.is_empty() {

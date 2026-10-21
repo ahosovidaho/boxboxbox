@@ -380,6 +380,9 @@
   #r_fuelsegs i.mark { outline: 2px solid var(--acc); outline-offset: 2px; }
   #r_fuelkv { margin-left: auto; display: flex; gap: 18px; font-size: 12px; letter-spacing: .14em; color: #8c8c8c; white-space: nowrap; }
   #r_fuelkv b { font-family: var(--rm); color: #f2f2f2; font-size: 17px; letter-spacing: 0; }
+  #r_lift { margin-top: 8px; font-size: 14px; color: var(--yellow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #r_lift b { font-family: var(--rm); }
+  #r_lift small { color: #8c8c8c; font-size: 12px; }
   #r_save { font: 700 13px var(--rm, inherit); letter-spacing: .08em; color: #000; background: var(--yellow); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
   #r_strip { grid-area: strip; display: flex; gap: 14px; align-items: center; font-size: 12px; color: #8c8c8c; white-space: nowrap; overflow: hidden; }
   #r_strip #r_call { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #f2f2f2; font-weight: 600; letter-spacing: .04em; }
@@ -971,6 +974,7 @@
       <span id="r_save" hidden></span>
       <div id="r_fuelkv"><span>VYSTAČÍ <b id="r_fuellaps">–</b></span><span>L/KOLO <b id="r_fpl">–</b></span><span id="r_targetbox" hidden>CÍL <b id="r_target">–</b></span><span>TOTO KOLO <b id="r_lapfuel">–</b></span><span>REZERVA <b id="r_margin">–</b></span></div>
     </div>
+    <div id="r_lift" hidden></div>
     <div id="r_fuelsegs"></div>
   </div>
   <div id="r_strip">
@@ -989,6 +993,7 @@
   <div id="p9head">
     <b>Telemetrie</b>
     <select id="tLap" aria-label="Kolo"></select>
+    <select id="tVs" aria-label="Porovnat s"><option value="">vs nejlepší kolo</option></select>
     <span class="tlg"><i style="background:#e8e8ec"></i><span id="tLapName">kolo</span></span>
     <span class="tlg"><i style="background:#b25cff"></i><span id="tRefName">nejlepší</span></span>
     <span class="grow"></span>
@@ -1259,7 +1264,9 @@
   // strategy, all data) and race (race dashboard, race recap, strategy). The mode lives on the
   // server (practice mode of the strategy), so all devices show the same.
   // Telemetry graphs page state (declared early: the start page may be page 9)
-  let tData = null, tCorner = null, tWin = [0, 1], tFile = null, tUpdated = null, tBusy = false, tView = 'loss';
+  let tData = null, tCorner = null, tWin = [0, 1], tFile = null, tUpdated = null, tBusy = false, tView = 'loss', tVs = '';
+  // Race: lift-and-coast plan (see loadLift)
+  let liftPlan = null, liftKey = '', liftAt = 0;
   const ORDER = { practice: [1, 3, 9, 4, 5, 8, 2], race: [6, 7, 5] };
   const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
@@ -1504,6 +1511,14 @@
             if (c.bx == null) continue;
             const [bx, by] = project(c.bx, c.bz);
             bctx.beginPath(); bctx.arc(bx, by, 3, 0, Math.PI * 2); bctx.stroke();
+          }
+        }
+        // Race, saving fuel: where to lift (yellow, metres before the braking point)
+        if (appMode === 'race' && liftPlan) {
+          for (const l of liftPlan.lifts) {
+            const [lx, ly] = project(l.x, l.z);
+            bctx.fillStyle = '#f2c230'; bctx.beginPath(); bctx.arc(lx, ly, 4, 0, Math.PI * 2); bctx.fill();
+            bctx.fillText(`↑${l.lift_m}`, lx, ly - 10);
           }
         }
         for (const c of coachCorners) {
@@ -2400,6 +2415,15 @@
     $('r_lapfuel').style.color = used == null || allowed == null || allowed < 0.3 ? '' : used <= allowed ? '#2fd36b' : used <= allowed * 1.03 ? '' : 'var(--acc)';
     $('r_save').hidden = !saving;
     if (saving) setText('r_save', `ŠETŘI −${nf(fpl - tgt, 2)} → ${st.no_stop_fpl != null ? 'BEZ ZASTÁVKY' : '1 ZASTÁVKA'}`);
+    // Where to save it: lift and coast before the braking points that cost the least time
+    if (saving && fpl > tgt) loadLift(fpl - tgt);
+    else if (liftPlan) { liftPlan = null; liftKey = ''; drawMap(true); }
+    $('r_lift').hidden = !(saving && liftPlan && liftPlan.lifts.length);
+    if (saving && liftPlan && liftPlan.lifts.length) {
+      const html = 'Zvedni nohu ' + liftPlan.lifts.map(l => `<b>${l.corner ? 'Z' + l.corner : '?'} ${l.lift_m} m</b>`).join(' · ')
+        + ` <small>před brzděním · ≈ +${nf(liftPlan.cost_s, 2)} s/kolo${liftPlan.short ? ' · samo nestačí' : ''}</small>`;
+      if ($('r_lift').innerHTML !== html) $('r_lift').innerHTML = html;
+    }
     const m = st && st.fuel_margin_laps;
     setText('r_margin', m == null ? '–' : (m >= 0 ? '+' : '') + nf(m));
     $('r_margin').style.color = m == null ? '' : m < 0 ? 'var(--acc)' : '#2fd36b';
@@ -2407,8 +2431,23 @@
     setText('r_water', String(Math.round(U.tmp(d.water_temp))));
     setText('r_oil', String(Math.round(U.tmp(d.oil_temp))));
     setText('r_pos', d.position != null ? `P${d.position}${d.cars ? '/' + d.cars : ''}` : '');
-    const c = st && (st.calls.find(c => c.level !== 'info') || st.calls[0]);
-    setText('r_call', c ? c.text : '');
+    // Box and warnings first, then the coach's radio (what got worse over the last laps)
+    const c = st && st.calls.find(c => c.level !== 'info');
+    const radio = coachData && coachData.radio && coachData.radio[0];
+    const info = st && st.calls[0];
+    setText('r_call', c ? c.text : radio ? 'Rádio: ' + radio.text : info ? info.text : '');
+  }
+
+  // Fuel saving plan for the race page (lift and coast), fetched when the amount to save changes
+  async function loadLift(save) {
+    const key = save.toFixed(2);
+    if (key === liftKey && Date.now() - liftAt < 120000) return;
+    liftKey = key; liftAt = Date.now();
+    try {
+      const d = await (await fetch('api/fuelsave?save=' + key, { cache: 'no-store' })).json();
+      liftPlan = d.plans && d.plans[0] ? d.plans[0].plan : null;
+      drawMap(true);
+    } catch { liftPlan = null; }
   }
 
   // ---------- Race recap (race mode) ----------
@@ -2541,7 +2580,10 @@
     if (tBusy) return;
     tBusy = true;
     try {
-      const q = file ? '?lap=' + encodeURIComponent(file) : '';
+      const p = new URLSearchParams();
+      if (file) p.set('lap', file);
+      if (tVs) p.set('vs', tVs);
+      const q = p.toString() ? '?' + p : '';
       const d = await (await fetch('api/traces' + q, { cache: 'no-store' })).json();
       tBusy = false;
       if (!d.laps || !d.laps.length) { tData = null; $('tSum').innerHTML = '<span class="muted">Zatím žádné celé kolo v této session – odjeď aspoň jedno kolo od čáry do čáry.</span>'; return; }
@@ -2555,13 +2597,26 @@
       renderTraceHead(); setTraceWindow();
     } catch { tBusy = false; }
   }
+  // Lap time of what the lap is compared with (best of the session, ideal lap, track record)
+  const refMs = () => (tData.versus && tData.versus.ms) || tData.reference.ms;
+  function renderVs() {
+    const d = tData, v = d.versus || { kind: 'session' };
+    const tb = d.track_best && !d.track_best.same ? d.track_best : null;
+    const day = iso => iso ? iso.slice(8, 10).replace(/^0/, '') + '. ' + iso.slice(5, 7).replace(/^0/, '') + '.' : '';
+    $('tVs').innerHTML = `<option value="">vs nejlepší kolo session · ${fmtLap(d.reference.ms)}</option>`
+      + (d.normal && d.normal.theoretical_ms ? `<option value="ideal" ${v.kind === 'ideal' ? 'selected' : ''}>vs ideální kolo (nejlepší zatáčky) · ${fmtLap(d.normal.theoretical_ms)}</option>` : '')
+      + (tb ? `<option value="track" ${v.kind === 'lap' ? 'selected' : ''}>vs rekord na trati (${day(tb.started)}) · ${fmtLap(tb.ms)}</option>` : '');
+    const names = { session: `nejlepší (${lapName(d.reference.file).toLowerCase()} · ${fmtLap(d.reference.ms)})`,
+      ideal: `ideální kolo · ${fmtLap(v.ms)}`, lap: `rekord ${day(v.started)} · ${fmtLap(v.ms)}` };
+    setText('tRefName', names[v.kind] || names.session);
+  }
   function renderTraceHead() {
     const d = tData;
+    renderVs();
     $('tLap').innerHTML = d.laps.slice().reverse().map(l => `<option value="${esc(l.file)}" ${l.file === d.lap.file ? 'selected' : ''}>${lapName(l.file)} · ${fmtLap(l.ms)}${l.file === d.reference.file ? ' ★' : ''}${l.ms > d.reference.ms * 1.07 ? ' ⚠' : ''}</option>`).join('');
     setText('tLapName', lapName(d.lap.file).toLowerCase());
-    setText('tRefName', `nejlepší (${lapName(d.reference.file).toLowerCase()} · ${fmtLap(d.reference.ms)})`);
     const dtc = v => v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)';
-    $('tCorners').innerHTML = `<button class="all ${tCorner == null ? 'on' : ''}" data-n="">Celé kolo <small style="color:${dtc(d.lap.ms - d.reference.ms > 0 ? 1 : 0)}">${tsg((d.lap.ms - d.reference.ms) / 1000, 3)}</small></button>`
+    $('tCorners').innerHTML = `<button class="all ${tCorner == null ? 'on' : ''}" data-n="">Celé kolo <small style="color:${dtc(d.lap.ms - refMs() > 0 ? 1 : 0)}">${tsg((d.lap.ms - refMs()) / 1000, 3)}</small></button>`
       + d.corners.map(c => {
         if (tView === 'cons') {
           const k = (d.consistency || []).find(x => x.n === c.n);
@@ -2634,7 +2689,7 @@
     }
     if (!c) {
       const lost = d.corners.filter(x => x.dt > 0.03).sort((a, b) => b.dt - a.dt).slice(0, 3).map(x => `Z${x.n} ${tsg(x.dt, 2)} s`).join(', ');
-      $('tSum').innerHTML = `<b>Celé kolo ${tsg((d.lap.ms - d.reference.ms) / 1000, 3)} s</b><span>Nejvíc ztráty: <em>${lost || '–'}</em></span><span class="muted">Ťukni na zatáčku vlevo.</span>`;
+      $('tSum').innerHTML = `<b>Celé kolo ${tsg((d.lap.ms - refMs()) / 1000, 3)} s</b><span>Nejvíc ztráty: <em>${lost || '–'}</em></span><span class="muted">Ťukni na zatáčku vlevo.</span>`;
       return;
     }
     const a = c.lap || {}, r = c.ref || {}, u = v => v == null ? '–' : Math.round(v);
@@ -2791,6 +2846,7 @@
     renderTraceHead(); setTraceWindow();
   });
   $('tLap').addEventListener('change', e => loadTraces(e.target.value));
+  $('tVs').addEventListener('change', e => { tVs = e.target.value; loadTraces(tFile); });
   const lapIncidents = () => tData ? (tData.incidents || []).filter(x => x.file === tData.lap.file) : [];
   $('tView').addEventListener('click', e => {
     const b = e.target.closest('button');

@@ -4,8 +4,10 @@
 pub mod advice;
 pub mod compare;
 pub mod feedback;
+pub mod fuelsave;
 pub mod incident;
 pub mod lap;
+pub mod library;
 pub mod report;
 pub mod shifts;
 pub mod trailbrake;

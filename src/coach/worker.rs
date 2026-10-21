@@ -154,6 +154,7 @@ impl Coach {
                 state.metrics.insert(name.clone(), m);
                 state.laps.push(name.clone());
                 self.write_feed(session, Some(&item), feedback::focus_for(&res, lap), Some(corners_json(&res, Some(lap))))?;
+                self.write_radio(feedback::radio(&res))?;
                 let (n, title) = (lap.lap, item["title"].as_str().unwrap_or_default());
                 log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}", "kolo {n} vyhodnoceno: {title}"));
             }
@@ -176,6 +177,16 @@ impl Coach {
         Ok(())
     }
 
+    /// Radio messages of the latest lap (what changed over the last laps), in the feed.
+    fn write_radio(&self, radio: Vec<Value>) -> std::io::Result<()> {
+        let mut feed: Value =
+            fs::read_to_string(&self.feed_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}));
+        feed["radio"] = Value::Array(radio);
+        let tmp = self.feed_path.with_extension("json.tmp");
+        fs::write(&tmp, serde_json::to_string_pretty(&feed).unwrap_or_default())?;
+        fs::rename(tmp, &self.feed_path)
+    }
+
     /// Updates the dashboard feed. `focus`/`corners` = `None` keeps the current value.
     fn write_feed(&self, session: &Path, item: Option<&Value>, focus: Option<Value>, corners: Option<Value>) -> std::io::Result<()> {
         let mut feed: Value =
@@ -185,7 +196,7 @@ impl Coach {
             // New session: keep only the latest summary of the previous one
             let keep: Vec<Value> =
                 feed["items"].as_array().into_iter().flatten().filter(|i| i["kind"] == "summary").take(1).cloned().collect();
-            feed = json!({"session": name, "items": keep, "focus": null});
+            feed = json!({"session": name, "items": keep, "focus": null, "radio": []});
         }
         if let Some(item) = item {
             let mut items = vec![item.clone()];
@@ -225,9 +236,6 @@ fn save_state(session: &Path, state: &State) {
     }
 }
 
-/// Corners for the dashboard map: position, where the best lap brakes, and how the given lap
-/// compared in that corner (live coach hints in practice: time lost, braking point, apex speed,
-/// full throttle; positive `db`/`dfull` = later than the best lap, m).
 /// The call for the live hint before a corner: from the latest lap when it was a normal one
 /// and lost time there, else what usually costs time there (over the normal laps).
 fn live_tip(
@@ -251,6 +259,9 @@ fn live_tip(
     Some((t.short, "typical"))
 }
 
+/// Corners for the dashboard map: position, where the best lap brakes, and how the given lap
+/// compared in that corner (live coach hints in practice: time lost, braking point, apex speed,
+/// full throttle; positive `db`/`dfull` = later than the best lap, m).
 fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::LapResult>) -> Value {
     let r = |v: f64, d: i32| (v * 10f64.powi(d)).round() / 10f64.powi(d);
     let reference = res.reference_lap();

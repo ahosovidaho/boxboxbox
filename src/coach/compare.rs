@@ -337,7 +337,7 @@ impl Comparer {
                             result
                                 .laps
                                 .iter()
-                                .filter(|l| l.ms as f64 <= ref_ms as f64 * 1.07)
+                                .filter(|l| l.ms as f64 <= ref_ms as f64 * 1.07 && plausible(l.corner(c.n), c.reference.as_ref()))
                                 .map(|l| l.corner(c.n).dt)
                                 .fold(0.0f64, f64::min)
                         })
@@ -610,6 +610,72 @@ fn trace(rows: &[Row], grid: &[f64], reference: &[Row]) -> serde_json::Value {
     serde_json::json!({ "speed": speed, "throttle": thr, "brake": brk, "steer": steer, "gear": gear, "delta": delta, "rpm": rpm })
 }
 
+/// A corner section that can count as the best one: on the racing line at racing speed. A lap
+/// out of the pit, or one with a spin, can show a nonsense "gain" there (19 Oct kart, lap 1 out
+/// of the pit lane: 1.4 s "faster" through T1 at 29 mph less).
+fn plausible(c: &LapCorner, reference: Option<&CornerStats>) -> bool {
+    match (&c.stats, reference) {
+        (Some(l), Some(r)) => (l.v_min - r.v_min).abs() <= 25.0 && (l.v_exit - r.v_exit).abs() <= 30.0,
+        (None, _) => false,
+        _ => true,
+    }
+}
+
+/// What a lap is compared with in the corner graphs.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Versus {
+    /// The fastest lap of the session
+    #[default]
+    Session,
+    /// The best section of every corner over the normal laps of the session, stitched together
+    Ideal,
+    /// A lap from another session on the same layout (e.g. the best ever with this car)
+    Lap(PathBuf),
+}
+
+/// The ideal lap: for every corner section the rows of the normal lap that was fastest there.
+fn ideal_rows(session: &Path, res: &Comparison, reference: &[Row], corners: &[Corner], ratio: f64) -> std::io::Result<Vec<Row>> {
+    let ref_ms = res.reference.as_ref().map_or(0, |r| r.ms) as f64;
+    let mut loaded: HashMap<String, Vec<Row>> = HashMap::new();
+    let mut out = Vec::with_capacity(reference.len());
+    for c in corners {
+        let (s0, s1) = (s_of(reference, c.from), s_of(reference, c.to));
+        let rc = res.corners.iter().find(|x| x.n == c.n).and_then(|x| x.reference.as_ref());
+        let best = res
+            .laps
+            .iter()
+            .filter(|l| l.ms as f64 <= ref_ms * NORMAL_LAP && plausible(l.corner(c.n), rc))
+            .min_by(|a, b| a.corner(c.n).dt.total_cmp(&b.corner(c.n).dt))
+            .map(|l| l.file.clone())
+            .unwrap_or_default();
+        if !loaded.contains_key(&best) {
+            let rows = if res.reference.as_ref().is_some_and(|r| r.file == best) {
+                reference.to_vec()
+            } else {
+                let mut rows = lap::load(&session.join(&best))?;
+                prepare(&mut rows, ratio);
+                project(&mut rows, Some(reference));
+                rows
+            };
+            loaded.insert(best.clone(), rows);
+        }
+        // The rows in driving order from s0 to s1, cut where the section times of the comparison
+        // are measured (the end of a lap projects back onto the start: start = finish)
+        let rows = &loaded[&best];
+        let idx = |s: f64| ((time_at(rows, s) * HZ).round() as usize).min(rows.len());
+        let (i0, i1) = (if s0 <= 0.0 { 0 } else { idx(s0) }, idx(s1));
+        out.extend(rows[i0..i1.max(i0)].iter().cloned());
+    }
+    // Distance must not run backwards (time_at searches it)
+    let mut top = f64::MIN;
+    out.retain(|r| {
+        let keep = r.s_ref >= top;
+        top = top.max(r.s_ref);
+        keep
+    });
+    Ok(out)
+}
+
 impl Comparer {
     /// Speed, pedals, steering, gear and time delta of one lap against the fastest lap of the
     /// session, on a common distance grid – for the corner graphs on the dashboard.
@@ -620,6 +686,7 @@ impl Comparer {
         session: &Path,
         lap_file: Option<&str>,
         drive: Option<super::shifts::Optimum>,
+        vs: &Versus,
     ) -> std::io::Result<serde_json::Value> {
         // First the comparison: it may redefine the corners of the session (see `compare`)
         let res = self.compare(session)?;
@@ -645,15 +712,33 @@ impl Comparer {
         let grid: Vec<f64> = (0..).map(|k| k as f64 * TRACE_STEP).take_while(|s| *s <= length).collect();
         let corners_path = session.join("corners.json");
         let corners = if corners_path.exists() { map_corner_defs(&corners_path, &reference)? } else { Vec::new() };
+        // What the lap is held against: the session's best lap, the ideal lap or another lap
+        let cmp: Vec<Row> = match vs {
+            Versus::Session => reference.clone(),
+            Versus::Ideal => ideal_rows(session, &res, &reference, &corners, ratio)?,
+            Versus::Lap(p) => {
+                let mut r = lap::load(p)?;
+                prepare(&mut r, ratio);
+                project(&mut r, Some(&reference));
+                r
+            }
+        };
+        let cmp = if cmp.len() < 100 { reference.clone() } else { cmp };
+        // Lap time of what the lap is held against (the API fills in the official time of another lap)
+        let cmp_ms = match vs {
+            Versus::Session => Some(ref_ms),
+            Versus::Ideal => res.theoretical_ms.map(lap::round_i),
+            Versus::Lap(_) => None,
+        };
         let corners: Vec<serde_json::Value> = corners
             .iter()
             .map(|c| {
                 let (s0, s1) = (s_of(&reference, c.from), s_of(&reference, c.to));
-                let dt = (time_at(&rows, s1) - time_at(&rows, s0)) - (time_at(&reference, s1) - time_at(&reference, s0));
+                let dt = (time_at(&rows, s1) - time_at(&rows, s0)) - (time_at(&cmp, s1) - time_at(&cmp, s0));
                 serde_json::json!({
                     "n": c.n, "from": lap::round_i(s0), "to": lap::round_i(s1), "apex": lap::round_i(c.s),
                     "dt": lap::round_to(dt, 3),
-                    "ref": corner_stats(&reference, s0, s1, c.s), "lap": corner_stats(&rows, s0, s1, c.s),
+                    "ref": corner_stats(&cmp, s0, s1, c.s), "lap": corner_stats(&rows, s0, s1, c.s),
                 })
             })
             .collect();
@@ -774,7 +859,8 @@ impl Comparer {
             "overrev": overrev[0],
             "downshifts": overrev[1],
             "lap_shifts": lap_shifts(&file_name(&target.0)),
-            "ref_shifts": lap_shifts(&file_name(&ref_path)),
+            "ref_shifts": if *vs == Versus::Session { lap_shifts(&file_name(&ref_path)) } else { super::shifts::detect(&cmp, max_rpm) },
+            "versus": { "kind": match vs { Versus::Session => "session", Versus::Ideal => "ideal", Versus::Lap(_) => "lap" }, "ms": cmp_ms },
             "by_setup": by_setup,
             "normal": { "laps": times.len(), "mean_ms": lap::round_i(lap::mean(times.iter().copied())),
                         "sd_ms": lap::round_i(lap::pstdev(&times)), "theoretical_ms": res.theoretical_ms.map(lap::round_i) },
@@ -788,8 +874,8 @@ impl Comparer {
             "s": grid.iter().map(|s| lap::round_i(*s)).collect::<Vec<_>>(),
             "map": map,
             "corners": corners,
-            "ref_trace": trace(&reference, &grid, &reference),
-            "lap_trace": trace(&rows, &grid, &reference),
+            "ref_trace": trace(&cmp, &grid, &cmp),
+            "lap_trace": trace(&rows, &grid, &cmp),
         }))
     }
 }

@@ -2,6 +2,22 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Kde šetřit palivo** (závod): když je potřeba šetřit (ušetří se zastávka), ukáže se pod
+  palivem, kde zvednout nohu před brzděním a o kolik – „Zvedni nohu Z7 60 m · Z10 60 m · Z5 50 m
+  před brzděním · ≈ +0,08 s/kolo“ – a na mapě žluté body s metry. Spotřeba se počítá z tvých
+  kol (palivo ≈ plyn × otáčky, přesnost ~90 %), ztráta času z dojezdu bez plynu; šetří se tam,
+  kde to stojí nejmíň času (rychlé rovinky). Data z nejrychlejší session na trati závodu.
+  API `/api/fuelsave?save=`.
+- **Rádio** (závod): kouč po každém kole hlídá, co se zhoršuje – zatáčka, kde poslední 3 kola
+  ztrácíš víc než obvykle, s důvodem („záď klouže víc – zadní gumy odcházejí, plyn postupně“,
+  „předek víc nedotáčí“, „brzdíš dřív“), padající tempo, a dvě ujetí zádi po sobě ve stejné
+  zatáčce. Zobrazí se ve spodním řádku závodní stránky (box a varování mají přednost).
+- **Porovnání napříč sessions a ideální kolo** (Telemetrie): nová volba „vs“ – nejlepší kolo
+  session, **ideální kolo** (nejlepší zatáčky ze všech normálních kol, poskládané) nebo **rekord
+  na trati** (nejlepší kolo se stejným autem na stejné trati z jakékoli session). Grafy,
+  ztráty v zatáčkách i mapa se počítají proti zvolenému kolu. Trať se u session pozná podle
+  tvaru kola (uložené trati z tréninku). Teoretický čas ignoruje zatáčky z výjezdu z boxů
+  a spinů (dřív dávaly nesmyslný „zisk“ 1,4 s).
 - **Živá rada na mapě** (trénink, stránka 1): před každou zatáčkou krátký pokyn od kouče
   místo čísel – „Z4: Zůstaň na 4. stupni“, „Z11: Brzdi o 14 m dřív, brzdu pouštěj plynule“,
   „Plyn postupně – záď ujíždí“. Bere se z posledního kola (pokud v zatáčce ztratilo a nebylo

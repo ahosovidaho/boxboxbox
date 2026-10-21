@@ -685,6 +685,81 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     Ok(item)
 }
 
+/// Radio: what changed over the last laps, for the race page (and practice). Czech only.
+/// - a corner that costs more in each of the last 3 normal laps than it usually does, with what
+///   changed there (rear sliding more = rear tyres going, front pushing, braking earlier …);
+/// - the pace of the last 3 normal laps against the best 3;
+/// - a spin or slide in the same corner in two laps running.
+pub fn radio(res: &Comparison) -> Vec<Value> {
+    let mut out = Vec::new();
+    let Some(reference) = res.reference_lap() else { return out };
+    let limit = reference.ms as f64 * INCIDENT;
+    // Only the current run: a restart in GT7 (lap numbers start again) is a new stint
+    let start = res.laps.windows(2).rposition(|w| w[1].lap <= w[0].lap).map_or(0, |i| i + 1);
+    let normal: Vec<&LapResult> = res.laps[start..].iter().filter(|l| (l.ms as f64) <= limit).collect();
+    let fmt = |v: f64| format!("{:.2}", v).replace('.', ",");
+    // Two laps running with an incident in the same corner
+    if let [.., a, b] = res.laps.as_slice() {
+        for i in &b.incidents {
+            if let Some(n) = i.corner.filter(|n| a.incidents.iter().any(|j| j.corner == Some(*n))) {
+                out.push(json!({ "level": "warn", "corner": n,
+                    "text": format!("Z{n}: druhé kolo po sobě ti tu ujela záď – uber o kousek, ať nepřijde spin.") }));
+                break;
+            }
+        }
+    }
+    if normal.len() >= 6 {
+        let last = &normal[normal.len() - 3..];
+        let earlier = &normal[..normal.len() - 3];
+        let mut found: Vec<(f64, Value)> = Vec::new();
+        for c in &res.corners {
+            let mut usual: Vec<f64> = earlier.iter().map(|l| l.corner(c.n).dt).collect();
+            usual.sort_by(f64::total_cmp);
+            let med = usual[usual.len() / 2];
+            let extra: Vec<f64> = last.iter().map(|l| l.corner(c.n).dt - med).collect();
+            let mean = extra.iter().sum::<f64>() / 3.0;
+            if extra.iter().all(|e| *e > 0.05) && mean >= 0.1 {
+                let then: Vec<&CornerStats> = earlier.iter().filter_map(|l| l.corner(c.n).stats.as_ref()).collect();
+                let now: Vec<&CornerStats> = last.iter().filter_map(|l| l.corner(c.n).stats.as_ref()).collect();
+                let why = match (super::advice::typical(&then), super::advice::typical(&now)) {
+                    (Some(t), Some(n)) if n.rear_slide > t.rear_slide + 3.0 => {
+                        "záď klouže víc než dřív – zadní gumy odcházejí: plyn přidávej postupně, šetři je".to_string()
+                    }
+                    (Some(t), Some(n)) if n.under > t.under + 15.0 => {
+                        "předek víc nedotáčí – přední gumy odcházejí: vjeď pomaleji, dřív pusť brzdu".to_string()
+                    }
+                    (Some(t), Some(n)) if matches!((n.brake_at, t.brake_at), (Some(a), Some(b)) if b - a > 8.0) => {
+                        let d = t.brake_at.unwrap_or(0.0) - n.brake_at.unwrap_or(0.0);
+                        format!("brzdíš o {} m dřív než na začátku", d.round() as i64)
+                    }
+                    (Some(t), Some(n)) if n.v_min < t.v_min - 3.0 => {
+                        format!("vrcholem jedeš o {} km/h pomaleji než dřív", (t.v_min - n.v_min).round() as i64)
+                    }
+                    _ => "drž stopu z prvních kol".to_string(),
+                };
+                found.push((
+                    mean,
+                    json!({ "level": "info", "corner": c.n,
+                    "text": format!("Z{}: poslední 3 kola +{} s proti normálu – {why}.", c.n, fmt(mean)) }),
+                ));
+            }
+        }
+        found.sort_by(|a, b| b.0.total_cmp(&a.0));
+        out.extend(found.into_iter().take(2).map(|f| f.1));
+        // Pace
+        let mut best: Vec<f64> = normal.iter().map(|l| l.ms as f64).collect();
+        best.sort_by(f64::total_cmp);
+        let best3 = best.iter().take(3).sum::<f64>() / 3.0;
+        let last3 = last.iter().map(|l| l.ms as f64).sum::<f64>() / 3.0;
+        let latest = last[2].ms as f64;
+        if last3 - best3 > 400.0 && latest - best3 > 400.0 {
+            out.push(json!({ "level": "info",
+                "text": format!("Tempo: poslední 3 kola o {} s pomalejší než tvoje nejlepší tři.", fmt((last3 - best3) / 1000.0)) }));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -715,5 +790,37 @@ mod tests {
         let mut only = res.clone();
         only.laps.retain(|l| l.file == "a" || l.file == "spin");
         assert!(focus_for(&only, latest).is_none());
+    }
+
+    /// Rear tyres going off: Z2 loses more in each of the last 3 laps and the rear slides more.
+    #[test]
+    fn radio_names_a_corner_that_gets_worse() {
+        let st = |slide: f64| {
+            json!({ "brake_at": 100.0, "brake_max": 80.0, "v_entry": 200.0, "v_min": 90.0, "v_exit": 150.0,
+            "full_at": 200.0, "gear_min": 3, "under": 0.0, "over": 0.0, "rear_slide": slide, "glat": 2.0, "tcs": 0.0 })
+        };
+        let lap = |n: i64, ms: i64, dt2: f64, slide: f64| {
+            let mut c2 = st(slide);
+            c2["n"] = json!(2);
+            c2["dt"] = json!(dt2);
+            json!({ "file": format!("{n:03}"), "lap": n, "ms": ms, "delta_ms": 0, "corners": [{ "n": 1, "dt": 0.0 }, c2] })
+        };
+        let corner = |n: usize| json!({ "n": n, "dir": "L", "x": 0.0, "z": 0.0, "s": 0, "ref": null });
+        let mut laps = vec![];
+        for n in 1..=5 {
+            laps.push(lap(n, 90_000 + n * 10, 0.02, 3.0));
+        }
+        for n in 6..=8 {
+            laps.push(lap(n, 90_300, 0.25, 9.0));
+        }
+        let res: Comparison = serde_json::from_value(json!({
+            "reference": { "file": "001", "ms": 90_010, "lap": 1 }, "steer_ratio": 15.0,
+            "corners": [corner(1), corner(2)], "laps": laps, "theoretical_ms": null,
+        }))
+        .unwrap();
+        let r = radio(&res);
+        assert_eq!(r.len(), 1, "{r:?}");
+        assert_eq!(r[0]["corner"], 2);
+        assert!(r[0]["text"].as_str().unwrap().contains("zadní gumy"), "{r:?}");
     }
 }

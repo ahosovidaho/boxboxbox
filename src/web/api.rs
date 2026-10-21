@@ -15,6 +15,7 @@
 //! | GET/POST | `/api/setups?car=` | car setups (GT7 settings sheet) and the active one; POST saves a card |
 //! | GET  | `/api/prep` | preparation checklist for the chosen race |
 //! | GET  | `/api/traces?session=&lap=` | speed, pedals, steering and delta of a lap against the best lap of the session (corner graphs) |
+//! | GET  | `/api/fuelsave?save=` | where to lift and coast to save fuel per lap, priced in time (best session of the race track) |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
 use super::Feeds;
@@ -63,6 +64,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/coach", get(coach))
         .route("/api/map", get(map))
         .route("/api/traces", get(traces))
+        .route("/api/fuelsave", get(fuelsave))
         .route("/api/prep", get(prep))
         .route("/api/perf", get(perf_overview))
         .route("/api/settings", get(settings).post(update_settings))
@@ -272,17 +274,91 @@ async fn prep(State(s): State<AppState>) -> impl IntoResponse {
     json_body(body)
 }
 
+/// The session to take track knowledge from: the fastest one with the car on the track of the
+/// race (practice track when no race is set), else the one the coach shows, else the newest.
+/// Returns the session folder name, its track and car.
+fn knowledge_session(s: &AppState, c: &mut crate::coach::compare::Comparer) -> Option<(String, Option<String>, Option<i32>)> {
+    let rec = &s.settings.data.recordings;
+    let (track_of, layouts) = track_matcher(&s.strategy);
+    let (track, car) = {
+        let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+        let track = st
+            .saved
+            .race
+            .as_ref()
+            .map(|r| r.track.clone())
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| st.practice.saved.track.clone());
+        let car = st.practice_car(&track);
+        (track, car)
+    };
+    let all = crate::coach::library::index(rec, c, &track_of, layouts);
+    if !track.trim().is_empty() {
+        let mine = crate::coach::library::of_track(&all, &track, car);
+        if let Some(b) = crate::coach::library::best(&mine) {
+            return Some((b.session.clone(), b.track.clone(), Some(b.car_code)));
+        }
+    }
+    let feed: Option<String> = std::fs::read_to_string(&s.settings.data.coach_feed)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["session"].as_str().map(str::to_string));
+    let pick = feed.and_then(|f| all.iter().find(|i| i.session == f)).or(all.first())?;
+    Some((pick.session.clone(), pick.track.clone(), Some(pick.car_code)))
+}
+
+#[derive(Deserialize)]
+struct FuelSaveQuery {
+    /// Fuel to save per lap; none: plans for 2, 4 and 6 %
+    save: Option<f64>,
+}
+
+async fn fuelsave(State(s): State<AppState>, Query(q): Query<FuelSaveQuery>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || {
+        let mut c = comparer();
+        let Some((session, track, car)) = knowledge_session(&s, &mut c) else { return json!({ "error": "no_session" }).to_string() };
+        let dir = s.settings.data.recordings.join(&session);
+        match crate::coach::fuelsave::analyse(&dir, &mut c, q.save.filter(|v| *v > 0.0)) {
+            Ok(mut v) => {
+                v["track"] = json!(track);
+                v["car"] = json!(car);
+                v.to_string()
+            }
+            Err(e) => json!({ "error": e.to_string() }).to_string(),
+        }
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
+}
+
 #[derive(Deserialize)]
 struct TraceQuery {
     session: Option<String>,
     lap: Option<String>,
+    /// Compare with: "ideal" (best corners of the session), "track" (best lap with this car on
+    /// this layout, any session) or "<session>/<file>"; default the best lap of the session
+    vs: Option<String>,
+}
+
+/// One comparer for all requests: it caches loaded laps and results.
+fn comparer() -> std::sync::MutexGuard<'static, crate::coach::compare::Comparer> {
+    static COMPARER: std::sync::OnceLock<Mutex<crate::coach::compare::Comparer>> = std::sync::OnceLock::new();
+    COMPARER.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Recognises the layout of lap positions by the shapes stored in practice; and how many there are.
+fn track_matcher(st: &strategy::Shared) -> (impl Fn(&[[f32; 2]]) -> Option<String>, usize) {
+    let shapes = st.lock().unwrap_or_else(|e| e.into_inner()).practice.saved.shapes.clone();
+    let n = shapes.len();
+    (move |pts: &[[f32; 2]]| strategy::practice::track_of(&shapes, pts), n)
 }
 
 /// Lap comparison traces. Session: the given one (a folder name in the recordings), otherwise the
 /// one the coach shows, otherwise the newest.
 async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl IntoResponse {
-    static COMPARER: std::sync::OnceLock<Mutex<crate::coach::compare::Comparer>> = std::sync::OnceLock::new();
     let rec = s.settings.data.recordings.clone();
+    let (track_of, layouts) = track_matcher(&s.strategy);
     let feed = s.settings.data.coach_feed.clone();
     let perf_dir = s.perf.dir().to_path_buf();
     let body = tokio::task::spawn_blocking(move || {
@@ -303,7 +379,31 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
         };
         let session = q.session.filter(|n| safe(n)).or_else(|| from_feed().filter(|n| safe(n))).or_else(newest);
         let Some(session) = session else { return json!({ "laps": [] }).to_string() };
-        let mut c = COMPARER.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+        let mut c = comparer();
+        // This session in the library: its track, and the best lap with the car there
+        let all = crate::coach::library::index(&rec, &mut c, &track_of, layouts);
+        let me = all.iter().find(|i| i.session == session).cloned();
+        let track_best = me.as_ref().and_then(|m| {
+            let same = crate::coach::library::of_track(&all, m.track.as_deref()?, Some(m.car_code));
+            crate::coach::library::best(&same).cloned()
+        });
+        let safe_file = |n: &str| !n.is_empty() && !n.contains(['/', '\\']) && n != "..";
+        let vs = match q.vs.as_deref() {
+            Some("ideal") => crate::coach::compare::Versus::Ideal,
+            Some("track") => match &track_best {
+                Some(b) if b.session != session => {
+                    crate::coach::compare::Versus::Lap(rec.join(&b.session).join(b.best_file.clone().unwrap_or_default()))
+                }
+                _ => crate::coach::compare::Versus::Session,
+            },
+            Some(other) => match other.split_once('/') {
+                Some((sess, file)) if safe(sess) && safe_file(file) && rec.join(sess).join(file).is_file() => {
+                    crate::coach::compare::Versus::Lap(rec.join(sess).join(file))
+                }
+                _ => crate::coach::compare::Versus::Session,
+            },
+            None => crate::coach::compare::Versus::Session,
+        };
         // Shift points from driving for the car and the setup the session was driven with
         let meta: serde_json::Value = std::fs::read_to_string(rec.join(&session).join("session.json"))
             .ok()
@@ -316,8 +416,24 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
             max_rpm: t.dyno.max_rpm as f64,
             source: "drive",
         });
-        match c.traces(&rec.join(&session), q.lap.as_deref(), drive) {
-            Ok(v) => v.to_string(),
+        match c.traces(&rec.join(&session), q.lap.as_deref(), drive, &vs) {
+            Ok(mut v) => {
+                v["track"] = json!(me.as_ref().and_then(|m| m.track.clone()));
+                v["track_best"] = json!(track_best
+                    .as_ref()
+                    .map(|b| json!({ "session": b.session, "file": b.best_file, "ms": b.best_ms, "started": b.started, "same": b.session == session })));
+                if let crate::coach::compare::Versus::Lap(p) = &vs {
+                    let sess = p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    v["versus"]["session"] = json!(sess);
+                    let other = all.iter().find(|i| i.session == sess);
+                    v["versus"]["started"] = json!(other.map(|i| i.started.clone()));
+                    let file = p.file_name().map(|n| n.to_string_lossy().into_owned());
+                    if other.is_some_and(|o| o.best_file == file) {
+                        v["versus"]["ms"] = json!(other.and_then(|o| o.best_ms));
+                    }
+                }
+                v.to_string()
+            }
             Err(e) => json!({ "laps": [], "error": e.to_string() }).to_string(),
         }
     })
