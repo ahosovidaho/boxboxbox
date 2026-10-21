@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Řazení dolů v Telemetrii**: pohled Řazení ukazuje i podřazení (↓5→4 se otáčkami, na které
+  motor po podřazení vyskočil, a místem v m), dřív jen řazení nahoru – před zatáčkou tak
+  vypadalo, že se neřadí. Žluté optimum jen na plném plynu bez brzdy (ne při meziplynu).
+
 - **Nastavení auta u motokáry**: bez čísel nedotáčivosti/přetáčivosti (jen blokování a prokluz),
   bez „Auto je vyvážené“. Férové srovnání u motokáry = průměr čistých kol (gumy ani palivo se
   nemění, nic se nepřepočítává). Setup, který je na své směsi sám, má „jediný setup na SS – není

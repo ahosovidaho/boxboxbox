@@ -434,6 +434,8 @@
   .tshift { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(255,255,255,.4); pointer-events: none; }
   .tshift span { position: absolute; top: 14px; left: 3px; font: 600 10px var(--mono); color: #fff; white-space: nowrap; }
   .tshift.nolabel span { display: none; }
+  .tshift.down span { top: 30px; }
+  .tshift.ref.down span { bottom: 16px; }
   .tshift.nolabel { border-left-style: dotted; opacity: .5; }
   .tshift.ref { border-left-color: rgba(178,92,255,.5); }
   .tshift.ref span { top: auto; bottom: 2px; color: #b25cff; }
@@ -2597,9 +2599,12 @@
     if (tView === 'shift') {
       const o = d.shift_optimum || {}, adv = d.shift_advice || [];
       const col = v => ({ ok: 'var(--green)', early: 'var(--orange)', late: 'var(--orange)', limiter: 'var(--red)', uneven: 'var(--yellow)' })[v] || 'var(--dim)';
-      const inWin = (arr) => (arr || []).filter(e => e.to > e.from && (!c || (e.s >= tWin[0] && e.s <= tWin[1])));
-      const fmtE = e => `${e.from}→${e.to} ${Math.round(e.rpm).toLocaleString('cs-CZ')}${e.thr < 90 ? ' (částečný plyn)' : ''}`;
-      let html = `<b>${c ? 'Z' + c.n + ' · řazení' : 'Řazení nahoru · normální kola'}</b><span>Optimum: <em>${o.source === 'drive' ? 'z jízdy' : 'kontrolka hry'}</em>${o.max_rpm ? ` · omezovač ~${Math.round(o.max_rpm).toLocaleString('cs-CZ')}` : ''}</span>`;
+      const inWin = (arr) => (arr || []).filter(e => !c || (e.s >= tWin[0] && e.s <= tWin[1]));
+      // Upshift: rpm before it; downshift: rpm right after it (how high the engine is thrown)
+      const fmtE = e => e.to < e.from
+        ? `↓${e.from}→${e.to} na ${Math.round(e.rpm).toLocaleString('cs-CZ')} (${Math.round(e.s)} m)`
+        : `↑${e.from}→${e.to} při ${Math.round(e.rpm).toLocaleString('cs-CZ')}${e.thr < 90 ? ' (částečný plyn)' : ''} (${Math.round(e.s)} m)`;
+      let html = `<b>${c ? 'Z' + c.n + ' · řazení' : 'Řazení nahoru · normální kola'}</b><span>${c ? '↑ nahoru · ↓ dolů · ' : ''}Optimum: <em>${o.source === 'drive' ? 'z jízdy' : 'kontrolka hry'}</em>${o.max_rpm ? ` · omezovač ~${Math.round(o.max_rpm).toLocaleString('cs-CZ')}` : ''}</span>`;
       if (c) {
         html += `<span class="sh">Toto kolo: ${inWin(d.lap_shifts).map(fmtE).join(' · ') || '–'}</span><span class="sh" style="color:#b25cff">Nejlepší kolo: ${inWin(d.ref_shifts).map(fmtE).join(' · ') || '–'}</span>`;
       } else {
@@ -2690,8 +2695,12 @@
       const yR = v => 96 - (v - rlo) / (rhi - rlo) * 92;
       let optPath = '';
       for (let i = i0; i <= i1; i++) {
-        const o = optOf(L.gear[i]);
-        if (o != null) optPath += (optPath && optOf(L.gear[i - 1]) === o ? 'L' : 'M') + X(i) + ',' + yR(o).toFixed(1);
+        // Only where an upshift is the question: on (nearly) full throttle
+        // (not the throttle blips of the downshifts under braking)
+        const pull = k => L.throttle[k] >= 90 && L.brake[k] < 5;
+        const o = pull(i) ? optOf(L.gear[i]) : null;
+        const prev = i > i0 && pull(i - 1) ? optOf(L.gear[i - 1]) : null;
+        if (o != null) optPath += (prev === o ? 'L' : 'M') + X(i) + ',' + yR(o).toFixed(1);
       }
       $('tcSteer').querySelector('svg').innerHTML = (optPath ? `<path d="${optPath}" fill="none" stroke="#f2c230" stroke-width="1.2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>` : '')
         + line(R.rpm, yR, T_REF) + line(L.rpm, yR, T_LAP);
@@ -2702,8 +2711,8 @@
     const pos = sv => ((sv - w0) / (w1 - w0) * 100).toFixed(2);
     $('tMarks').innerHTML = lapIncidents().filter(x => x.incident.s >= w0 && x.incident.s <= w1)
       .map(x => `<div class="tmark ${x.incident.kind}" style="left:${pos(x.incident.s)}%"></div>`).join('')
-      + (tView === 'shift' ? [['lap_shifts', ''], ['ref_shifts', 'ref']].map(([k, cls]) => (d[k] || []).filter(e => e.to > e.from && e.s >= w0 && e.s <= w1)
-        .map(e => `<div class="tshift ${cls}${w1 - w0 > 1200 ? ' nolabel' : ''}" style="left:${pos(e.s)}%"><span>${e.from}→${e.to}</span></div>`).join('')).join('') : '');
+      + (tView === 'shift' ? [['lap_shifts', ''], ['ref_shifts', 'ref']].map(([k, cls]) => (d[k] || []).filter(e => e.s >= w0 && e.s <= w1)
+        .map(e => `<div class="tshift ${cls}${e.to < e.from ? ' down' : ''}${w1 - w0 > 1200 ? ' nolabel' : ''}" style="left:${pos(e.s)}%"><span>${e.to < e.from ? '↓' : '↑'}${e.from}→${e.to}</span></div>`).join('')).join('') : '');
     const ax = $('tAxis').children;
     ax[0].textContent = Math.round(w0) + ' m'; ax[1].textContent = Math.round((w0 + w1) / 2) + ' m'; ax[2].textContent = Math.round(w1) + ' m';
     traceReadout(null);
