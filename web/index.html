@@ -2288,9 +2288,11 @@
   // corner, from how the last analysed lap did there against the best lap.
   let chLast = null;
   function cornerHint(c) {
-    if (c.dt == null) return { text: 'čekám na vyhodnocené kolo', cls: '' };
+    if (c.dt == null) return c.tip ? { text: c.tip, cls: 'bad', typical: true } : { text: 'čekám na vyhodnocené kolo', cls: '' };
     const dt = c.dt, db = c.db, dv = c.dv, df = c.dfull;
     if (dt <= 0.05) return { text: '✓ drž to', cls: 'ok' };
+    // Concrete call from the coach (latest lap, else what usually costs time here)
+    if (c.tip) return { text: c.tip, cls: 'bad', typical: c.tip_src === 'typical' };
     if (db != null && db >= 5) return { text: `brzdi o ${Math.round(db)} m dřív`, cls: 'bad' };
     if (db != null && db <= -5) return { text: `brzdi o ${Math.round(-db)} m později`, cls: 'bad' };
     if (dv != null && dv <= -3) return { text: `víc rychlosti do vrcholu (+${Math.round(-dv)} km/h)`, cls: 'bad' };
@@ -2312,7 +2314,7 @@
     const h = cornerHint(next);
     setText('chCorner', `Z${next.n}`);
     setText('chText', h.text);
-    setText('chSub', next.dt != null ? `minule ${next.dt > 0 ? '+' : ''}${nf(next.dt, 2)} s · kolo ${next.lap}` : '');
+    setText('chSub', next.dt != null ? `minule ${next.dt > 0 ? '+' : ''}${nf(next.dt, 2)} s · kolo ${next.lap}${h.typical ? ' · obvykle' : ''}` : (h.typical ? 'obvykle tu ztrácíš' : ''));
     const near = next.bx != null && dist(next.bx, next.bz) < 250;
     const cls = [h.cls, near ? 'near' : ''].join(' ').trim();
     if (el.className !== cls) el.className = cls;

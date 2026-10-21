@@ -17,6 +17,8 @@ pub struct Tip {
     pub key: &'static str,
     /// The instruction, ready to show
     pub text: String,
+    /// The same as a short call for the live hint while driving ("Zůstaň na 3.")
+    pub short: String,
     /// Rough importance for ordering (bigger = more time)
     pub weight: f64,
 }
@@ -38,7 +40,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
     // Differences of points along the track beyond this are a different line through the section
     // (or no full throttle at all in one lap), not something to copy
     let near = |d: f64| (d.abs() <= 80.0).then_some(d);
-    let mut tip = |key: &'static str, weight: f64, text: String| out.push(Tip { key, text, weight });
+    let mut tip = |key: &'static str, weight: f64, short: String, text: String| out.push(Tip { key, text, short, weight });
 
     let dv = l.v_min - r.v_min; // apex speed, + = faster than best
     let dexit = l.v_exit - r.v_exit;
@@ -69,6 +71,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         Some(d) if d > 6.0 && dv < -3.0 => tip(
             "overbrake",
             -dv * 0.6 + d * 0.02,
+            format!("Brzdi o {} dřív, brzdu pouštěj plynule", m(d)),
             format!(
                 "Přejíždíš vjezd: brzdíš o {} později, ale vrcholem projedeš o {} pomaleji. Brzdi dřív{ref_brake}, pusť brzdu plynule do zatáčky a vrcholem pak projedeš rychleji.",
                 m(d),
@@ -79,6 +82,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         Some(d) if d < -8.0 && dv < 3.0 => tip(
             "early_brake",
             -d * 0.03 + (-dv).max(0.0) * 0.3,
+            format!("Brzdi o {} později", m(d)),
             format!("Brzdíš o {} dřív, než je potřeba – nejlepší kolo brzdí až o {} dál{ref_brake}.", m(d), m(d)),
         ),
         _ => {}
@@ -87,6 +91,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         tip(
             "flat_lift",
             -dv * 0.4,
+            "Neubírej plyn, plynulá stopa".into(),
             format!(
                 "Rychlou zatáčkou bez brzdy projíždíš o {} pomaleji ({} místo {}) – neubírej plyn (nebo jen krátce) a jeď plynulou stopou bez korekcí volantu.",
                 kmh(dv),
@@ -103,6 +108,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         tip(
             "slow_apex",
             -dv * 0.5,
+            format!("Méně brzdy – vrcholem o {} rychleji", kmh(dv)),
             format!(
                 "Do vrcholu moc zpomalíš – o {} víc než v nejlepším kole ({} místo {}).{release} Brzdi méně nebo pusť brzdu dřív a nech auto do vrcholu dojet rychleji.",
                 kmh(dv),
@@ -117,12 +123,14 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
             tip(
                 "gear_low",
                 1.5 + (-dv).max(0.0) * 0.1,
+                format!("Zůstaň na {rg}. stupni"),
                 format!("Zůstaň na {rg}. stupni – podřazuješ až na {lg}., nejlepší kolo tu jede na {rg}. a vyjíždí s menším prokluzem a vyšší rychlostí."),
             );
         } else if lg > rg {
             tip(
                 "gear_high",
                 1.5 + (-dexit).max(0.0) * 0.1,
+                format!("Podřaď na {rg}. stupeň"),
                 format!("Podřaď na {rg}. stupeň – jedeš tu na {lg}., nejlepší kolo na {rg}. a má na výjezdu víc tahu."),
             );
         }
@@ -133,10 +141,16 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
             tip(
                 "early_apex",
                 -dexit * 0.3,
+                format!("Zatoč později – vrchol o {} dál", m(d)),
                 format!("Vrchol bereš o {} dřív – zatáčej později, ať máš rovnější výjezd a můžeš dřív na plyn.", m(d)),
             );
         } else if d > 15.0 && dv < -2.0 {
-            tip("late_apex", -dv * 0.3, format!("Vrchol bereš o {} později – zatoč dřív, ať neztrácíš rychlost uprostřed zatáčky.", m(d)));
+            tip(
+                "late_apex",
+                -dv * 0.3,
+                "Zatoč dřív, drž rychlost do vrcholu".into(),
+                format!("Vrchol bereš o {} později – zatoč dřív, ať neztrácíš rychlost uprostřed zatáčky.", m(d)),
+            );
         }
     }
     // Coasting without a pedal
@@ -144,6 +158,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         tip(
             "coast",
             (l.coast_m - r.coast_m) * 0.03,
+            "Z brzdy rovnou na plyn, nevaluj".into(),
             format!(
                 "Jedeš {} bez pedálu (nejlepší kolo {}) – z brzdy přejdi plynule rovnou na plyn, ať auto nevalí.",
                 m(l.coast_m),
@@ -157,6 +172,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         tip(
             "exit_slide",
             2.0 + (-dexit) * 0.3,
+            "Plyn postupně – záď ujíždí".into(),
             format!(
                 "Na výjezdu ti ujíždí záď a vyjedeš o {} pomaleji – plyn přidávej postupně a plný až s narovnaným volantem.",
                 kmh(dexit)
@@ -171,11 +187,17 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
                 Some(p) if p > 8.0 => format!(" Na plyn sahneš o {} později.", m(p)),
                 _ => String::new(),
             };
-            tip("late_throttle", d * 0.03 + (-dexit).max(0.0) * 0.3, format!("Na plný plyn přejdi o {} dřív.{pick}", m(d)));
+            tip(
+                "late_throttle",
+                d * 0.03 + (-dexit).max(0.0) * 0.3,
+                format!("Plný plyn o {} dřív", m(d)),
+                format!("Na plný plyn přejdi o {} dřív.{pick}", m(d)),
+            );
         } else if d < -10.0 && dexit < -3.0 {
             tip(
                 "early_throttle",
                 -dexit * 0.3,
+                "S plným plynem počkej na rovný volant".into(),
                 format!(
                     "Plný plyn dáváš o {} dřív, ale výjezd je o {} pomalejší – auto se nestihne srovnat; s plným plynem počkej na narovnání volantu.",
                     m(d),
@@ -188,6 +210,7 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         tip(
             "understeer",
             1.0,
+            "Vjeď pomaleji, pusť brzdu dřív".into(),
             "Auto ti tu nedotáčí víc než v nejlepším kole – vjeď pomaleji a dřív pusť brzdu, ať se předek zakousne.".into(),
         );
     }
@@ -196,28 +219,37 @@ pub fn corner_tips(l: &CornerStats, r: &CornerStats) -> Vec<Tip> {
         out.push(Tip {
             key: "slow_exit",
             weight: -dexit * 0.2,
+            short: "Širší výjezd, dřív na plyn".into(),
             text: format!("Výjezd je o {} pomalejší – širší výjezd a dřívější plyn, rychlost se nese až na rovinku.", kmh(dexit)),
         });
     }
     // Nothing clear: name the biggest difference, small as it is, so there is something to try
     if out.is_empty() {
-        let mut cands: Vec<(f64, String)> = Vec::new();
+        let mut cands: Vec<(f64, String, String)> = Vec::new();
         if dv < -1.0 {
             let how = if flat { "drž plný plyn a plynulou stopu" } else { "zkus trochu méně brzdy" };
-            cands.push((-dv / 3.0, format!("vrcholem projíždíš o {} pomaleji – {how}", kmh(dv))));
+            cands.push((
+                -dv / 3.0,
+                format!("Vrcholem o {} rychleji", kmh(dv)),
+                format!("vrcholem projíždíš o {} pomaleji – {how}", kmh(dv)),
+            ));
         }
         if dexit < -1.5 {
-            cands.push((-dexit / 4.0, format!("výjezd je o {} pomalejší – plyn o kousek dřív a plynuleji", kmh(dexit))));
+            cands.push((
+                -dexit / 4.0,
+                "Plyn o kousek dřív a plynuleji".into(),
+                format!("výjezd je o {} pomalejší – plyn o kousek dřív a plynuleji", kmh(dexit)),
+            ));
         }
         if let Some(d) = db.filter(|d| *d < -3.0) {
-            cands.push((-d / 8.0, format!("brzdíš o {} dřív – zkus brzdit o kousek později", m(d))));
+            cands.push((-d / 8.0, format!("Brzdi o {} později", m(d)), format!("brzdíš o {} dřív – zkus brzdit o kousek později", m(d))));
         }
         if let Some(d) = dfull.filter(|d| *d > 4.0) {
-            cands.push((d / 10.0, format!("plný plyn o {} později – zkus ho otevřít dřív", m(d))));
+            cands.push((d / 10.0, format!("Plný plyn o {} dřív", m(d)), format!("plný plyn o {} později – zkus ho otevřít dřív", m(d))));
         }
         cands.sort_by(|a, b| b.0.total_cmp(&a.0));
-        if let Some((w, t)) = cands.into_iter().next() {
-            out.push(Tip { key: "small", weight: w * 0.1, text: format!("Malý rozdíl: {t}.") });
+        if let Some((w, short, t)) = cands.into_iter().next() {
+            out.push(Tip { key: "small", weight: w * 0.1, short, text: format!("Malý rozdíl: {t}.") });
         }
     }
     out.sort_by(|a, b| b.weight.total_cmp(&a.weight));
@@ -297,6 +329,8 @@ mod tests {
         assert_eq!(t[0].key, "overbrake", "{t:?}");
         assert!(t[0].text.contains("brzdíš o 10 m později") && t[0].text.contains("178 km/h"), "{}", t[0].text);
         assert!(t.iter().any(|x| x.key == "gear_low" && x.text.contains("Zůstaň na 3. stupni")), "{t:?}");
+        assert_eq!(t[0].short, "Brzdi o 10 m dřív, brzdu pouštěj plynule");
+        assert!(t.iter().any(|x| x.short == "Zůstaň na 3. stupni"), "{t:?}");
         assert!(t.iter().any(|x| x.key == "late_throttle"), "{t:?}");
     }
 

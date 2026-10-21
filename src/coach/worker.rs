@@ -228,8 +228,37 @@ fn save_state(session: &Path, state: &State) {
 /// Corners for the dashboard map: position, where the best lap brakes, and how the given lap
 /// compared in that corner (live coach hints in practice: time lost, braking point, apex speed,
 /// full throttle; positive `db`/`dfull` = later than the best lap, m).
+/// The call for the live hint before a corner: from the latest lap when it was a normal one
+/// and lost time there, else what usually costs time there (over the normal laps).
+fn live_tip(
+    c: &super::compare::CornerInfo,
+    latest: Option<&super::compare::LapResult>,
+    normal: &[&super::compare::LapResult],
+) -> Option<(String, &'static str)> {
+    use super::advice::{corner_tips, typical};
+    let rc = c.reference.as_ref()?;
+    if let Some(l) = latest.map(|l| l.corner(c.n)).filter(|l| l.dt > 0.05) {
+        if let Some(t) = l.stats.as_ref().and_then(|st| corner_tips(st, rc).into_iter().next()) {
+            return Some((t.short, "lap"));
+        }
+    }
+    let dts: Vec<f64> = normal.iter().map(|l| l.corner(c.n).dt).collect();
+    if dts.len() < 2 || dts.iter().sum::<f64>() / (dts.len() as f64) <= 0.05 {
+        return None;
+    }
+    let stats: Vec<_> = normal.iter().filter_map(|l| l.corner(c.n).stats.as_ref()).collect();
+    let t = corner_tips(&typical(&stats)?, rc).into_iter().next()?;
+    Some((t.short, "typical"))
+}
+
 fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::LapResult>) -> Value {
     let r = |v: f64, d: i32| (v * 10f64.powi(d)).round() / 10f64.powi(d);
+    let reference = res.reference_lap();
+    // Normal laps (no spin or off): ≤ 107 % of the best, the best itself left out
+    let limit = reference.map_or(0.0, |l| l.ms as f64 * 1.07);
+    let normal: Vec<&super::compare::LapResult> =
+        res.laps.iter().filter(|l| Some(&l.file) != reference.map(|x| &x.file) && (l.ms as f64) <= limit).collect();
+    let latest_normal = lap.filter(|l| (l.ms as f64) <= limit && Some(&l.file) != reference.map(|x| &x.file));
     json!(res
         .corners
         .iter()
@@ -251,6 +280,10 @@ fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::L
                         o["dfull"] = json!(r(a - b, 0));
                     }
                 }
+            }
+            if let Some((tip, src)) = live_tip(c, latest_normal, &normal) {
+                o["tip"] = json!(tip);
+                o["tip_src"] = json!(src);
             }
             o
         })

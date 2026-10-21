@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Živá rada na mapě** (trénink, stránka 1): před každou zatáčkou krátký pokyn od kouče
+  místo čísel – „Z4: Zůstaň na 4. stupni“, „Z11: Brzdi o 14 m dřív, brzdu pouštěj plynule“,
+  „Plyn postupně – záď ujíždí“. Bere se z posledního kola (pokud v zatáčce ztratilo a nebylo
+  to kolo s chybou), jinak co v zatáčce obvykle stojí čas (medián normálních kol, popisek
+  „obvykle“). Kde se neztrácí, zůstává „✓ drž to“.
 - **Kouč jako závodní inženýr** (česky): u zatáček místo „ztráta 0,15 s – vrchol o 4 km/h
   pomaleji“ co dělat jinak, kde a o kolik – podle porovnání s nejlepším kolem ve stejné zatáčce:
   přejetý vjezd (brzdí později, vrchol pomalejší), zbytečně brzké brzdění (s rychlostí, při které
