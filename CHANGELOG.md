@@ -2,6 +2,8 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Zatáčky se značí „T“** (T1, T2 … jako v F1) místo „Z“ – v radách kouče, rádiu, telemetrii,
+  briefingu, zápisníku i živé nápovědě na mapě.
 - **Správa dat – nová stránka „Data“** (poslední v obou režimech). Nahrávky už se nehromadí:
   - **Balení**: uzavřená session se sama zabalí (`.csv` → `.csv.gz`, ~4× menší, nic se
     neztratí – každý soubor se po zabalení zkontroluje, než zmizí originál). Dělá se na pozadí,

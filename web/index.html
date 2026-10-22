@@ -2441,7 +2441,7 @@
       ? sorted.reduce((a, b) => (dist(a.x, a.z) < dist(b.x, b.z) ? a : b))
       : (sorted.find(c => c.n > chLast) || sorted[0]);
     const h = cornerHint(next);
-    setText('chCorner', `Z${next.n}`);
+    setText('chCorner', `T${next.n}`);
     setText('chText', h.text);
     setText('chSub', next.dt != null ? `minule ${next.dt > 0 ? '+' : ''}${nf(next.dt, 2)} s · kolo ${next.lap}${h.typical ? ' · obvykle' : ''}` : (h.typical ? 'obvykle tu ztrácíš' : ''));
     const near = next.bx != null && dist(next.bx, next.bz) < 250;
@@ -2534,7 +2534,7 @@
     else if (liftPlan) { liftPlan = null; liftKey = ''; drawMap(true); }
     $('r_lift').hidden = !(saving && liftPlan && liftPlan.lifts.length);
     if (saving && liftPlan && liftPlan.lifts.length) {
-      const html = 'Zvedni nohu ' + liftPlan.lifts.map(l => `<b>${l.corner ? 'Z' + l.corner : '?'} ${l.lift_m} m</b>`).join(' · ')
+      const html = 'Zvedni nohu ' + liftPlan.lifts.map(l => `<b>${l.corner ? 'T' + l.corner : '?'} ${l.lift_m} m</b>`).join(' · ')
         + ` <small>před brzděním · ≈ +${nf(liftPlan.cost_s, 2)} s/kolo${liftPlan.short ? ' · samo nestačí' : ''}</small>`;
       if ($('r_lift').innerHTML !== html) $('r_lift').innerHTML = html;
     }
@@ -2580,17 +2580,17 @@
     $('bkTrack').innerHTML = all.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('') || '<option>–</option>';
   }
   function itemsReserves(list) {
-    return (list || []).map(r => zItem('Z' + r.n, `<b>+${nf(r.loss, 2)} s</b> na kolo v průměru. ${esc(r.tip || '')}`)).join('') || '<div class="muted">Žádná zatáčka, kde bys pravidelně ztrácel víc než 0,05 s.</div>';
+    return (list || []).map(r => zItem('T' + r.n, `<b>+${nf(r.loss, 2)} s</b> na kolo v průměru. ${esc(r.tip || '')}`)).join('') || '<div class="muted">Žádná zatáčka, kde bys pravidelně ztrácel víc než 0,05 s.</div>';
   }
   function itemsRisk(list, max) {
     return (list || []).slice(0, max).map(r => {
       const what = [r.spins ? `${r.spins}× spin` : '', r.moments ? `${r.moments}× ujetí` : '', r.slides ? `${r.slides}× smyk zádi` : ''].filter(Boolean).join(', ');
-      return zItem('Z' + r.n, `<b>${what}</b>${r.cause ? ' – ' + esc(r.cause) + '.' : ''} ${r.tip ? esc(r.tip) : ''}`, 'risk');
+      return zItem('T' + r.n, `<b>${what}</b>${r.cause ? ' – ' + esc(r.cause) + '.' : ''} ${r.tip ? esc(r.tip) : ''}`, 'risk');
     }).join('') || '<div class="muted">Bez spinů a ujetí – drž to tak.</div>';
   }
   function itemsTyres(n) {
     if (n.kart) return '<div class="muted">Motokára – gumy se neopotřebují.</div>' + (n.runs || []).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('');
-    const t = (n.tyres || []).map(x => zItem('Z' + x.n, esc(x.text.replace(/^Z\d+: /, '')))).join('');
+    const t = (n.tyres || []).map(x => zItem('T' + x.n, esc(x.text.replace(/^T\d+: /, '')))).join('');
     const runs = (n.runs || []).slice(0, 1).map(r => `<div class="item"><b>Nejdelší stint (${dayOf(r.started)})</b> ${esc(r.text)}</div>`).join('');
     return (t + runs) || '<div class="muted">Zatím bez dlouhého stintu – na tréninku zajeď aspoň 6 kol v kuse.</div>';
   }
@@ -2629,7 +2629,7 @@
     else if (!b.fuel || b.fuel.error) fuel = '<div class="muted">Na šetření paliva potřebuju z tréninku na trati aspoň pár kol s tímhle autem.</div>';
     else {
       const plans = b.fuel.plans || [];
-      const lifts = pl => pl.lifts.map(l => `Z${l.corner || '?'} ${l.lift_m} m`).join(' · ');
+      const lifts = pl => pl.lifts.map(l => `T${l.corner || '?'} ${l.lift_m} m`).join(' · ');
       if (p.save && plans[0]) {
         const pl = plans[0].plan, laps = r.laps || p.total_laps || 0, total = pl.cost_s * laps;
         const what = p.no_stop_fpl != null ? 'dojedeš bez zastávky' : 'stačí 1 zastávka';
@@ -2682,7 +2682,7 @@
       const ex = n.experiment;
       if (ex) {
         const nm = x => esc(x.name || x.id);
-        const list = ex.corners.map(c => `<span style="color:${c.d < 0 ? 'var(--green)' : 'var(--red)'}">Z${c.n} ${tsg(c.d, 2)}</span>`).join(' · ');
+        const list = ex.corners.map(c => `<span style="color:${c.d < 0 ? 'var(--green)' : 'var(--red)'}">T${c.n} ${tsg(c.d, 2)}</span>`).join(' · ');
         html += `<div class="card bk"><h2>Pokus se setupem (${dayOf(ex.started)})</h2><div><b>${nm(ex.from)}</b> (${ex.from.laps} kol) → <b>${nm(ex.to)}</b> (${ex.to.laps} kol): kolo <b>${tsg(ex.lap, 2)} s</b></div>`
           + `<div class="item">${list || 'v zatáčkách bez rozdílu nad 0,03 s'}</div><div class="muted">Průměr normálních kol; palivo a gumy neopraveno – férové porovnání je v Nastavení auta.</div></div>`;
       }
@@ -3032,14 +3032,14 @@
         if (tView === 'cons') {
           const k = (d.consistency || []).find(x => x.n === c.n);
           const sd = k ? k.sd : 0;
-          return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}" title="rozptyl ztráty v zatáčce mezi normálními koly">Z${c.n}<small style="color:${consColor(sd)}">±${nf(sd, 2)}</small></button>`;
+          return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}" title="rozptyl ztráty v zatáčce mezi normálními koly">T${c.n}<small style="color:${consColor(sd)}">±${nf(sd, 2)}</small></button>`;
         }
         if (tView === 'risk') {
           const r = (d.risk || []).find(x => x.n === c.n) || { level: 0, slides: 0, laps: 0, spins: 0 };
           const txt = r.spins ? `${r.spins}× spin` : r.moments ? `${r.moments}× ujetí` : `${r.slides}/${r.laps}`;
-          return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''} r${r.level}" title="kola, kde ujela záď / všechna kola">Z${c.n}<small style="color:var(--dim)">${txt}</small></button>`;
+          return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''} r${r.level}" title="kola, kde ujela záď / všechna kola">T${c.n}<small style="color:var(--dim)">${txt}</small></button>`;
         }
-        return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}">Z${c.n}<small style="color:${dtc(c.dt)}">${tsg(c.dt, 2)}</small></button>`;
+        return `<button data-n="${c.n}" class="${c.n === tCorner ? 'on' : ''}">T${c.n}<small style="color:${dtc(c.dt)}">${tsg(c.dt, 2)}</small></button>`;
       }).join('');
     renderIncidents();
   }
@@ -3079,7 +3079,7 @@
       const fmtE = e => e.to < e.from
         ? `↓${e.from}→${e.to} na ${Math.round(e.rpm).toLocaleString('cs-CZ')} (${Math.round(e.s)} m)`
         : `↑${e.from}→${e.to} při ${Math.round(e.rpm).toLocaleString('cs-CZ')}${e.thr < 90 ? ' (částečný plyn)' : ''} (${Math.round(e.s)} m)`;
-      let html = `<b>${c ? 'Z' + c.n + ' · řazení' : 'Řazení nahoru · normální kola'}</b><span>${c ? '↑ nahoru · ↓ dolů · ' : ''}Optimum: <em>${o.source === 'drive' ? 'z jízdy' : 'kontrolka hry'}</em>${o.max_rpm ? ` · omezovač ~${Math.round(o.max_rpm).toLocaleString('cs-CZ')}` : ''}</span>`;
+      let html = `<b>${c ? 'T' + c.n + ' · řazení' : 'Řazení nahoru · normální kola'}</b><span>${c ? '↑ nahoru · ↓ dolů · ' : ''}Optimum: <em>${o.source === 'drive' ? 'z jízdy' : 'kontrolka hry'}</em>${o.max_rpm ? ` · omezovač ~${Math.round(o.max_rpm).toLocaleString('cs-CZ')}` : ''}</span>`;
       if (c) {
         html += `<span class="sh">Toto kolo: ${inWin(d.lap_shifts).map(fmtE).join(' · ') || '–'}</span><span class="sh" style="color:#b25cff">Nejlepší kolo: ${inWin(d.ref_shifts).map(fmtE).join(' · ') || '–'}</span>`;
       } else {
@@ -3092,7 +3092,7 @@
     }
     if (!c && tView === 'cons') {
       const nl = d.normal || {};
-      const worst = (d.consistency || []).slice().sort((a, b) => b.sd - a.sd).slice(0, 3).map(x => `Z${x.n} ±${nf(x.sd, 2)}`).join(', ');
+      const worst = (d.consistency || []).slice().sort((a, b) => b.sd - a.sd).slice(0, 3).map(x => `T${x.n} ±${nf(x.sd, 2)}`).join(', ');
       $('tSum').innerHTML = `<b>Normální kola: ${nl.laps || 0}</b><span>Průměr <em>${fmtLap(nl.mean_ms)}</em> ±${nf((nl.sd_ms || 0) / 1000, 2)} s</span>`
         + `<span>Teoreticky <em>${fmtLap(nl.theoretical_ms)}</em></span><span>Nejrozkolísanější: <em>${worst || '–'}</em></span>`
         + `<span class="cons" style="color:var(--dim)">Normální kolo = do 107 % nejlepšího (bez spinů a zastávek). Cíl do závodu: 10 kol v rozmezí 0,3 s.</span>`
@@ -3100,12 +3100,12 @@
       return;
     }
     if (!c) {
-      const lost = d.corners.filter(x => x.dt > 0.03).sort((a, b) => b.dt - a.dt).slice(0, 3).map(x => `Z${x.n} ${tsg(x.dt, 2)} s`).join(', ');
+      const lost = d.corners.filter(x => x.dt > 0.03).sort((a, b) => b.dt - a.dt).slice(0, 3).map(x => `T${x.n} ${tsg(x.dt, 2)} s`).join(', ');
       $('tSum').innerHTML = `<b>Celé kolo ${tsg((d.lap.ms - refMs()) / 1000, 3)} s</b><span>Nejvíc ztráty: <em>${lost || '–'}</em></span><span class="muted">Ťukni na zatáčku vlevo.</span>`;
       return;
     }
     const a = c.lap || {}, r = c.ref || {}, u = v => v == null ? '–' : Math.round(v);
-    const parts = [`<b>Z${c.n} ${tsg(c.dt, 2)} s</b>`];
+    const parts = [`<b>T${c.n} ${tsg(c.dt, 2)} s</b>`];
     if (a.brake_at != null && r.brake_at != null) {
       const db = a.brake_at - r.brake_at;
       parts.push(`<span>Brzda <em>${Math.abs(db) < 3 ? 'stejně' : (db > 0 ? 'o ' + Math.round(db) + ' m později' : 'o ' + Math.round(-db) + ' m dřív')}</em></span>`);
@@ -3391,7 +3391,7 @@
       const ns = Object.keys(base.corners).map(Number).sort((a, b) => a - b);
       const cell = v => `<td style="color:${v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)'}">${tsg(v, 2)}</td>`;
       box.innerHTML = `<div class="pnote" style="margin-top:10px;color:var(--text)">Po zatáčkách – session ${esc(t.session.slice(8, 10) + '. ' + t.session.slice(5, 7) + '. ' + t.session.slice(11, 16).replace('-', ':'))}: proti „${esc(nm(base.id))}“ (${base.laps} kol), záporné = rychlejší</div>
-        <table class="sucmp" style="max-width:none"><tr><th>Setup</th>${ns.map(n => `<th>Z${n}</th>`).join('')}</tr>
+        <table class="sucmp" style="max-width:none"><tr><th>Setup</th>${ns.map(n => `<th>T${n}</th>`).join('')}</tr>
         ${others.map(o => `<tr><td>${esc(nm(o.id))} (${o.laps})</td>${ns.map(n => cell(o.corners[n] - base.corners[n])).join('')}</tr>`).join('')}</table>`;
     } catch {}
   }

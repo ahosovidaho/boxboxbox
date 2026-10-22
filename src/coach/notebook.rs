@@ -50,13 +50,13 @@ pub fn tyre_corners(res: &Comparison, kart: bool) -> Vec<Value> {
             out.push((
                 t.rear_slide,
                 json!({ "n": c.n, "kind": "rear",
-                    "text": format!("Z{}: záď tu klouže ~{}° – na výjezdu přidávej plyn postupně, šetříš zadní gumy.", c.n, t.rear_slide.round() as i64) }),
+                    "text": format!("T{}: záď tu klouže ~{}° – na výjezdu přidávej plyn postupně, šetříš zadní gumy.", c.n, t.rear_slide.round() as i64) }),
             ));
         } else if t.under > 30.0 {
             out.push((
                 t.under / 5.0,
                 json!({ "n": c.n, "kind": "front",
-                    "text": format!("Z{}: předek nedotáčí (~{} % zatáčky) – vjeď o kousek pomaleji, šetříš přední gumy.", c.n, t.under.round() as i64) }),
+                    "text": format!("T{}: předek nedotáčí (~{} % zatáčky) – vjeď o kousek pomaleji, šetříš přední gumy.", c.n, t.under.round() as i64) }),
             ));
         }
     }

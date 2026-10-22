@@ -114,7 +114,7 @@ pub fn analyse(res: &Comparison, tyres: bool) -> Vec<Run> {
             }
             text.push('.');
             if !corners.is_empty() {
-                let list: Vec<String> = corners.iter().map(|c| format!("Z{} {} s/kolo", c.n, sgn(c.per_lap, 2))).collect();
+                let list: Vec<String> = corners.iter().map(|c| format!("T{} {} s/kolo", c.n, sgn(c.per_lap, 2))).collect();
                 text.push_str(&format!(
                     " Nejvíc se zhoršuje {}{}.",
                     list.join(", "),

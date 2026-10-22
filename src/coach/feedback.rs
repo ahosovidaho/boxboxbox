@@ -703,7 +703,7 @@ pub fn radio(res: &Comparison) -> Vec<Value> {
         for i in &b.incidents {
             if let Some(n) = i.corner.filter(|n| a.incidents.iter().any(|j| j.corner == Some(*n))) {
                 out.push(json!({ "level": "warn", "corner": n,
-                    "text": format!("Z{n}: druhé kolo po sobě ti tu ujela záď – uber o kousek, ať nepřijde spin.") }));
+                    "text": format!("T{n}: druhé kolo po sobě ti tu ujela záď – uber o kousek, ať nepřijde spin.") }));
                 break;
             }
         }
@@ -740,7 +740,7 @@ pub fn radio(res: &Comparison) -> Vec<Value> {
                 found.push((
                     mean,
                     json!({ "level": "info", "corner": c.n,
-                    "text": format!("Z{}: poslední 3 kola +{} s proti normálu – {why}.", c.n, fmt(mean)) }),
+                    "text": format!("T{}: poslední 3 kola +{} s proti normálu – {why}.", c.n, fmt(mean)) }),
                 ));
             }
         }

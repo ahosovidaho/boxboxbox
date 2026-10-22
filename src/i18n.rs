@@ -174,7 +174,7 @@ pub fn corner(n: usize) -> String {
     match lang() {
         Lang::De => format!("K{n}"),
         Lang::En => format!("T{n}"),
-        Lang::Cs => format!("Z{n}"),
+        Lang::Cs => format!("T{n}"),
     }
 }
 
