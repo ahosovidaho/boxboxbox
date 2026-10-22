@@ -15,6 +15,8 @@
     zatáčku na mapě a naopak. Kouč posílá rady i strukturovaně (`tips`) a obrys nejlepšího kola.
   - **Trať / Briefing a Zápisník**: horní pruh se závodem, plánem a cílovým tempem, mapa okruhu
     s čísly zatáček, „Kde je čas“ s krátkým pokynem, „Pozor“, „Zbývá připravit“.
+  - Strategie: plán závodu s pruhem stintů (šířka = kola, červeně zastávka). Živá data mají
+    nadpis stránky.
 - **Zatáčky se značí „T“** (T1, T2 … jako v F1) místo „Z“ – v radách kouče, rádiu, telemetrii,
   briefingu, zápisníku i živé nápovědě na mapě.
 - **Správa dat – nová stránka „Data“** (poslední v obou režimech). Nahrávky už se nehromadí:
