@@ -558,6 +558,14 @@
   .dstab .acts { white-space: nowrap; text-align: right; }
   .dstab .acts button { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; font: 12px -apple-system, system-ui, sans-serif; padding: 4px 8px; margin-left: 3px; }
   .dstab .acts button.del { color: #ff8a80; }
+  .dstab .ck { width: 26px; padding-right: 0; }
+  .dstab input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--green); vertical-align: middle; }
+  .dstab tr.sel td { background: #17201a; }
+  .dsbulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0 8px; font-size: 13px; }
+  .dsbulk.on { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+  .dsbulk button { background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 7px; font: 12px -apple-system, system-ui, sans-serif; padding: 5px 9px; }
+  .dsbulk button.del { color: #ff8a80; border-color: #4a2a2a; }
+  .dsbulk button.q { color: var(--dim); }
   .dsst { font-size: 11px; padding: 2px 7px; border-radius: 6px; background: #1c1c21; white-space: nowrap; }
   .dsst.raw { color: var(--orange); } .dsst.packed { color: var(--green); } .dsst.pruned { color: #8fb8ff; } .dsst.live { color: var(--red); }
   .dsrules label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; color: var(--text); }
@@ -1369,6 +1377,8 @@
   let bkView = 'brief', bkTrack = '', bkBusy = false;
   // Data page: last state from the server, sort of the session table
   let dsData = null, dsSort = 'date', dsBusy = false;
+  // Sessions ticked for a bulk action
+  const dsSel = new Set();
   const ORDER = { practice: [1, 3, 9, 4, 5, 10, 8, 2, 11], race: [6, 7, 5, 10, 11] };
   const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
@@ -2698,15 +2708,15 @@
   $('bkTrack').addEventListener('change', e => { bkTrack = e.target.value; bkView = 'book'; loadTrackPage(); });
 
   // ---------- Data page (11): what takes how much, packing, clean-up, bin ----------
-  const gb = b => b >= 1e9 ? nf(b / 1e9, 1) + ' GB' : b >= 1e6 ? Math.round(b / 1e6) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' kB';
+  const gb = b => !b ? '0' : b >= 1e9 ? nf(b / 1e9, 1) + ' GB' : b >= 1e6 ? Math.round(b / 1e6) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' kB';
   const DS_STATE = { live: 'nahrává se', raw: 'nezabaleno', packed: 'zabaleno', pruned: 'pročištěno' };
   const DS_ACT = { pack: 'Zabalit', prune: 'Pročistit', remove: 'Smazat (bez celého kola)' };
   async function loadStorage() {
     try { dsData = await (await fetch('api/storage', { cache: 'no-store' })).json(); renderStorage(); } catch { setText('dsMsg', 'nepodařilo se načíst'); }
   }
   async function dsAction(body, ask) {
-    if (ask && !confirm(ask)) return;
-    if (dsBusy) return;
+    if (ask && !confirm(ask)) return false;
+    if (dsBusy) return false;
     dsBusy = true;
     const m = $('dsMsg'); m.className = ''; m.textContent = 'pracuju…';
     try {
@@ -2715,6 +2725,7 @@
       m.className = d.error ? 'err' : 'ok'; m.textContent = d.error || d.message || '';
     } catch { m.className = 'err'; m.textContent = 'chyba'; }
     dsBusy = false;
+    return true;
   }
   const dsLabel = r => `${dayOf(r.started)} ${(r.started || '').slice(11, 16)} · ${esc(r.car || '?')}`;
   function renderStorage() {
@@ -2757,9 +2768,22 @@
       : '<div class="muted">Koš je prázdný.</div>') + '</div>';
     // Sessions
     const rows = d.sessions.slice().sort((a, b) => dsSort === 'size' ? b.bytes - a.bytes : dsSort === 'track' ? String(a.track || '~').localeCompare(String(b.track || '~')) : (b.started || '').localeCompare(a.started || ''));
-    html += `<div class="card wide"><h2>Sessions · ${d.sessions.length}</h2><table class="dstab"><tr>
+    // Ticked sessions that are gone (removed, renamed) drop out of the selection
+    for (const n of [...dsSel]) if (!d.sessions.some(r => r.session === n)) dsSel.delete(n);
+    const sel = d.sessions.filter(r => dsSel.has(r.session));
+    const selBytes = sel.reduce((a, r) => a + r.bytes, 0);
+    const allOn = rows.length > 0 && rows.every(r => dsSel.has(r.session));
+    const quick = [['empty', 'bez celého kola'], ['old', `starší než ${d.config.keep_days} dní`], ['raw', 'nezabalené'], ['car', 'stejné auto jako vybrané']];
+    html += `<div class="card wide"><h2>Sessions · ${d.sessions.length}</h2>
+      <div class="dsbulk ${sel.length ? 'on' : ''}">${sel.length
+        ? `<b>Vybráno ${sel.length}</b><span class="muted">${gb(selBytes)}</span>
+           <button data-bulk="pack">Zabalit</button><button data-bulk="prune">Pročistit</button><button data-bulk="pin">📌 Připíchnout</button><button data-bulk="unpin">Odepnout</button>
+           <button data-bulk="remove" class="del">Smazat vybrané</button><button data-bulk="none">Zrušit výběr</button>`
+        : `<span class="muted">Vyber zaškrtnutím, nebo rychle:</span>${quick.filter(q => q[0] !== 'car').map(q => `<button data-quick="${q[0]}">${q[1]}</button>`).join('')}`}
+        ${sel.length ? quick.map(q => `<button data-quick="${q[0]}" class="q">+ ${q[1]}</button>`).join('') : ''}</div>
+      <table class="dstab"><tr><th class="ck"><input type="checkbox" id="dsAll" ${allOn ? 'checked' : ''} aria-label="Vybrat vše"></th>
       <th data-sort="date">Kdy ${dsSort === 'date' ? '▾' : ''}</th><th data-sort="track">Trať ${dsSort === 'track' ? '▾' : ''}</th><th>Kol</th><th>Nejlepší</th><th data-sort="size">Velikost ${dsSort === 'size' ? '▾' : ''}</th><th>Stav</th><th></th></tr>`
-      + rows.map(r => `<tr><td><b>${dsLabel(r)}</b></td><td>${esc(r.track || '–')}${r.record ? ' <span title="rekord auta na trati">★</span>' : ''}</td>
+      + rows.map(r => `<tr class="${dsSel.has(r.session) ? 'sel' : ''}"><td class="ck"><input type="checkbox" data-ck="${esc(r.session)}" ${dsSel.has(r.session) ? 'checked' : ''} ${r.state === 'live' ? 'disabled' : ''}></td><td><b>${dsLabel(r)}</b></td><td>${esc(r.track || '–')}${r.record ? ' <span title="rekord auta na trati">★</span>' : ''}</td>
         <td class="n">${r.laps}</td><td class="n">${fmtLap(r.best_ms)}</td><td class="n">${gb(r.bytes)}</td>
         <td><span class="dsst ${r.state}">${DS_STATE[r.state]}</span>${r.pinned ? ' 📌' : ''}</td>
         <td class="acts">${r.state === 'live' ? '' : `${r.state === 'raw' ? `<button data-a="pack" data-s="${esc(r.session)}">Zabalit</button>` : ''}`
@@ -2773,7 +2797,45 @@
     $('dsSaveCfg').onclick = () => dsAction({ action: 'config', config: { compress: $('dsCompress').checked, auto_clean: $('dsAuto').checked,
       keep_days: +$('dsDays').value || 31, trash_days: +$('dsTrash').value || 7, pinned: [] } });
   }
+  // Tick boxes: one session, all, quick selections; bulk actions on the ticked ones
+  $('p11body').addEventListener('change', e => {
+    const ck = e.target.closest('input[data-ck]');
+    if (ck) { ck.checked ? dsSel.add(ck.dataset.ck) : dsSel.delete(ck.dataset.ck); renderStorage(); return; }
+    if (e.target.id === 'dsAll') {
+      const live = dsData.sessions.filter(r => r.state !== 'live');
+      if (e.target.checked) live.forEach(r => dsSel.add(r.session)); else dsSel.clear();
+      renderStorage();
+    }
+  });
+  function dsQuick(kind) {
+    const d = dsData;
+    const cars = new Set(d.sessions.filter(r => dsSel.has(r.session)).map(r => r.car));
+    for (const r of d.sessions) {
+      if (r.state === 'live') continue;
+      const hit = kind === 'empty' ? r.empty : kind === 'old' ? r.age_days >= d.config.keep_days && !r.pinned
+        : kind === 'raw' ? r.state === 'raw' : kind === 'car' ? cars.has(r.car) : false;
+      if (hit) dsSel.add(r.session);
+    }
+    renderStorage();
+  }
+  function dsBulk(what) {
+    if (what === 'none') { dsSel.clear(); renderStorage(); return; }
+    const sel = dsData.sessions.filter(r => dsSel.has(r.session));
+    if (!sel.length) return;
+    const bytes = gb(sel.reduce((a, r) => a + r.bytes, 0));
+    const pinned = sel.filter(r => r.pinned).length;
+    const skip = pinned && what !== 'pack' && what !== 'unpin' && what !== 'pin' ? ` Připíchnuté (${pinned}) se přeskočí.` : '';
+    const ask = {
+      remove: `Smazat ${sel.length} sessions (${bytes})? Půjdou do koše, odkud je ${dsData.config.trash_days} dní můžeš obnovit.${skip}`,
+      prune: `Pročistit ${sel.length} sessions? Z každé zůstane nejrychlejší kolo a souhrn, ostatní kola půjdou do koše.${skip}`,
+    }[what];
+    dsAction({ action: 'bulk_' + what, sessions: sel.map(r => r.session) }, ask).then(ok => { if (ok && (what === 'remove' || what === 'prune')) { dsSel.clear(); renderStorage(); } });
+  }
   $('p11body').addEventListener('click', e => {
+    const q = e.target.closest('button[data-quick]');
+    if (q) { dsQuick(q.dataset.quick); return; }
+    const bk = e.target.closest('button[data-bulk]');
+    if (bk) { dsBulk(bk.dataset.bulk); return; }
     const th = e.target.closest('th[data-sort]');
     if (th) { dsSort = th.dataset.sort; renderStorage(); return; }
     const rb = e.target.closest('button[data-restore]');

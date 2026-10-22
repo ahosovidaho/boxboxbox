@@ -19,6 +19,10 @@
     7 dnech nebo tlačítkem. Připíchnuté sessions se nikdy nečistí. **Automatický úklid je
     vypnutý**, dokud ho nezapneš; balení je zapnuté. Nastavení v `storage.json`.
     API `/api/storage`, `/api/storage/action`.
+  - **Hromadný výběr**: zaškrtávací políčka u sessions (a „vybrat vše“ v hlavičce), rychlý výběr
+    „bez celého kola“, „starší než 31 dní“, „nezabalené“ a „stejné auto jako vybrané“; pro
+    vybrané Zabalit / Pročistit / 📌 / Odepnout / **Smazat vybrané** (do koše, s potvrzením
+    a velikostí). Připíchnuté a právě nahrávané sessions se hromadně nečistí ani nemažou.
 - **Nová stránka „Trať“** (trénink i závod, za Strategií): dvě záložky.
   - **Briefing** pro vybraný závod na jednu obrazovku: pravidla, auto a setup, **závodní tempo**
     (medián normálních kol z nejrychlejšího tréninku), nejlepší a ideální kolo, strategie

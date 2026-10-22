@@ -515,6 +515,8 @@ async fn storage_state(State(s): State<AppState>) -> impl IntoResponse {
 struct StorageAction {
     action: String,
     session: Option<String>,
+    /// Several sessions at once: "bulk_pack", "bulk_prune", "bulk_remove", "bulk_pin", "bulk_unpin"
+    sessions: Option<Vec<String>>,
     date: Option<String>,
     config: Option<crate::storage::Config>,
 }
@@ -551,6 +553,66 @@ async fn storage_action(State(s): State<AppState>, Json(a): Json<StorageAction>)
                     cfg.pinned.remove(&session);
                 }
                 crate::storage::save_config(&p, &cfg).map(|_| "uloženo".into())
+            }
+            bulk if bulk.starts_with("bulk_") => {
+                let what = &bulk[5..];
+                let names = a.sessions.clone().unwrap_or_default();
+                if what == "pin" || what == "unpin" {
+                    for n in &names {
+                        if what == "pin" {
+                            cfg.pinned.insert(n.clone());
+                        } else {
+                            cfg.pinned.remove(n);
+                        }
+                    }
+                    crate::storage::save_config(&p, &cfg).map(|_| format!("uloženo ({})", names.len()))
+                } else {
+                    let action: &'static str = match what {
+                        "pack" => "pack",
+                        "prune" => "prune",
+                        "remove" => "remove",
+                        _ => "",
+                    };
+                    let (track_of, layouts) = track_matcher(&s.strategy);
+                    let all = crate::coach::library::index(&p.recordings, &mut comparer(), &track_of, layouts);
+                    let rows = crate::storage::session_rows(&p, &cfg, &all);
+                    let (mut done, mut bytes, mut skipped, mut errors) = (0, 0u64, 0, Vec::new());
+                    for n in &names {
+                        let Some(r) = rows.iter().find(|r| &r.session == n) else { continue };
+                        // Pinned and live sessions are never cleaned or removed in bulk
+                        if action.is_empty()
+                            || r.state == "live"
+                            || (r.pinned && action != "pack")
+                            || (action == "prune" && (r.empty || r.state == "pruned"))
+                        {
+                            skipped += 1;
+                            continue;
+                        }
+                        let step = crate::storage::Step { session: n.clone(), action, frees: 0, why: String::new() };
+                        match crate::storage::run_step(&p, &step, r.record, &mut comparer()) {
+                            Ok(b) => {
+                                done += 1;
+                                bytes += b;
+                            }
+                            Err(e) => errors.push(format!("{n}: {e}")),
+                        }
+                    }
+                    let verb = match action {
+                        "pack" => "zabaleno",
+                        "prune" => "pročištěno",
+                        _ => "do koše",
+                    };
+                    let skip = if skipped > 0 {
+                        format!(", přeskočeno {skipped} (připíchnuté / nahrávaná / nejde)")
+                    } else {
+                        String::new()
+                    };
+                    if errors.is_empty() {
+                        Ok(format!("{verb}: {done} sessions, {} MB{skip}", bytes / 1_000_000))
+                    } else {
+                        Err(std::io::Error::other(format!("{verb}: {done}{skip}; chyby: {}", errors.join("; "))))
+                    }
+                }
             }
             "restore" => crate::storage::restore(&p, a.date.as_deref().unwrap_or(""), &session).map(|_| "obnoveno".into()),
             "empty_trash" => crate::storage::purge(&p, None).map(|b| format!("koš vysypán ({} MB)", b / 1_000_000)),
