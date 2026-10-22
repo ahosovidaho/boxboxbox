@@ -672,11 +672,118 @@
   button.ghost { background: #1c1c21; color: var(--text); }
   #wakeinfo { font-size: 12px; color: var(--label); margin-top: 10px; }
   #keepawake { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  /* ================= Redesign "Pit wall": every page except the driving dashboards ================= */
+  .rd {
+    --panel: #0E0E11; --panel2: #141417; --el: #16161A; --line: #1C1C22; --line2: #2A2A31;
+    --label: #8A8A94; --dim: #A6A6B0; --text: #E6E6EA; --red: #FF5A4E; --purple: #B25CFF; --f1: #E10600;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --disp: "Saira Condensed", "Arial Narrow", sans-serif;
+    padding-top: 60px; color: var(--text);
+  }
+  #topnav { position: absolute; left: 0; right: 0; top: 0; height: 50px; z-index: 5; display: flex; align-items: center; gap: 14px;
+    border-bottom: 1px solid #1C1C22; background: #000; font: 13px -apple-system, system-ui, sans-serif; color: #A6A6B0; }
+  #topnav[hidden] { display: none; }
+  #topnav .brand { font: italic 800 18px "Saira Condensed", sans-serif; letter-spacing: .02em; color: #E6E6EA; white-space: nowrap; }
+  #topnav .brand i { color: #E10600; font-style: inherit; }
+  #topnav .modechip { font: 700 12px "Saira Condensed", sans-serif; letter-spacing: .12em; padding: 6px 10px; border-radius: 8px; border: 0; background: #2A2A31; color: #fff; }
+  #topnav .modechip.race { background: #E10600; }
+  #navtabs { display: flex; align-items: stretch; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 50px; }
+  #navtabs::-webkit-scrollbar { display: none; }
+  #navtabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 0 10px; color: #8A8A94; white-space: nowrap;
+    font: 600 14px "Saira Condensed", sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+  #navtabs button.on { color: #F4F4F6; border-bottom-color: #E10600; font-weight: 700; }
+  #navtabs .sep { width: 1px; background: #26262D; margin: 14px 6px; flex-shrink: 0; }
+  #topnav .conn { margin-left: 0; }
+  #navGear { width: 40px; height: 40px; border-radius: 10px; border: 0; background: none; color: #8A8A94; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rd .dots, :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) > .conn { display: none; }
+  /* Page head: big condensed title */
+  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) { height: auto; min-height: 40px; font-size: 13px; color: var(--dim); }
+  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) > b:first-child { font: italic 800 30px/1 var(--disp); text-transform: uppercase; letter-spacing: .01em; color: var(--text); margin-right: 4px; }
+  /* Panels, section titles, labels, numbers */
+  .rd .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
+  :is(#p2, #p3, #p4, #p5, #p7, #p8, #p9, #p10, #p11) .card h2 { font: 700 15px var(--disp); letter-spacing: .12em; text-transform: uppercase; color: var(--text); margin-bottom: 10px; }
+  :is(#p2, #p3, #p4, #p5, #p7, #p8, #p9, #p10, #p11) .card h2 b { color: var(--text); }
+  .rd .label, .rd .lbl { font: 600 12px var(--disp); letter-spacing: .14em; text-transform: uppercase; color: var(--label); }
+  .rd .num, .rd .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .rd .muted { color: var(--label); }
+  /* Buttons, selects, inputs */
+  .rd .stbtn, .rd .chips button { height: 44px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--line2); background: var(--el); color: var(--text); font: 600 14px -apple-system, system-ui, sans-serif; }
+  .rd .stbtn.small { height: 36px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
+  .rd .stbtn.primary { background: #F4F4F6; color: #000; border-color: #F4F4F6; }
+  .rd .stbtn.danger { background: #1A0E0F; color: #FF8A80; border-color: #4A2326; }
+  .rd select, .rd input[type=text], .rd input[type=number], .rd textarea { background: var(--el); color: var(--text); border: 1px solid var(--line2); border-radius: 10px; }
+  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) select { height: 40px; padding: 0 10px; font: 500 14px -apple-system, system-ui, sans-serif; }
+  /* Coach advice: corner chip + instruction + cost */
+  .tchip { display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 26px; padding: 0 6px; border-radius: 7px;
+    background: #F2C230; color: #000; font: 700 13px var(--mono); box-sizing: border-box; flex-shrink: 0; }
+  .tchip.risk { background: #FF5A4E; }
+  .tchip.lap { background: #2A2A31; color: #E6E6EA; }
+  .tip { display: flex; gap: 12px; align-items: flex-start; background: var(--panel2); border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.45; }
+  .tip > div { flex: 1; min-width: 0; }
+  .tip b { color: var(--text); font-weight: 600; }
+  .tip .cost { font: 13px var(--mono); color: var(--red); white-space: nowrap; margin-left: 8px; float: right; }
+  .tip small { display: block; color: var(--dim); font-size: 13px; }
+  /* Track map with numbered corners */
+  .tmap { display: block; width: 100%; height: auto; }
+  .tmap .tr1 { fill: none; stroke: #24242B; stroke-width: 12; stroke-linejoin: round; stroke-linecap: round; }
+  .tmap .tr2 { fill: none; stroke: #3A3A44; stroke-width: 2; stroke-linejoin: round; }
+  .tmap circle { fill: #2A2A31; stroke: #0E0E11; stroke-width: 2; }
+  .tmap text { font: 700 11px "JetBrains Mono", monospace; fill: #C9C9D0; text-anchor: middle; dominant-baseline: central; }
+  .tmap g.tip circle, .tmap g.focus circle { fill: #F2C230; } .tmap g.risk circle { fill: #FF5A4E; }
+  .tmap g.tip text, .tmap g.focus text, .tmap g.risk text { fill: #000; }
+  .tmap g.focus circle { r: 13; } .tmap g.sel circle { stroke: #F4F4F6; stroke-width: 2.5; }
+  .tmap g { cursor: pointer; }
+  #p3body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  #cLeft, #cRight { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  #p3 #focus { border-color: #3A3010; padding: 14px 16px; }
+  #p3 #focus h2 { color: #F2C230; }
+  #p3 #focusText { font-size: 17px; font-weight: 600; line-height: 1.35; }
+  .lhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .lkpi { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; margin: 6px 0 12px; }
+  .lkpi > div { display: flex; flex-direction: column; gap: 2px; }
+  .lkpi .big { font: 700 40px/1 var(--mono); }
+  .lkpi .mid { font: 700 24px/1.1 var(--mono); }
+  .lverdict { margin-left: auto; max-width: 260px; font-size: 14px; line-height: 1.4; color: var(--dim); }
+  .tiplist { display: flex; flex-direction: column; gap: 8px; }
+  .lnote { font-size: 13px; color: var(--label); margin-top: 10px; line-height: 1.45; }
+  .lstats { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12px; color: var(--label); }
+  .lstats b { font: 500 12px var(--mono); color: var(--text); }
+  .hrow { display: grid; grid-template-columns: 48px 92px 76px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .hrow .k { font-family: var(--mono); color: var(--label); }
+  .hrow .t { font: 700 14px var(--mono); }
+  .hrow .d { font: 13px var(--mono); }
+  .hrow .x { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #cRadioList .tip { margin-top: 0; }
+  #cRadioList .tip + .tip { margin-top: 8px; }
+  @media (max-width: 820px) { #p3body { grid-template-columns: 1fr; } #cRight { order: -1; } }
+  .bkhero2 { display: flex; align-items: center; gap: 30px; flex-wrap: wrap; background: linear-gradient(90deg, #140707 0%, #0E0E11 40%) !important; }
+  .bkrace { display: flex; flex-direction: column; gap: 5px; min-width: 280px; font-size: 14px; color: var(--dim); }
+  .bkname { display: flex; align-items: center; gap: 10px; font: italic 800 28px/1 var(--disp); text-transform: uppercase; color: var(--text); }
+  .skew { width: 8px; height: 26px; background: var(--f1); transform: skewX(-14deg); }
+  .bkkpis { display: flex; gap: 32px; margin-left: auto; flex-wrap: wrap; }
+  .bkkpis > div { display: flex; flex-direction: column; gap: 2px; }
+  .bkkpis .big { font: 700 34px/1.05 var(--mono); color: var(--text); }
+  .bkkpis small { font-size: 12px; color: var(--label); }
+  .bkcol { display: flex; flex-direction: column; gap: 8px; }
+  .prepi { font-size: 14px; padding: 4px 0; line-height: 1.4; }
+  .prepi::before { content: '!'; color: #F2C230; font-weight: 700; margin-right: 8px; }
+  .prepi span { color: var(--dim); }
+  #p10body { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+  .mleg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--dim); margin-top: 6px; }
+  .mleg span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--c); }
 </style>
 </head>
 <body>
 
 <div id="pages">
+<nav id="topnav" aria-label="Stránky" hidden>
+  <span class="brand">BOX<i>BOX</i>BOX</span>
+  <button class="modechip" type="button"></button>
+  <div id="navtabs"></div>
+  <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+  <button id="navGear" type="button" aria-label="Nastavení"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</nav>
 <!-- ======================= Page 1: driving ======================= -->
 <section class="page" id="p1">
   <div id="rpm"></div>
@@ -747,9 +854,10 @@
 </section>
 
 <!-- ======================= Page 2: all data ======================= -->
-<section class="page" id="p2" hidden>
+<section class="page rd" id="p2" hidden>
   <div id="p2head">
-    <b id="carname2">–</b>
+    <b>Živá data</b>
+    <span id="carname2">–</span>
     <span class="coachpill" hidden>COACH ●</span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
@@ -861,7 +969,7 @@
 </section>
 
 <!-- ======================= Page 3: coach ======================= -->
-<section class="page" id="p3" hidden>
+<section class="page rd" id="p3" hidden>
   <div id="p3head">
     <b data-t>Coach</b>
     <span id="coachUpdated"></span>
@@ -869,13 +977,20 @@
     <span class="dots"></span>
   </div>
   <div id="p3body">
-    <div class="card" id="focus" hidden><h2 id="focusTitle" data-t>Fokus</h2><div id="focusText"></div></div>
-    <div id="feed"></div>
+    <div id="cLeft">
+      <div class="card" id="cLatest"><span class="muted">Zatím žádné vyhodnocené kolo – odjeď kolo od čáry do čáry.</span></div>
+      <div class="card" id="cHistory" hidden><h2>Předchozí kola</h2><div id="feed"></div></div>
+    </div>
+    <div id="cRight">
+      <div class="card" id="cMap" hidden><h2>Okruh</h2><div id="cMapSvg"></div><div class="mleg"><span style="--c:#F2C230">rada</span><span style="--c:#FF5A4E">pozor</span></div></div>
+      <div class="card" id="focus" hidden><h2 id="focusTitle" data-t>Fokus</h2><div id="focusText"></div></div>
+      <div class="card" id="cRadio" hidden><h2>Rádio</h2><div id="cRadioList"></div></div>
+    </div>
   </div>
 </section>
 
 <!-- ======================= Page 4: measurements ======================= -->
-<section class="page" id="p4" hidden>
+<section class="page rd" id="p4" hidden>
   <div id="p4head">
     <b data-t>Messung</b>
     <span id="perfCar"></span>
@@ -926,7 +1041,7 @@
 </section>
 
 <!-- ======================= Page 5: strategy ======================= -->
-<section class="page" id="p5" hidden>
+<section class="page rd" id="p5" hidden>
   <div id="p5head">
     <b>Strategie</b>
     <span class="seg" id="stMode"><button data-m="0" class="on">Závod</button><button data-m="1">Trénink</button></span>
@@ -1068,7 +1183,7 @@
 
 
 <!-- ======================= Practice: telemetry graphs ======================= -->
-<section class="page" id="p9" hidden>
+<section class="page rd" id="p9" hidden>
   <div id="p9head">
     <b>Telemetrie</b>
     <select id="tLap" aria-label="Kolo"></select>
@@ -1103,7 +1218,7 @@
 </section>
 
 <!-- ======================= Practice: car setup ======================= -->
-<section class="page" id="p8" hidden>
+<section class="page rd" id="p8" hidden>
   <div id="p8head">
     <b>Nastavení auta</b>
     <span id="suCar">–</span>
@@ -1123,7 +1238,7 @@
 </section>
 
 <!-- ======================= Track: briefing and notebook ======================= -->
-<section class="page" id="p10" hidden>
+<section class="page rd" id="p10" hidden>
   <div id="p10head">
     <b>Trať</b>
     <select id="bkTrack" aria-label="Trať"></select>
@@ -1137,7 +1252,7 @@
 </section>
 
 <!-- ======================= Data: what the recordings take, clean-up ======================= -->
-<section class="page" id="p11" hidden>
+<section class="page rd" id="p11" hidden>
   <div id="p11head">
     <b>Data</b>
     <span id="dsHead"></span>
@@ -1150,7 +1265,7 @@
 </section>
 
 <!-- ======================= Race mode: recap ======================= -->
-<section class="page" id="p7" hidden>
+<section class="page rd" id="p7" hidden>
   <div id="p7head">
     <b>Rekapitulace</b>
     <span id="rcName">–</span>
@@ -1379,7 +1494,10 @@
   let dsData = null, dsSort = 'date', dsBusy = false;
   // Sessions ticked for a bulk action
   const dsSel = new Set();
-  const ORDER = { practice: [1, 3, 9, 4, 5, 10, 8, 2, 11], race: [6, 7, 5, 10, 11] };
+  // Pages in groups: driving | analysis | preparation | system (the nav bar shows the names)
+  const ORDER = { practice: [1, 3, 9, 4, 10, 5, 8, 2, 11], race: [6, 5, 10, 7, 2, 11] };
+  const PAGE_NAME = { 1: 'Jízda', 6: 'Jízda', 3: 'Kouč', 9: 'Telemetrie', 4: 'Měření', 10: 'Trať', 5: 'Strategie', 8: 'Setup', 7: 'Rekap', 2: 'Živá data', 11: 'Data' };
+  const PAGE_GROUP = { 1: 0, 6: 0, 3: 1, 9: 1, 4: 1, 10: 2, 5: 2, 8: 2, 7: 2, 2: 3, 11: 3 };
   const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
   let page = ORDER[appMode][0];
@@ -1388,6 +1506,23 @@
     const html = ORDER[appMode].map(p => `<i class="${p === page ? 'on' : ''}"></i>`).join('')
       + `<button class="modechip ${appMode}">${appMode === 'race' ? 'ZÁVOD' : 'TRÉNINK'}</button>`;
     $$('.dots').forEach(el => { if (el.innerHTML !== html) el.innerHTML = html; });
+    // Top navigation on every page but the driving dashboards
+    const nav = $('topnav');
+    nav.hidden = page === 1 || page === 6;
+    const chip = nav.querySelector('.modechip');
+    chip.className = 'modechip ' + appMode;
+    chip.textContent = appMode === 'race' ? 'ZÁVOD' : 'TRÉNINK';
+    let prev = null;
+    const tabs = ORDER[appMode].map(p => {
+      const sep = prev != null && PAGE_GROUP[p] !== prev ? '<span class="sep"></span>' : '';
+      prev = PAGE_GROUP[p];
+      return `${sep}<button type="button" data-page="${p}" class="${p === page ? 'on' : ''}">${PAGE_NAME[p]}</button>`;
+    }).join('');
+    if ($('navtabs').innerHTML !== tabs) {
+      $('navtabs').innerHTML = tabs;
+      const on = $('navtabs').querySelector('.on');
+      if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   }
   function setMode(m) {
     if (m === appMode) return;
@@ -1395,6 +1530,8 @@
     store('mode', m);
     showPage(ORDER[m][0]);
   }
+  $('navtabs').addEventListener('click', e => { const b = e.target.closest('button[data-page]'); if (b) showPage(+b.dataset.page); });
+  $('navGear').addEventListener('click', () => openSettings());
   // The chip next to the page dots switches the mode
   document.addEventListener('click', async e => {
     if (!e.target.closest('.modechip')) return;
@@ -1930,6 +2067,55 @@
     $$('.coachpill').forEach(el => { el.hidden = true; });
   }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  // Track map with numbered corners (SVG): `pts` [[x, z]…] of a lap, `corners` [{n, x, z}],
+  // `marks` {n: "tip" | "risk" | "focus"}. Same orientation logic as the driving map.
+  function trackSvg(pts, corners, marks = {}, sel = null) {
+    if (!pts || pts.length < 10) return '';
+    const W = 400, H = 300, pad = 22;
+    let best = null;
+    for (const rot of [false, true]) {
+      const P = p => { let x = cfg.mirror ? -p[0] : p[0], z = p[1]; if (rot) [x, z] = [z, -x]; return [x, z]; };
+      const q = pts.map(P);
+      const xs = q.map(p => p[0]), zs = q.map(p => p[1]);
+      const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+      const sc = Math.min((W - 2 * pad) / Math.max(x1 - x0, 1), (H - 2 * pad) / Math.max(z1 - z0, 1));
+      if (!best || sc > best.sc) best = { P, sc, ox: pad + ((W - 2 * pad) - (x1 - x0) * sc) / 2 - x0 * sc, oz: pad + ((H - 2 * pad) - (z1 - z0) * sc) / 2 - z0 * sc };
+    }
+    const pr = p => { const [x, z] = best.P(p); return [(best.ox + x * best.sc).toFixed(1), (best.oz + z * best.sc).toFixed(1)]; };
+    const line = pts.map(p => pr(p).join(',')).join(' ');
+    const [sx, sy] = pr(pts[0]);
+    const cs = (corners || []).map(c => {
+      const [x, y] = pr([c.x, c.z]);
+      const cls = [marks[c.n] || '', sel === c.n ? 'sel' : ''].join(' ').trim();
+      return `<g data-n="${c.n}" class="${cls}"><circle cx="${x}" cy="${y}" r="11"></circle><text x="${x}" y="${y}">${c.n}</text></g>`;
+    }).join('');
+    return `<svg class="tmap" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa trati se zatáčkami"><polyline class="tr1" points="${line}"></polyline><polyline class="tr2" points="${line}"></polyline><rect x="${+sx - 2}" y="${+sy - 8}" width="4" height="16" fill="#F4F4F6"></rect>${cs}</svg>`;
+  }
+  // Advice item: corner chip, short instruction, detail, seconds
+  function tipHtml(tp) {
+    const cls = tp.kind === 'risk' ? 'risk' : '';
+    const cost = tp.dt != null ? `<span class="cost" style="color:${tp.dt < 0 ? 'var(--green)' : 'var(--red)'}">${tp.dt > 0 ? '+' : '−'}${nf(Math.abs(tp.dt), 2)} s</span>`
+      : tp.note ? `<span class="cost">${esc(tp.note)}</span>` : '';
+    const head = tp.short || '';
+    return `<div class="tip" data-n="${tp.n ?? ''}">${tp.n != null ? `<span class="tchip ${cls}">T${tp.n}</span>` : ''}<div>${cost}<b>${esc(head)}</b><small>${esc(tp.text || '')}</small></div></div>`;
+  }
+  // Older feed items (and Czech texts without structure): "T4 (ztráta 0,18 s): …" → a tip
+  function pointTip(p) {
+    const m = /^(⚠\s*)?(?:([^:]*?)\s)?T(\d+)(?:\s*\(([^)]*)\))?:\s*(.*)$/.exec(p);
+    if (!m) return null;
+    // Instruction first ("Podřaď na 2. stupeň – jedeš tu na 3. …"): the part before the dash
+    const body = m[5], k = body.indexOf(' – ');
+    const short = m[2] ? m[2] : k > 0 && k < 70 ? body.slice(0, k) : '';
+    const text = m[2] || !(k > 0 && k < 70) ? body : body.slice(k + 3);
+    return { n: +m[3], kind: m[1] ? 'risk' : 'tip', short, text, note: m[4] || '' };
+  }
+  let coachSel = null;
+  function renderCoachMap(c, marks) {
+    const card = $('cMap');
+    const svg = trackSvg(c.map, c.corners, marks, coachSel);
+    card.hidden = !svg;
+    if (svg) $('cMapSvg').innerHTML = svg;
+  }
   function renderCoach(c) {
     const focus = c.focus;
     coachCorners = c.corners || [];
@@ -1937,23 +2123,58 @@
     drawMap(true);
     $('focus').hidden = !focus;
     if (focus) { $('focusTitle').textContent = focus.title || t('Fokus'); $('focusText').textContent = focus.text || ''; }
+    const items = c.items || [];
+    const latest = items[0];
+    const marks = {};
+    if (focusCorner != null) marks[focusCorner] = 'focus';
+    // Latest lap (or the session summary) as the main card
+    if (latest) {
+      const tips = latest.tips && latest.tips.length ? latest.tips : (latest.points || []).map(pointTip).filter(Boolean);
+      const rest = (latest.points || []).filter(p => !pointTip(p) && !/^⚠/.test(p) && !/^Největší rezerva/.test(p));
+      tips.forEach(tp => { if (tp.n != null && !marks[tp.n]) marks[tp.n] = tp.kind === 'risk' ? 'risk' : 'tip'; });
+      const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + nf(Math.abs(v) / 1000, 3);
+      const kpi = latest.ms != null ? `<div class="lkpi"><div><span class="lbl">Čas</span><span class="big">${fmtLap(latest.ms)}</span></div>
+          ${latest.best_ms != null && latest.ms !== latest.best_ms ? `<div><span class="lbl">Na nejlepší</span><span class="mid" style="color:var(--red)">${sgn(latest.ms - latest.best_ms)}</span></div>` : `<div><span class="lbl">Nejlepší</span><span class="mid" style="color:#C99BFF">ano</span></div>`}
+          ${latest.theoretical_ms != null ? `<div><span class="lbl">Na ideál</span><span class="mid" style="color:${latest.ms > latest.theoretical_ms ? 'var(--red)' : 'var(--green)'}">${sgn(latest.ms - latest.theoretical_ms)}</span></div>` : ''}
+          <div class="lverdict">${esc(latest.text || '')}</div></div>` : `<p style="font-size:14px;color:var(--dim);margin:4px 0 10px">${esc(latest.text || '')}</p>`;
+      const good = tips.filter(x => x.kind === 'good'), fix = tips.filter(x => x.kind !== 'good');
+      const stats = latest.stats ? `<div class="lstats">${Object.entries(latest.stats).map(([k, v]) => `<span>${esc(k)} <b>${esc(v)}</b></span>`).join('')}</div>` : '';
+      $('cLatest').innerHTML = `<div class="lhead"><h2 style="margin:0">${esc(latest.title || '')}</h2><span class="muted" style="font-size:13px">${esc(latest.time || '')}</span></div>${kpi}`
+        + (fix.length ? `<div class="lbl" style="color:#F2C230;margin-bottom:8px">${latest.kind === 'summary' ? 'Kde je čas' : 'Příště udělej jinak'}</div><div class="tiplist">${fix.slice(0, 4).map(tipHtml).join('')}</div>` : '')
+        + (good.length ? `<div class="lbl" style="color:var(--green);margin:12px 0 8px">Jinde jsi byl rychlejší</div><div class="tiplist">${good.map(tipHtml).join('')}</div>` : '')
+        + (rest.length ? `<div class="lnote">${rest.map(esc).join('<br>')}</div>` : '') + stats;
+    }
+    // Earlier laps, one line each
+    const older = items.slice(1);
+    $('cHistory').hidden = !older.length;
     const feed = $('feed');
-    feed.replaceChildren(...(c.items || []).map(it => {
-      const card = el('div', 'card fb ' + (it.tone || 'info'));
-      const head = el('div', 'row');
-      head.append(el('h3', null, it.title || ''), el('span', 'when', [it.lap != null ? t('Runde {n}', { n: it.lap }) : '', it.time || ''].filter(Boolean).join(' · ')));
-      card.append(head);
-      if (it.text) card.append(el('p', null, it.text));
-      if (it.points && it.points.length) { const ul = el('ul'); it.points.forEach(p => ul.append(el('li', null, p))); card.append(ul); }
-      if (it.stats) {
-        const st = el('div', 'stats');
-        Object.entries(it.stats).forEach(([k, v]) => { const sp = el('span', null, k + ' '); sp.append(el('b', null, String(v))); st.append(sp); });
-        card.append(st);
-      }
-      return card;
-    }));
+    feed.innerHTML = older.map(it => {
+      const tp = (it.tips && it.tips[0]) || (it.points || []).map(pointTip).find(Boolean);
+      const d = it.ms != null && it.best_ms != null ? it.ms - it.best_ms : null;
+      const col = d == null ? 'var(--dim)' : d === 0 ? '#C99BFF' : d > 0 ? 'var(--red)' : 'var(--green)';
+      return `<div class="hrow"><span class="k">${it.lap != null ? 'K' + it.lap : '–'}</span><span class="t" style="color:${d === 0 ? '#C99BFF' : 'var(--text)'}">${it.ms != null ? fmtLap(it.ms) : ''}</span>`
+        + `<span class="d" style="color:${col}">${d == null ? '' : d === 0 ? 'nejlepší' : (d > 0 ? '+' : '−') + nf(Math.abs(d) / 1000, 3)}</span>`
+        + `<span class="x">${tp ? `T${tp.n}: ${esc(tp.short || tp.text || '')}` : esc(it.title || '')}</span></div>`;
+    }).join('');
+    // Radio
+    const radio = c.radio || [];
+    $('cRadio').hidden = !radio.length;
+    $('cRadioList').innerHTML = radio.map(r => tipHtml({ n: r.corner, kind: r.level === 'warn' ? 'risk' : 'tip', short: '', text: r.text })).join('');
+    radio.forEach(r => { if (r.corner != null && !marks[r.corner]) marks[r.corner] = r.level === 'warn' ? 'risk' : 'tip'; });
+    renderCoachMap(c, marks);
+    coachMarks = marks;
     setText('coachUpdated', c.updated ? t('Stand {time}', { time: new Date(c.updated).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) }) : '');
   }
+  let coachMarks = {};
+  // Tap a tip: its corner lights up on the map; tap a corner: the tips for it light up
+  $('p3body').addEventListener('click', e => {
+    const tp = e.target.closest('.tip[data-n]'), g = e.target.closest('.tmap g[data-n]');
+    const n = tp ? +tp.dataset.n : g ? +g.dataset.n : null;
+    if (n == null || Number.isNaN(n)) return;
+    coachSel = coachSel === n ? null : n;
+    if (coachData) renderCoachMap(coachData, coachMarks);
+    $$('#p3body .tip').forEach(x => { x.style.outline = coachSel != null && +x.dataset.n === coachSel ? '1px solid #F2C230' : ''; });
+  });
   let coachData = null;
   async function pollCoach() {
     try {
@@ -2579,15 +2800,8 @@
     if (cur && !all.includes(cur)) all.unshift(cur);
     $('bkTrack').innerHTML = all.map(t => `<option ${t === cur ? 'selected' : ''}>${esc(t)}</option>`).join('') || '<option>–</option>';
   }
-  function itemsReserves(list) {
-    return (list || []).map(r => zItem('T' + r.n, `<b>+${nf(r.loss, 2)} s</b> na kolo v průměru. ${esc(r.tip || '')}`)).join('') || '<div class="muted">Žádná zatáčka, kde bys pravidelně ztrácel víc než 0,05 s.</div>';
-  }
-  function itemsRisk(list, max) {
-    return (list || []).slice(0, max).map(r => {
-      const what = [r.spins ? `${r.spins}× spin` : '', r.moments ? `${r.moments}× ujetí` : '', r.slides ? `${r.slides}× smyk zádi` : ''].filter(Boolean).join(', ');
-      return zItem('T' + r.n, `<b>${what}</b>${r.cause ? ' – ' + esc(r.cause) + '.' : ''} ${r.tip ? esc(r.tip) : ''}`, 'risk');
-    }).join('') || '<div class="muted">Bez spinů a ujetí – drž to tak.</div>';
-  }
+
+
   function itemsTyres(n) {
     if (n.kart) return '<div class="muted">Motokára – gumy se neopotřebují.</div>' + (n.runs || []).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('');
     const t = (n.tyres || []).map(x => zItem('T' + x.n, esc(x.text.replace(/^T\d+: /, '')))).join('');
@@ -2601,29 +2815,73 @@
     return `<div class="row"><span>0–100 <em>${s.to_100 != null ? nf(s.to_100, 2) + ' s' : '–'}</em></span><span>Prokluz <em>${nf(s.spin_s, 1)} s</em></span><span>Otáčky při rozjezdu <em>${s.launch_rpm != null ? Math.round(s.launch_rpm) : '–'}</em></span></div>`
       + s.advice.map(a => `<div class="item">${esc(a)}</div>`).join('');
   }
+  // "Podřaď na 2. stupeň – jedeš tu na 3. …": instruction and the rest
+  function splitTip(t) {
+    t = t || '';
+    const k = t.indexOf(' – ');
+    return k > 0 && k < 70 ? { short: t.slice(0, k), text: t.slice(k + 3) } : { short: '', text: t };
+  }
+  function planLine(o) {
+    if (!o) return '';
+    const st = o.stints.map(x => `${esc(x.compound)} ${x.laps}`).join(' → ');
+    const box = o.stops.length ? 'box ' + o.stops.map(x => 'K' + x.lap).join(', ') : 'bez zastávky';
+    return `<span class="mono" style="font-weight:700;color:var(--text)">${st}</span> · ${box}`;
+  }
+  function bkMap(n, marks) {
+    const svg = trackSvg(n.map, n.corners, marks);
+    return svg ? `<div class="card bk"><h2>Okruh</h2>${svg}<div class="mleg"><span style="--c:#F2C230">kde je čas</span><span style="--c:#FF5A4E">pozor</span></div></div>` : '';
+  }
+  function bkMarks(n) {
+    const m = {};
+    (n.reserves || []).forEach(r => { m[r.n] = 'tip'; });
+    (n.risk || []).forEach(r => { m[r.n] = 'risk'; });
+    return m;
+  }
+  function itemsReserves(list) {
+    return (list || []).map(r => { const t = splitTip(r.tip); return tipHtml({ n: r.n, kind: 'tip', dt: r.loss, short: r.short || t.short || 'Ztráta v zatáčce', text: r.short ? r.tip : t.text }); }).join('')
+      || '<div class="muted">Žádná zatáčka, kde bys pravidelně ztrácel víc než 0,05 s.</div>';
+  }
+  function itemsRisk(list, max) {
+    return (list || []).slice(0, max).map(r => {
+      const what = [r.spins ? `${r.spins}× spin` : '', r.moments ? `${r.moments}× ujetí` : '', r.slides ? `${r.slides}× smyk zádi` : ''].filter(Boolean).join(', ');
+      return tipHtml({ n: r.n, kind: 'risk', short: what, text: [r.cause ? r.cause + '.' : '', r.tip || ''].join(' ') });
+    }).join('') || '<div class="muted">Bez spinů a ujetí – drž to tak.</div>';
+  }
   function renderBriefing(b) {
     const body = $('p10body');
     if (b.error === 'no_race') {
-      body.innerHTML = '<div class="card wide bk"><h2>Briefing</h2>Vyber závod (Strategie → Závod…). Briefing se poskládá z tréninku na té trati: strategie, palivo, gumy, kde je čas, kde pozor a start. Zápisník trati je ve vedlejší záložce.</div>';
+      body.innerHTML = '<div class="card wide bk"><h2>Briefing</h2>Vyber závod (Strategie → Vybrat závod). Briefing se poskládá z tréninku na té trati: plán, cílové tempo, kde je čas, kde pozor, palivo, gumy a start. Zápisník trati je ve vedlejší záložce.</div>';
       return;
     }
     const r = b.race, n = b.book || {}, p = b.plan || {};
     const rules = [r.laps ? `${r.laps} kol` : '', r.pit_required ? 'povinná zastávka' : '', r.mandatory ? `povinná směs ${esc(r.mandatory)}` : '',
-      r.tyre_wear ? `opotřebení ×${nf(r.tyre_wear, 1)}` : '', r.fuel_mult ? `spotřeba ×${nf(r.fuel_mult, 1)}` : '',
-      r.no_wear ? 'gumy se neopotřebují' : '', r.no_fuel ? 'bez spotřeby paliva' : ''].filter(Boolean).join(' · ');
-    const setup = b.setup ? `${esc(b.setup.name)}${b.setup.bop && !/bop/i.test(b.setup.name) ? ' (BoP)' : ''}` : 'bez karty setupu';
-    let html = `<div class="card wide bk"><h2>Briefing · ${esc(r.name || 'závod')}</h2>
-      <div class="row"><span><b>${esc(b.track)}</b></span><span>${rules}</span><span>${esc(b.car_name || '')} · ${setup}</span></div>
-      <div class="bkhero">
-        <span><span class="lbl">Závodní tempo</span><br><span class="big">${fmtLap(n.typical_ms)}</span></span>
-        <span><span class="lbl">Nejlepší kolo</span><br><span class="big">${fmtLap(n.best && n.best.ms)}</span></span>
-        <span><span class="lbl">Ideální kolo</span><br><span class="big">${fmtLap(n.ideal_ms)}</span></span>
-        <span class="muted">Závodní tempo = medián normálních kol z nejrychlejšího tréninku${n.normal_laps ? ` (${n.normal_laps} kol)` : ''}. Drž ho celý závod – nejlepší kolo se nehoní.</span>
+      r.tyre_wear ? `opotřebení ×${nf(r.tyre_wear, 1)}` : '', r.fuel_mult ? `palivo ×${nf(r.fuel_mult, 1)}` : ''].filter(Boolean).join(' · ');
+    const setup = b.setup ? `setup „${esc(b.setup.name)}“${b.setup.bop && !/bop/i.test(b.setup.name) ? ' (BoP)' : ''}` : 'bez karty setupu';
+    const extra = [r.no_wear ? 'bez opotřebení' : '', r.no_fuel ? 'bez paliva' : ''].filter(Boolean).join(' a ');
+    const best = b.options && b.options.best;
+    let html = `<div class="card wide bk bkhero2">
+      <div class="bkrace">
+        <div class="bkname"><span class="skew"></span>${esc(r.name || 'Závod')}</div>
+        <div>${esc(b.track)}${rules ? ' · ' + rules : ''}</div>
+        <div class="muted">${esc(b.car_name || '')} · ${setup}${extra ? ' · ' + extra : ''}</div>
+        ${best ? `<div style="margin-top:6px"><span class="lbl" style="color:var(--green);margin-right:8px">Plán</span>${planLine(best)}</div>` : ''}
+      </div>
+      <div class="bkkpis">
+        <div><span class="lbl" style="color:#F2C230">Cílové tempo</span><span class="big">${fmtLap(n.typical_ms)}</span><small>medián ${n.normal_laps || 0} kol</small></div>
+        <div><span class="lbl">Nejlepší</span><span class="big" style="color:#C99BFF">${fmtLap(n.best && n.best.ms)}</span><small>${n.best ? dayOf(n.best.started) : ''}</small></div>
+        <div><span class="lbl">Ideální</span><span class="big">${fmtLap(n.ideal_ms)}</span><small>nejlepší zatáčky</small></div>
       </div></div>`;
-    // Strategy
+    html += bkMap(n, bkMarks(n));
+    const gain = (n.reserves || []).reduce((a, x) => a + x.loss, 0);
+    html += `<div class="card bk"><h2>Kde je čas${gain ? ` <span class="mono" style="float:right;font-size:13px;color:var(--label);letter-spacing:0">−${nf(gain, 2)} s / kolo</span>` : ''}</h2><div class="tiplist">${itemsReserves(n.reserves)}</div></div>`;
+    const prep = b.prep;
+    const open = prep && prep.items ? prep.items.filter(i => i.status !== 'ok') : [];
+    html += `<div class="bkcol"><div class="card bk"><h2>Pozor</h2><div class="tiplist">${itemsRisk(n.risk, 2)}</div></div>`
+      + (prep && prep.items ? `<div class="card bk"><h2>Zbývá připravit <span class="mono" style="float:right;color:#F2C230;letter-spacing:0">${open.length}</span></h2>${open.map(i => `<div class="prepi"><b>${esc(i.label)}</b> <span>– ${esc(i.todo || i.detail)}</span></div>`).join('') || '<div>Všechno připraveno.</div>'}</div>` : '')
+      + '</div>';
+    // Strategy, fuel, tyres, start
     html += `<div class="card bk"><h2>Strategie</h2>${plansHtml(b.options) || '<div class="muted">Chybí data pro plán – zadej v závodě kola a pravidla.</div>'}
-      <div class="row" style="margin-top:6px"><span>Palivo/kolo <em>${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) : '–'}</em></span><span>Ztráta v boxech <em>${nf(p.pit_loss || 0, 1)} s</em></span></div></div>`;
-    // Fuel
+      <div class="row" style="margin-top:8px"><span>Palivo/kolo <em>${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) : '–'}</em></span><span>Ztráta v boxech <em>${nf(p.pit_loss || 0, 1)} s</em></span></div></div>`;
     let fuel = '';
     if (r.no_fuel) fuel = '<div class="muted">Závod bez spotřeby paliva.</div>';
     else if (!b.fuel || b.fuel.error) fuel = '<div class="muted">Na šetření paliva potřebuju z tréninku na trati aspoň pár kol s tímhle autem.</div>';
@@ -2643,21 +2901,13 @@
       }
     }
     html += `<div class="card bk"><h2>Palivo</h2>${fuel}</div>`;
-    // Tyres
     let tyres = r.no_wear ? '<div class="muted">Gumy se v tomhle závodě neopotřebují.</div>' : '';
     if (!r.no_wear) {
       const pu = p.practice_use && p.practice_use.compounds || [];
       tyres = pu.map(c => `<div class="row"><span><b>${esc(c.compound)}</b></span><span>${c.laps} kol z tréninku</span>${c.life ? `<span>vydrží ~${c.life} kol</span>` : ''}${c.deg != null ? `<span>+${nf(c.deg, 2)} s/kolo stáří</span>` : ''}</div>`).join('') + itemsTyres(n);
     }
     html += `<div class="card bk"><h2>Gumy</h2>${tyres}</div>`;
-    html += `<div class="card bk"><h2>Kde je čas</h2>${itemsReserves(n.reserves)}</div>`;
-    html += `<div class="card bk"><h2>Pozor</h2>${itemsRisk(n.risk, 2)}</div>`;
     html += `<div class="card bk"><h2>Start</h2>${startHtml(n.starts)}</div>`;
-    const prep = b.prep;
-    if (prep && prep.items) {
-      const open = prep.items.filter(i => i.status !== 'ok');
-      html += `<div class="card bk"><h2>Příprava · hotovo ${prep.done}/${prep.total}</h2>${open.map(i => `<div class="item"><b>${esc(i.label)}</b> ${esc(i.todo || i.detail)}</div>`).join('') || '<div>Všechno připraveno.</div>'}</div>`;
-    }
     if (n.note && n.note.text) html += `<div class="card wide bk"><h2>Tvoje poznámky k trati</h2><div style="white-space:pre-wrap">${esc(n.note.text)}</div></div>`;
     body.innerHTML = html;
   }
@@ -2675,8 +2925,9 @@
         <span><span class="lbl">Ideální</span><br><span class="big">${fmtLap(n.ideal_ms)}</span></span>
         <span><span class="lbl">Typické</span><br><span class="big">${fmtLap(n.typical_ms)}</span></span></div>
         <div class="muted">Z nejrychlejší session (${dayOf(n.best.started)}). Ideální = nejlepší zatáčky poskládané; typické = medián normálních kol.</div></div>`;
-      html += `<div class="card bk"><h2>Kde je čas</h2>${itemsReserves(n.reserves)}</div>`;
-      html += `<div class="card bk"><h2>Pozor</h2>${itemsRisk(n.risk, 3)}</div>`;
+      html += bkMap(n, bkMarks(n));
+      html += `<div class="card bk"><h2>Kde je čas</h2><div class="tiplist">${itemsReserves(n.reserves)}</div></div>`;
+      html += `<div class="card bk"><h2>Pozor</h2><div class="tiplist">${itemsRisk(n.risk, 3)}</div></div>`;
       html += `<div class="card bk"><h2>Gumy a dlouhé stinty</h2>${itemsTyres(n)}${(n.kart ? [] : n.runs || []).slice(1).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('')}</div>`;
       html += `<div class="card bk"><h2>Starty</h2>${startHtml(n.starts)}${(n.starts || []).length > 1 ? `<div class="muted" style="margin-top:6px">Startů v datech: ${n.starts.length}</div>` : ''}</div>`;
       const ex = n.experiment;

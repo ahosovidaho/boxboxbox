@@ -273,11 +273,15 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
     };
 
     let mut points: Vec<String> = Vec::new();
+    // The same advice structured for the dashboard: corner, short instruction, detail, seconds
+    // ("tip": time to gain, "risk": spin/slide, "good": faster in another lap)
+    let mut tips: Vec<Value> = Vec::new();
     for i in &lap.incidents {
         let what = if i.kind == "spin" { tr!("Dreher", "Spin", "Spin") } else { tr!("Rutscher", "Slide", "Ujetí zádi") };
         let at = i.corner.map(corner).unwrap_or_default();
         let (cause, tip) = (&i.cause, &i.tip);
         points.push(format!("⚠ {what} {at}: {cause}. {tip}"));
+        tips.push(json!({ "n": i.corner, "kind": "risk", "short": format!("{what} – {cause}"), "text": tip }));
         tone = "warn";
     }
     if let Some(sp) = metrics.spins.first() {
@@ -310,6 +314,8 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
                     let (c, ol, d) = (corner(cn), other.lap, secs(-dt, 2));
                     // The comparison here is that other lap, not the best one
                     let t = t.replace("nejlepším kole", &format!("kole {ol}")).replace("nejlepší kolo", &format!("kolo {ol}"));
+                    let short = super::advice::corner_tips(l, o).first().map(|x| x.short.clone()).unwrap_or_default();
+                    tips.push(json!({ "n": cn, "kind": "good", "short": short, "text": format!("V kole {ol} tu byl o {d} s rychlejší. {t}"), "dt": -dt }));
                     points.push(format!("{c}: v kole {ol} o {d} s rychleji – {t}"));
                     continue;
                 }
@@ -356,6 +362,13 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
                     continue;
                 }
                 if let Some(t) = reference.corner(cn).stats.as_ref().filter(|_| i18n::czech() && normal).and_then(|rc| tips_text(lc, rc)) {
+                    let short = reference
+                        .corner(cn)
+                        .stats
+                        .as_ref()
+                        .and_then(|rc| super::advice::corner_tips(lc, rc).first().map(|x| x.short.clone()))
+                        .unwrap_or_default();
+                    tips.push(json!({ "n": cn, "kind": "tip", "short": short, "text": t, "dt": dt }));
                     points.push(format!("{c} (ztráta {d} s): {t}"));
                     continue;
                 }
@@ -394,7 +407,8 @@ pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, pre
     }
     json!({
         "id": format!("lap-{n}-{ms}"), "kind": "lap", "lap": n, "tone": tone, "title": title, "text": text,
-        "points": points, "stats": stats, "time": now_hm(),
+        "points": points, "tips": tips, "stats": stats, "time": now_hm(), "ms": ms, "best_ms": best_ms,
+        "theoretical_ms": res.theoretical_ms.map(|t| t.round() as i64),
     })
 }
 

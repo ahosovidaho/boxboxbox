@@ -30,7 +30,13 @@ pub fn reserves(res: &Comparison, count: usize) -> Vec<Value> {
         .take(count)
         .map(|(n, d)| {
             let tip = super::feedback::typical_tips(res, n, limit);
-            json!({ "n": n, "loss": super::lap::round_to(d, 2), "tip": tip })
+            // The short instruction of the typical lap there
+            let short = res.reference_lap().and_then(|r| r.corner(n).stats.clone()).and_then(|rc| {
+                let laps: Vec<&super::compare::CornerStats> = normal.iter().filter_map(|l| l.corner(n).stats.as_ref()).collect();
+                let typ = super::advice::typical(&laps)?;
+                super::advice::corner_tips(&typ, &rc).into_iter().next().map(|t| t.short)
+            });
+            json!({ "n": n, "loss": super::lap::round_to(d, 2), "tip": tip, "short": short })
         })
         .collect()
 }
@@ -110,6 +116,22 @@ pub fn build(
     out["kart"] = json!(kart);
     out["best"] = json!({ "session": best.session, "ms": best.best_ms, "started": best.started });
     out["ideal_ms"] = json!(res.theoretical_ms.map(super::lap::round_i));
+    // Outline of the best lap and where the corners are, for the map with numbered corners
+    if let Some(rows) = best.best_file.as_ref().and_then(|f| super::lap::load(&dir.join(f)).ok()) {
+        let mut rows = rows;
+        super::lap::with_distance(&mut rows);
+        let mut pts: Vec<[f64; 2]> = Vec::new();
+        let mut last = f64::MIN;
+        for r in &rows {
+            let s = r.s.unwrap_or(0.0);
+            if s - last >= 8.0 {
+                pts.push([super::lap::round_to(r.pos_x, 1), super::lap::round_to(r.pos_z, 1)]);
+                last = s;
+            }
+        }
+        out["map"] = json!(pts);
+    }
+    out["corners"] = json!(res.corners.iter().map(|c| json!({ "n": c.n, "x": c.x, "z": c.z })).collect::<Vec<_>>());
     // Typical lap (median of the normal laps) of the best session: race pace
     let limit = best.best_ms.unwrap_or(0) as f64 * 1.07;
     let mut normal: Vec<i64> = res.laps.iter().filter(|l| (l.ms as f64) <= limit).map(|l| l.ms).collect();

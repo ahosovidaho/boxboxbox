@@ -2,6 +2,19 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Redesign „Pit wall“ (1. část)** – všechny stránky kromě jízdních dashboardů:
+  - **Navigace nahoře se jmény stránek** ve skupinách Jízda | Kouč · Telemetrie · Měření |
+    Trať · Strategie · Setup | Živá data · Data, přepínač Trénink/Závod a ozubené kolečko pro
+    nastavení. Na dashboardech zůstává čistá obrazovka (swipe funguje dál).
+  - Jednotný vzhled: velké úzké nadpisy (Saira Condensed), čísla JetBrains Mono, panely,
+    tlačítka 44 px, barvy podle významu (fialová nejlepší, zelená zisk, žlutá rada, červená
+    ztráta / pozor, červená F1 jen pro akci).
+  - **Kouč** nově: poslední kolo nahoře (čas, ztráta na nejlepší a ideál, „Příště udělej jinak“
+    jako karty T4 · pokyn · ztráta), předchozí kola po řádcích, vpravo **mapa okruhu
+    s čísly zatáček** (žlutě rady, červeně pozor), fokus a rádio. Ťuknutí na radu rozsvítí
+    zatáčku na mapě a naopak. Kouč posílá rady i strukturovaně (`tips`) a obrys nejlepšího kola.
+  - **Trať / Briefing a Zápisník**: horní pruh se závodem, plánem a cílovým tempem, mapa okruhu
+    s čísly zatáček, „Kde je čas“ s krátkým pokynem, „Pozor“, „Zbývá připravit“.
 - **Zatáčky se značí „T“** (T1, T2 … jako v F1) místo „Z“ – v radách kouče, rádiu, telemetrii,
   briefingu, zápisníku i živé nápovědě na mapě.
 - **Správa dat – nová stránka „Data“** (poslední v obou režimech). Nahrávky už se nehromadí:

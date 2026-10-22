@@ -172,6 +172,8 @@ impl Coach {
             return Ok(());
         }
         let res: Comparison = self.comparer.compare(session)?;
+        // Outline of the best lap for the coach's track map (x, z every ~8 m)
+        let map = map_json(session, &res);
         let corners: Option<Value> = (!res.corners.is_empty()).then(|| corners_json(&res, None));
         let dir = session.join("analysis");
         fs::create_dir_all(&dir)?;
@@ -185,6 +187,7 @@ impl Coach {
                 state.laps.push(name.clone());
                 self.write_feed(session, Some(&item), feedback::focus_for(&res, lap), Some(corners_json(&res, Some(lap))))?;
                 self.write_radio(feedback::radio(&res))?;
+                self.write_key("map", map.clone())?;
                 let (n, title) = (lap.lap, item["title"].as_str().unwrap_or_default());
                 log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}", "kolo {n} vyhodnoceno: {title}"));
             }
@@ -199,6 +202,7 @@ impl Coach {
                 Some(json!({"title": tr!("Session beendet", "Session ended", "Session skončila"), "text": first})),
                 corners,
             )?;
+            self.write_key("map", map.clone())?;
             state.summarized_laps = state.laps.len();
             let s = session.display();
             log(tr!("Zusammenfassung geschrieben: {s}", "summary written: {s}", "souhrn zapsán: {s}"));
@@ -209,9 +213,14 @@ impl Coach {
 
     /// Radio messages of the latest lap (what changed over the last laps), in the feed.
     fn write_radio(&self, radio: Vec<Value>) -> std::io::Result<()> {
+        self.write_key("radio", Value::Array(radio))
+    }
+
+    /// Sets one key of the feed.
+    fn write_key(&self, key: &str, value: Value) -> std::io::Result<()> {
         let mut feed: Value =
             fs::read_to_string(&self.feed_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}));
-        feed["radio"] = Value::Array(radio);
+        feed[key] = value;
         let tmp = self.feed_path.with_extension("json.tmp");
         fs::write(&tmp, serde_json::to_string_pretty(&feed).unwrap_or_default())?;
         fs::rename(tmp, &self.feed_path)
@@ -292,6 +301,22 @@ fn live_tip(
 /// Corners for the dashboard map: position, where the best lap brakes, and how the given lap
 /// compared in that corner (live coach hints in practice: time lost, braking point, apex speed,
 /// full throttle; positive `db`/`dfull` = later than the best lap, m).
+fn map_json(session: &Path, res: &Comparison) -> Value {
+    let Some(r) = res.reference.as_ref() else { return Value::Null };
+    let Ok(mut rows) = super::lap::load(&session.join(&r.file)) else { return Value::Null };
+    super::lap::with_distance(&mut rows);
+    let mut out: Vec<[f64; 2]> = Vec::new();
+    let mut last = f64::MIN;
+    for row in &rows {
+        let s = row.s.unwrap_or(0.0);
+        if s - last >= 8.0 {
+            out.push([(row.pos_x * 10.0).round() / 10.0, (row.pos_z * 10.0).round() / 10.0]);
+            last = s;
+        }
+    }
+    json!(out)
+}
+
 fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::LapResult>) -> Value {
     let r = |v: f64, d: i32| (v * 10f64.powi(d)).round() / 10f64.powi(d);
     let reference = res.reference_lap();
