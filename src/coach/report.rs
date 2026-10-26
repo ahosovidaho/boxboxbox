@@ -50,7 +50,14 @@ fn print_comparison(res: &Comparison) {
         println!("{}", tr!("Noch keine vollständige Runde.", "No complete lap yet.", "Zatím žádné celé kolo."));
         return;
     };
-    let (n, t, ratio) = (reference.lap, fmt_t(reference.ms as f64), res.steer_ratio);
+    let n = res.reference_lap().map_or(reference.lap.to_string(), |l| {
+        if res.multi_run() {
+            format!("{} ({})", l.lap, super::feedback::lap_tag(res, l))
+        } else {
+            l.lap.to_string()
+        }
+    });
+    let (t, ratio) = (fmt_t(reference.ms as f64), res.steer_ratio);
     println!(
         "{}",
         tr!(
@@ -59,9 +66,11 @@ fn print_comparison(res: &Comparison) {
             "Reference: kolo {n} ({t}), převod řízení {ratio:.1}:1"
         )
     );
-    let lap_tag = tr!("R", "L", "K");
-    let laps: Vec<String> =
-        res.laps.iter().map(|l| format!("{lap_tag}{} {} ({:+.3})", l.lap, fmt_t(l.ms as f64), l.delta_ms as f64 / 1000.0)).collect();
+    let laps: Vec<String> = res
+        .laps
+        .iter()
+        .map(|l| format!("{} {} ({:+.3})", super::feedback::lap_tag(res, l), fmt_t(l.ms as f64), l.delta_ms as f64 / 1000.0))
+        .collect();
     let laps = laps.join(", ");
     println!("{}\n", tr!("Runden: {laps}", "Laps: {laps}", "Kola: {laps}"));
     let m = |v: Option<f64>| v.map_or("–".into(), dist);
@@ -83,14 +92,14 @@ fn print_comparison(res: &Comparison) {
             let Some(s) = &lc.stats else { continue };
             let db = s.brake_at.zip(r.brake_at).map(|(a, b)| a - b);
             let dfull = s.full_at.zip(r.full_at).map(|(a, b)| a - b);
-            let (n, dt, db, dfull, gear) = (l.lap, lc.dt, m(db), m(dfull), opt_gear(s.gear_min));
+            let (n, dt, db, dfull, gear) = (super::feedback::lap_tag(res, l), lc.dt, m(db), m(dfull), opt_gear(s.gear_min));
             let (dapex, dexit, under, over, rear, tcs) =
                 (sv(s.v_min - r.v_min), sv(s.v_exit - r.v_exit), s.under, s.over, s.rear_slide, s.tcs);
             println!(
                 "{}",
                 tr!(
-                    "    R{n}: {dt:+.3} s | Bremse {db} | Scheitel {dapex:+.0} {u} | Ausgang {dexit:+.0} {u} | Vollgas {dfull} | Gang {gear} | unter {under:.0}% über {over:.0}% Heck {rear:.1}° TCS {tcs:.0}%",
-                    "    L{n}: {dt:+.3} s | brake {db} | apex {dapex:+.0} {u} | exit {dexit:+.0} {u} | full throttle {dfull} | gear {gear} | under {under:.0}% over {over:.0}% rear {rear:.1}° TCS {tcs:.0}%", "    K{n}: {dt:+.3} s | brzda {db} | vrchol {dapex:+.0} {u} | výjezd {dexit:+.0} {u} | plný plyn {dfull} | rychlost {gear} | nedotáč. {under:.0}% přetáč. {over:.0}% záď {rear:.1}° TCS {tcs:.0}%"
+                    "    {n}: {dt:+.3} s | Bremse {db} | Scheitel {dapex:+.0} {u} | Ausgang {dexit:+.0} {u} | Vollgas {dfull} | Gang {gear} | unter {under:.0}% über {over:.0}% Heck {rear:.1}° TCS {tcs:.0}%",
+                    "    {n}: {dt:+.3} s | brake {db} | apex {dapex:+.0} {u} | exit {dexit:+.0} {u} | full throttle {dfull} | gear {gear} | under {under:.0}% over {over:.0}% rear {rear:.1}° TCS {tcs:.0}%", "    {n}: {dt:+.3} s | brzda {db} | vrchol {dapex:+.0} {u} | výjezd {dexit:+.0} {u} | plný plyn {dfull} | rychlost {gear} | nedotáč. {under:.0}% přetáč. {over:.0}% záď {rear:.1}° TCS {tcs:.0}%"
                 )
             );
         }
@@ -111,7 +120,7 @@ fn print_comparison(res: &Comparison) {
     for c in &res.corners {
         if let Some(l) = res.laps.iter().min_by(|a, b| a.corner(c.n).dt.total_cmp(&b.corner(c.n).dt)) {
             if l.corner(c.n).dt < -0.02 {
-                better.push(format!("{} {lap_tag}{}", corner(c.n), l.lap));
+                better.push(format!("{} {}", corner(c.n), super::feedback::lap_tag(res, l)));
             }
         }
     }

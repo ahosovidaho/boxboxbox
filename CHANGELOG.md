@@ -2,6 +2,27 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Otáčkoměr: modře = řaď, červeně = omezovač** (Živá data i závodní LED). Modře bliká od bodu
+  řazení (z naměřené výkonové křivky, jinak kontrolka hry), červeně až v omezovači – ten se učí
+  z jízdy (kde se otáčky hromadí nahoře) nebo z měření. Příznak „rev limiter“ z GT7 se už
+  nepoužívá: hra ho posílá na začátku pásma kontrolky (kart: od ~14 500, omezovač ~15 050).
+- **Palivo: „jako dosud“ a „naplno“.** Spotřeba se počítá po úsecích: když se kolo liší
+  o víc než 20 % (jiná mapa paliva), začne nový úsek a počítá se jen s ním – i kolo po
+  zastávce, když pálí výrazně víc (NSX Special X 26. 10.: 18,4 → 32,2 L/kolo, aplikace
+  dál počítala s 17,8). Vedle toho „naplno“ = nejvyšší ustálená spotřeba auta na trati při
+  stejném násobiči (z tohoto závodu nebo z dřívějších v `strategy-history/`). Box a strategie
+  ukazují obě dotankování („DOTANKUJ +55 · naplno +71“) a varují, když by naplno palivo
+  nevystačilo.
+- **Varování, když trať nesedí na vybraný závod.** Kolo se v závodě porovná s uloženým tvarem
+  trati; jede-li se jinde (26. 10.: F3500 na Yasu s vybraným NASCAR Special X), strategie
+  ukáže varování a kola, zastávky ani handling do závodu nezapisuje.
+- **Pevný seznam zatáček pro každou trať** (`tracks/<trať>.corners.json`): všechny session na
+  trati číslují zatáčky stejně (Yas: 22. 10. devět, 26. 10. šest zatáček, vracečka jednou T8
+  a jednou T6). Seznam vznikne z té nahrávky na trati, která má zatáček nejvíc.
+- **Běhy v session**: restart (návrat na kolo 0/1) začne nový běh. Kola se značí „B2/K3“, kouč
+  píše „Kolo 3 (běh 2)“, souhrn má řádek za každý běh. Spotřeba v souhrnu po úsecích mezi
+  zastávkami („K2–K4 17,8 L · K7 30,2 L …“) místo jednoho průměru.
+
 - **Redesign „Pit wall“ (1. část)** – všechny stránky kromě jízdních dashboardů:
   - **Navigace nahoře se jmény stránek** ve skupinách Jízda | Kouč · Telemetrie · Měření |
     Trať · Strategie · Setup | Živá data · Data, přepínač Trénink/Závod a ozubené kolečko pro

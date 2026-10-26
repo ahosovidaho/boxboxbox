@@ -64,6 +64,10 @@ pub struct LapResult {
     /// Gear changes in this lap
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shifts: Vec<super::shifts::ShiftEv>,
+    /// Run of the session the lap belongs to (1, 2 …): a restart (back to lap 0/1) starts a new
+    /// run; 0 = not known
+    #[serde(default)]
+    pub run: usize,
 }
 
 impl LapResult {
@@ -108,6 +112,30 @@ impl Comparison {
         let file = &self.reference.as_ref()?.file;
         self.laps.iter().find(|l| &l.file == file)
     }
+
+    /// The session holds more than one run (race restarted, practice before the race …)
+    pub fn multi_run(&self) -> bool {
+        self.laps.iter().any(|l| l.run > 1)
+    }
+}
+
+/// Run of every lap file: lap numbers go up within a run; a file whose lap number is not higher
+/// than the one before starts the next run. Runs without a complete lap are not counted.
+fn runs_of(files: &[(String, Option<i64>)], complete: &[String]) -> HashMap<String, usize> {
+    let mut raw: Vec<(String, usize)> = Vec::new();
+    let (mut run, mut prev) = (0usize, None::<i64>);
+    for (f, lap) in files {
+        let lap = lap.unwrap_or(0);
+        if prev.is_none_or(|p| lap <= p) {
+            run += 1;
+        }
+        prev = Some(lap);
+        raw.push((f.clone(), run));
+    }
+    // Renumber: only runs with complete laps
+    let mut used: Vec<usize> = raw.iter().filter(|(f, _)| complete.contains(f)).map(|(_, r)| *r).collect();
+    used.dedup();
+    raw.into_iter().filter_map(|(f, r)| used.iter().position(|u| *u == r).map(|i| (f, i + 1))).collect()
 }
 
 /// Lightweight facts about a lap file, read without keeping the data in memory.
@@ -143,7 +171,24 @@ struct CornerFile {
     /// Lap time of the lap the corners were taken from (older files: none)
     #[serde(default)]
     source_ms: Option<i64>,
+    /// Track whose fixed corner list this is (see [`Comparer::track_corners`])
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    track: Option<String>,
     corners: Vec<CornerDef>,
+}
+
+fn read_corner_file(path: &Path) -> Option<CornerFile> {
+    fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok())
+}
+
+/// The data folder of a session (`<data>/recordings/<session>`).
+fn data_dir(session: &Path) -> Option<&Path> {
+    session.parent()?.parent()
+}
+
+/// Fixed corner list of a track: `<data>/tracks/<track key>.corners.json`.
+pub fn track_corners_path(data: &Path, track: &str) -> PathBuf {
+    data.join("tracks").join(format!("{}.corners.json", crate::strategy::practice::track_key(track)))
 }
 
 /// A corner mapped onto a reference lap (indices into the reference rows).
@@ -169,6 +214,8 @@ type ResultKey = (PathBuf, PathBuf, Vec<(usize, usize, usize)>);
 pub struct Comparer {
     meta: HashMap<FileKey, Meta>,
     results: HashMap<ResultKey, LapResult>,
+    /// Stored track layouts (practice.json) and when they were read
+    shapes: Option<(SystemTime, Vec<crate::strategy::practice::Shape>)>,
 }
 
 pub fn lap_files(session: &Path) -> Vec<PathBuf> {
@@ -192,6 +239,67 @@ fn file_name(p: &Path) -> String {
 }
 
 impl Comparer {
+    /// Track of a lap: its positions against the layouts stored in practice.
+    fn track_of_rows(&mut self, data: &Path, rows: &[Row]) -> Option<String> {
+        let file = data.join("practice.json");
+        let mtime = fs::metadata(&file).and_then(|m| m.modified()).ok()?;
+        if self.shapes.as_ref().is_none_or(|(t, _)| *t != mtime) {
+            let saved: crate::strategy::practice::PracticeSaved =
+                fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+            self.shapes = Some((mtime, saved.shapes));
+        }
+        let pts: Vec<[f32; 2]> = rows.iter().map(|r| [r.pos_x as f32, r.pos_z as f32]).collect();
+        crate::strategy::practice::track_of(&self.shapes.as_ref()?.1, &pts)
+    }
+
+    /// One corner list per track, so the numbers mean the same corner in every session (Yas
+    /// Marina 22 and 26 Oct: 9 and 6 corners found, the hairpin was T8 once and T6 the other
+    /// time). The first session on a track with its corners decided gives the list – of all the
+    /// sessions recorded on the track (every apex on this lap), the one with the most corners. Afterwards the
+    /// session's `corners.json` is the track's list. Returns false when the track is not known.
+    fn track_corners(&mut self, session: &Path, reference: &[Row], corners_path: &Path) -> std::io::Result<bool> {
+        let Some(data) = data_dir(session) else { return Ok(false) };
+        let Some(track) = self.track_of_rows(data, reference) else { return Ok(false) };
+        let canon = track_corners_path(data, &track);
+        let Some(mut file) = read_corner_file(&canon) else { return Ok(false) };
+        file.track = Some(track);
+        let same = read_corner_file(corners_path)
+            .is_some_and(|f| f.track == file.track && serde_json::to_string(&f.corners).ok() == serde_json::to_string(&file.corners).ok());
+        if !same {
+            fs::write(corners_path, serde_json::to_string_pretty(&file).unwrap_or_default())?;
+        }
+        Ok(true)
+    }
+
+    /// No list for the track yet: the best one among the analysed sessions on it becomes the list.
+    fn save_track_corners(&mut self, session: &Path, reference: &[Row], corners_path: &Path) {
+        let Some(data) = data_dir(session) else { return };
+        let Some(track) = self.track_of_rows(data, reference) else { return };
+        let canon = track_corners_path(data, &track);
+        if canon.exists() {
+            return;
+        }
+        let mut best = read_corner_file(corners_path);
+        // Another session's corners belong to this track when every apex lies on this lap
+        let pts: Vec<(f64, f64)> = reference.iter().step_by(5).map(|r| (r.pos_x, r.pos_z)).collect();
+        let on_track = |f: &CornerFile| {
+            !f.corners.is_empty() && f.corners.iter().all(|c| pts.iter().any(|(x, z)| (x - c.apex[0]).hypot(z - c.apex[1]) < 25.0))
+        };
+        for dir in fs::read_dir(data.join("recordings")).into_iter().flatten().flatten().map(|e| e.path()) {
+            if let Some(f) = read_corner_file(&dir.join("corners.json")).filter(|f| on_track(f)) {
+                if best.as_ref().is_none_or(|b| f.corners.len() > b.corners.len()) {
+                    best = Some(f);
+                }
+            }
+        }
+        let Some(mut best) = best else { return };
+        best.track = Some(track);
+        let _ = fs::create_dir_all(data.join("tracks"));
+        let text = serde_json::to_string_pretty(&best).unwrap_or_default();
+        let _ = fs::write(&canon, &text);
+        let _ = fs::write(corners_path, text);
+    }
+
     fn meta(&mut self, path: &Path) -> Meta {
         let md = fs::metadata(path).ok();
         let key = (
@@ -276,7 +384,9 @@ impl Comparer {
         // Corners are defined once per session from the first complete lap – unless that lap had
         // a spin or an excursion (over 107 % of the best): then again from the best lap, else a
         // corner sits where the car stood (20 Oct: "Z4 apex 0 km/h", a 12 s gain in Z4)
-        let stale = match fs::read_to_string(&corners_path).ok().and_then(|t| serde_json::from_str::<CornerFile>(&t).ok()) {
+        let fixed = self.track_corners(session, &reference, &corners_path)?;
+        let stale = match read_corner_file(&corners_path) {
+            _ if fixed => Some(false),
             None => None,
             Some(f) => {
                 let ms = f.source_ms.or_else(|| laps.iter().find(|(p, _)| meta_lap(p) == f.source).map(|(_, ms)| *ms));
@@ -292,6 +402,9 @@ impl Comparer {
                 prepare(&mut first, ratio);
                 write_corner_defs(&corners_path, &first, laps[0].1)?;
             }
+        }
+        if !fixed {
+            self.save_track_corners(session, &reference, &corners_path);
         }
         let corners = map_corner_defs(&corners_path, &reference)?;
         let ckey: Vec<(usize, usize, usize)> = corners.iter().map(|c| (c.n, c.from, c.to)).collect();
@@ -330,6 +443,20 @@ impl Comparer {
                 self.results.insert(key.clone(), lap_result);
             }
             result.laps.push(self.results[&key].clone());
+        }
+        // Runs of the session (from all lap files; a cleaned session: from the lap numbers)
+        let names: Vec<String> = result.laps.iter().map(|l| l.file.clone()).collect();
+        let files: Vec<(String, Option<i64>)> = {
+            let all = lap_files(session);
+            if all.len() >= laps.len() && laps.iter().all(|(p, _)| all.contains(p)) {
+                all.iter().map(|p| (file_name(p), self.meta(p).lap)).collect()
+            } else {
+                result.laps.iter().map(|l| (l.file.clone(), Some(l.lap))).collect()
+            }
+        };
+        let runs = runs_of(&files, &names);
+        for l in &mut result.laps {
+            l.run = runs.get(&l.file).copied().unwrap_or(1);
         }
         // Drop cached results that belong to an older reference
         self.results.retain(|k, _| k.1 == ref_path);
@@ -378,7 +505,7 @@ fn evaluate_lap(path: &Path, ms: i64, ref_ms: i64, rows: &[Row], reference: &[Ro
     let incidents = super::incident::detect(rows, reference, &sections);
     let max_rpm = rows.iter().map(|r| r.rpm).fold(0.0, f64::max);
     let shifts = super::shifts::detect(rows, max_rpm);
-    LapResult { file: file_name(path), lap: rows[0].lap as i64, ms, delta_ms: ms - ref_ms, corners: lap_corners, incidents, shifts }
+    LapResult { file: file_name(path), lap: rows[0].lap as i64, ms, delta_ms: ms - ref_ms, corners: lap_corners, incidents, shifts, run: 0 }
 }
 
 fn dist2(r: &Row, x: f64, z: f64) -> f64 {
@@ -480,7 +607,7 @@ fn write_corner_defs(path: &Path, rows: &[Row], ms: i64) -> std::io::Result<()> 
         .iter()
         .map(|c| CornerDef { n: c.n, dir: c.dir.clone(), from: pos(c.from), apex: pos(c.apex), to: pos(c.to) })
         .collect();
-    let file = CornerFile { source: rows[0].lap as i64, source_ms: Some(ms), corners: defs };
+    let file = CornerFile { source: rows[0].lap as i64, source_ms: Some(ms), track: None, corners: defs };
     fs::write(path, serde_json::to_string_pretty(&file).unwrap_or_default())
 }
 
@@ -898,4 +1025,33 @@ impl Comparer {
 fn meta_lap(p: &Path) -> i64 {
     let name = file_name(p);
     name.split("_lap").nth(1).and_then(|r| r.trim_end_matches(".csv").parse().ok()).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod run_tests {
+    use super::*;
+
+    #[test]
+    fn restarts_split_the_session_into_runs() {
+        // F3500 Yas Marina 22 Oct: out-lap run, aborted start, restart, the race
+        let f = |v: &[(&str, i64)]| v.iter().map(|(n, l)| (n.to_string(), Some(*l))).collect::<Vec<_>>();
+        let files = f(&[
+            ("001", 0),
+            ("002", 1),
+            ("003", 2),
+            ("004", 3),
+            ("005", 4),
+            ("006", 0),
+            ("007", 0),
+            ("008", 1),
+            ("011", 0),
+            ("012", 1),
+            ("013", 2),
+            ("014", 3),
+        ]);
+        let complete: Vec<String> = ["002", "003", "004", "012", "013"].iter().map(|s| s.to_string()).collect();
+        let r = runs_of(&files, &complete);
+        assert_eq!((r["002"], r["004"], r["012"], r["013"]), (1, 1, 2, 2));
+        assert!(!r.contains_key("008")); // a run without a complete lap does not count
+    }
 }

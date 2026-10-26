@@ -30,6 +30,9 @@ const DEFAULT_RESERVE: f32 = 0.3;
 const DEFAULT_WEAR_LIMIT: f32 = 70.0;
 /// Fuel per lap: average of this many recent clean laps
 const FUEL_LAPS: usize = 5;
+/// A clean lap burning this much more or less than the stretch so far starts a new stretch (fuel
+/// map changed, NSX Special X 2026-10-26: 18.4 → 32.2 L per lap after the stop)
+const FUEL_STEP: f32 = 0.2;
 /// Arrive at the pit with at least this much fuel left (laps)
 const PIT_MARGIN: f32 = 0.15;
 /// Tyre degradation when nothing is known: s per lap per lap of age (Barcelona 2026-10: 0.16–0.31)
@@ -178,6 +181,21 @@ pub struct Plan {
     pub lap_fuel_allowed: Option<f32>,
     /// Fuel used in the last full lap without refuelling
     pub last_lap_fuel: Option<f32>,
+    /// Flat out (fuel map 1): the highest steady consumption known for this car and track
+    /// (this race or earlier ones), when clearly above `fuel_per_lap`
+    pub fuel_per_lap_max: Option<f32>,
+    /// "race" (measured in this race) or "history" (earlier races with the car)
+    pub fuel_max_source: &'static str,
+    /// Laps the fuel on board reaches beyond the finish at `fuel_per_lap_max`
+    pub fuel_margin_laps_max: Option<f32>,
+    /// The same refuel amounts as `stop_add`, `next_stop_fuel` and `add_now`, for flat out
+    pub stop_add_max: Option<f32>,
+    pub next_stop_fuel_max: Option<f32>,
+    pub add_now_max: Option<f32>,
+    /// The consumption changed during the race (new stretch since this lap)
+    pub fuel_step_lap: Option<i16>,
+    /// The laps are driven on another track than the race's (see [`Strategy::track_mismatch`])
+    pub track_mismatch: Option<String>,
     /// Next stop: enter the pit at the end of one of these laps
     pub window: Option<[i16; 2]>,
     /// Next stop of the recommended strategy (box at the end of this lap)
@@ -281,6 +299,11 @@ pub struct Strategy {
     pub handling: handling::Handling,
     /// Race with the practice figures filled in, and what it was computed from
     filled: Option<(String, Race, Option<PracticeUse>)>,
+    /// Flat-out keys already looked up in `strategy-history/`
+    history_scanned: std::collections::HashSet<String>,
+    /// Race mode: the last lap did not fit the race track – the track it fits ("" = none
+    /// stored). While set, laps, stops and handling are not stored for the race.
+    pub track_mismatch: Option<String>,
 }
 
 impl Strategy {
@@ -291,7 +314,18 @@ impl Strategy {
         let practice = practice::Practice::load(file.as_ref().map(|f| f.with_file_name("practice.json")));
         let setups = setups::Setups::load(file.as_ref().map(|f| f.with_file_name("setups.json")));
         let handling = handling::Handling::load(file.as_ref().map(|f| f.with_file_name("handling.json")));
-        Strategy { saved, file, live: Live::default(), cache: None, practice, setups, handling, filled: None }
+        Strategy {
+            saved,
+            file,
+            live: Live::default(),
+            cache: None,
+            practice,
+            setups,
+            handling,
+            filled: None,
+            history_scanned: Default::default(),
+            track_mismatch: None,
+        }
     }
 
     pub fn shared(self) -> Shared {
@@ -321,6 +355,7 @@ impl Strategy {
             self.reset_progress();
         }
         self.saved.race = Some(race);
+        self.track_mismatch = None;
         self.save();
     }
 
@@ -363,6 +398,9 @@ impl Strategy {
     /// Handling counts of a finished lap: stored for the car, its active setup and the track
     /// (practice track in practice, otherwise the race track).
     pub fn handling_lap(&mut self, car: i32, mut lap: handling::LapStats) {
+        if self.wrong_track() {
+            return;
+        }
         let track = self.advice_track();
         if track.trim().is_empty() || car == 0 {
             return;
@@ -388,7 +426,7 @@ impl Strategy {
             self.practice.lap_done(self.live.car_code, &setup, used, refuel, ms, closed);
             return;
         }
-        if lap < 1 || used <= 0.0 {
+        if lap < 1 || used <= 0.0 || self.wrong_track() {
             return;
         }
         self.saved.fuel_laps.retain(|l| l.lap != lap);
@@ -433,6 +471,9 @@ impl Strategy {
             self.practice.pit();
             return;
         }
+        if self.wrong_track() {
+            return;
+        }
         match self.saved.stops.last_mut() {
             Some(s) if s.lap == lap || s.lap == lap - 1 => s.fuel_added += added,
             _ => self.saved.stops.push(Stop { lap, fuel_added: added, tyres: None }),
@@ -443,6 +484,9 @@ impl Strategy {
     pub fn stopped(&mut self, lap: i16) {
         if self.practice.saved.active {
             self.practice.pit();
+            return;
+        }
+        if self.wrong_track() {
             return;
         }
         if !self.saved.stops.last().is_some_and(|s| s.lap == lap || s.lap == lap - 1) {
@@ -539,23 +583,144 @@ impl Strategy {
         Some(format!("{}|{}|{}|{}", self.live.car_code, race.track, compound, race.tyre_wear.unwrap_or(1.0)))
     }
 
-    /// Clean laps (no refuelling, not the first lap from the grid); the first lap only if nothing else.
+    /// Clean laps (no refuelling, not the first lap from the grid) of the current stretch of steady
+    /// consumption; the first lap only if nothing else.
     pub fn fuel_per_lap(&self) -> Option<f32> {
-        // The lap with a stop and the one after it (pit exit) burn less than a racing lap
-        let pit = |l: &FuelLap| l.refuel || self.saved.stops.iter().any(|s| s.lap == l.lap || s.lap == l.lap - 1);
-        let clean: Vec<f32> = self.saved.fuel_laps.iter().filter(|l| !pit(l) && l.lap > 1).map(|l| l.used).collect();
+        if let Some(st) = fuel_stretches(&self.saved).last() {
+            let recent = &st.used[st.used.len().saturating_sub(FUEL_LAPS)..];
+            return Some(recent.iter().sum::<f32>() / recent.len() as f32);
+        }
         // No clean lap yet: better a lap next to a stop than no figure at all
-        let pick =
-            if clean.is_empty() { self.saved.fuel_laps.iter().filter(|l| !l.refuel).map(|l| l.used).collect::<Vec<_>>() } else { clean };
+        let pick: Vec<f32> = self.saved.fuel_laps.iter().filter(|l| !l.refuel).map(|l| l.used).collect();
         let recent = &pick[pick.len().saturating_sub(FUEL_LAPS)..];
         (!recent.is_empty()).then(|| recent.iter().sum::<f32>() / recent.len() as f32)
     }
 
+    fn fuel_max_key(&self) -> Option<String> {
+        let race = self.saved.race.as_ref().filter(|r| !r.track.trim().is_empty())?;
+        (self.live.car_code > 0)
+            .then(|| format!("fuelmax|{}|{}|{}", self.live.car_code, practice::track_key(&race.track), race.fuel_mult.unwrap_or(1.0)))
+    }
+
+    /// Highest steady consumption of the car on the track at this multiplier: this race, the
+    /// calibration, and (looked up once) the races archived in `strategy-history/`.
+    pub fn fuel_max(&mut self) -> Option<(f32, &'static str)> {
+        let race_max = fuel_stretches(&self.saved).iter().map(|s| s.mean()).fold(None, |a: Option<f32>, m| Some(a.map_or(m, |a| a.max(m))));
+        let key = self.fuel_max_key();
+        if let Some(k) = key.as_ref().filter(|k| !self.history_scanned.contains(*k)) {
+            self.history_scanned.insert(k.clone());
+            if let Some(h) = self.history_fuel_max() {
+                let v = self.saved.calibration.get(k).map_or(h, |old| old.max(h));
+                self.saved.calibration.insert(k.clone(), v);
+            }
+        }
+        let known = key.and_then(|k| self.saved.calibration.get(&k).copied());
+        match (race_max, known) {
+            (Some(r), Some(k)) if k > r => Some((k, "history")),
+            (Some(r), _) => Some((r, "race")),
+            (None, Some(k)) => Some((k, "history")),
+            _ => None,
+        }
+    }
+
+    fn history_fuel_max(&self) -> Option<f32> {
+        let race = self.saved.race.as_ref()?;
+        let dir = self.file.as_ref()?.parent()?.join("strategy-history");
+        let suffix = format!("_auto{}.json", self.live.car_code);
+        let key = practice::track_key(&race.track);
+        let mut best: Option<f32> = None;
+        for e in std::fs::read_dir(dir).ok()?.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.ends_with(&suffix) {
+                continue;
+            }
+            let Some(old) = std::fs::read_to_string(e.path()).ok().and_then(|t| serde_json::from_str::<Saved>(&t).ok()) else { continue };
+            let Some(r) = &old.race else { continue };
+            if practice::track_key(&r.track) != key || r.fuel_mult.unwrap_or(1.0) != race.fuel_mult.unwrap_or(1.0) {
+                continue;
+            }
+            for st in fuel_stretches(&old) {
+                best = Some(best.map_or(st.mean(), |b| b.max(st.mean())));
+            }
+        }
+        best
+    }
+
+    /// Flat-out figures into the plan (see [`Plan::fuel_per_lap_max`]).
+    fn apply_max(&mut self, p: &mut Plan) {
+        p.fuel_step_lap = fuel_stretches(&self.saved).last().filter(|s| s.from > 0).map(|s| s.from);
+        self.apply_max_figures(p);
+        p.calls = calls(p, &self.live);
+        if let (Some(other), false) = (&self.track_mismatch, self.practice.saved.active) {
+            p.track_mismatch = Some(other.clone());
+            let race = self.saved.race.as_ref();
+            let (name, track) = (race.map_or("", |r| r.name.as_str()), race.map_or("", |r| r.track.as_str()));
+            let text = if other.is_empty() {
+                format!("Kolo nesedí na trať závodu „{name}“ ({track}). Kola se do závodu nezapisují – vyber správný závod.")
+            } else {
+                format!("Jedeš na trati „{other}“, ale vybraný závod „{name}“ je na „{track}“. Kola se do závodu nezapisují – vyber správný závod.")
+            };
+            p.calls.insert(0, call("warn", text));
+        }
+    }
+
+    fn apply_max_figures(&mut self, p: &mut Plan) {
+        let (Some(fpl), Some((fmax, src))) = (p.fuel_per_lap, self.fuel_max()) else { return };
+        if p.no_fuel || fmax < fpl * 1.05 {
+            return;
+        }
+        p.fuel_per_lap_max = Some(fmax);
+        p.fuel_max_source = src;
+        let live = self.live;
+        let cap = if live.capacity > 0.0 { live.capacity } else { 100.0 };
+        let total = p.total_laps.unwrap_or(0) as f32;
+        let add_for = |laps: f32, in_tank: f32| ((laps + p.reserve_laps) * fmax - in_tank).clamp(0.0, (cap - in_tank).max(0.0));
+        if let Some(left) = p.laps_left {
+            p.fuel_margin_laps_max = Some(live.fuel / fmax - left);
+        }
+        if p.add_now.is_some() {
+            let at_box = (live.fuel - fmax * (1.0 - live.frac)).max(0.0);
+            p.add_now_max = Some(add_for(total - live.lap.max(1) as f32, at_box));
+        }
+        if let Some(laps) = p.stop_add_laps.filter(|_| p.stop_add.is_some()) {
+            let before = self.saved.stops.last().map_or(live.fuel, |s| (live.fuel - s.fuel_added).max(0.0));
+            p.stop_add_max = Some(add_for(laps as f32, before));
+        }
+        if let (Some(t), Some(best)) = (p.target_lap, p.options.best.as_ref()) {
+            let at_box = (live.fuel - fmax * (t as f32 - live.driven())).max(0.0);
+            let next = best.stints.get(1).map_or(total - t as f32, |s| s.laps as f32);
+            p.next_stop_fuel_max = Some(add_for(next, at_box));
+        }
+    }
+
     /// Shape of the last full lap (practice: recognise or remember the track).
+    /// Race mode: the lap is checked against the stored layout of the race track. A lap on another
+    /// track (wrong race picked, 2026-10-26: F3500 on Yas Marina with the NASCAR Special X race)
+    /// stops the recording for the race; what this run stored so far goes too.
     pub fn lap_shape(&mut self, map: &[(f32, f32)]) {
         if self.practice.saved.active {
             self.practice.shape(map);
+            return;
         }
+        let Some(track) = self.saved.race.as_ref().map(|r| r.track.clone()) else { return };
+        match self.practice.layout_check(&track, map) {
+            practice::LayoutCheck::Fits => self.track_mismatch = None,
+            practice::LayoutCheck::Unknown => {}
+            other => {
+                let name = if let practice::LayoutCheck::Other(n) = other { n } else { String::new() };
+                if self.track_mismatch.is_none() {
+                    self.saved.fuel_laps.clear();
+                    self.saved.stops.clear();
+                    self.saved.stints.clear();
+                    self.save();
+                }
+                self.track_mismatch = Some(name);
+            }
+        }
+    }
+
+    fn wrong_track(&self) -> bool {
+        !self.practice.saved.active && self.track_mismatch.is_some()
     }
 
     /// Practice mode on/off. Switching on takes the multipliers and the track of the race set.
@@ -685,6 +850,7 @@ impl Strategy {
         }
         p.practice_use = practice_use;
         p.practice = self.practice_state();
+        self.apply_max(&mut p);
         p
     }
 
@@ -790,6 +956,46 @@ fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i3
         fuel_per_lap: s.fuel_per_lap.filter(|_| race.fuel_per_lap.is_none()),
     };
     (r, Some(used))
+}
+
+/// A stretch of race laps with steady consumption.
+#[derive(Debug, Clone, PartialEq)]
+struct Stretch {
+    /// Lap the stretch starts with (0 = from the start of the race)
+    from: i16,
+    used: Vec<f32>,
+}
+
+impl Stretch {
+    fn mean(&self) -> f32 {
+        self.used.iter().sum::<f32>() / self.used.len().max(1) as f32
+    }
+}
+
+/// Clean laps (not lap 1, no refuelling, not the in-lap) in order, split where the consumption
+/// steps by more than [`FUEL_STEP`] (fuel map changed). The out-lap after a stop burns less than a
+/// racing lap and is left out – unless it burns clearly more than the stretch so far, which can
+/// only be a richer fuel map.
+fn fuel_stretches(saved: &Saved) -> Vec<Stretch> {
+    let mut out: Vec<Stretch> = Vec::new();
+    let mut laps: Vec<&FuelLap> = saved.fuel_laps.iter().filter(|l| l.lap > 1 && !l.refuel && l.used > 0.0).collect();
+    laps.sort_by_key(|l| l.lap);
+    for l in laps {
+        let in_lap = saved.stops.iter().any(|s| s.lap == l.lap);
+        let out_lap = saved.stops.iter().any(|s| s.lap == l.lap - 1);
+        let mean = out.last().map(Stretch::mean);
+        if in_lap || (out_lap && !mean.is_some_and(|m| l.used > m * (1.0 + FUEL_STEP))) {
+            continue;
+        }
+        match (out.last_mut(), mean) {
+            (Some(st), Some(m)) if (l.used - m).abs() <= m * FUEL_STEP => st.used.push(l.used),
+            (last, _) => {
+                let from = if last.is_some() { l.lap } else { 0 };
+                out.push(Stretch { from, used: vec![l.used] });
+            }
+        }
+    }
+    out
 }
 
 /// The stints, with the starting tyres from the race settings when nothing was picked yet.
@@ -1051,7 +1257,13 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
     let mut calls = Vec::new();
     if let Some(add) = p.stop_add {
         let laps = p.stop_add_laps.map_or(String::new(), |n| format!(" (na {n} kol)"));
-        calls.push(call("box", format!("DOTANKUJ +{}{laps}", fmt1(add))));
+        let max = p.stop_add_max.map_or(String::new(), |m| format!(" · naplno +{}", fmt1(m)));
+        calls.push(call("box", format!("DOTANKUJ +{}{laps}{max}", fmt1(add))));
+    }
+    if let Some(from) = p.fuel_step_lap {
+        if let Some(f) = fpl {
+            calls.push(call("info", format!("Spotřeba se od kola {from} změnila – počítám s {} / kolo", fmt2(f))));
+        }
     }
     if p.tyre_question && p.stop_add.is_none() {
         calls.push(call("warn", "Zastávka? Zvol nové gumy, „Stejné gumy“, nebo „Nebyla to zastávka“.".into()));
@@ -1059,7 +1271,10 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
     if p.race.as_deref().unwrap_or("").is_empty() {
         calls.push(call("info", "Vyber závod, ať vím počet kol a pravidla.".into()));
     }
-    let add = |v: Option<f32>| v.map_or(String::new(), |v| format!(" · dotankovat +{}", fmt1(v)));
+    let add = |v: Option<f32>| {
+        v.map_or(String::new(), |v| format!(" · dotankovat +{}", fmt1(v)))
+            + &p.next_stop_fuel_max.map_or(String::new(), |m| format!(" (naplno +{})", fmt1(m)))
+    };
     let out_of_fuel = matches!(p.window, Some([_, b]) if p.stops_needed > 0 && b < lap);
     if out_of_fuel && p.stop_add.is_none() {
         calls.push(call("box", "BOX TEĎ – palivo nevystačí na další kolo!".into()));
@@ -1076,7 +1291,18 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
         }
     } else if p.stops_needed == 0 && p.stop_add.is_none() {
         match p.fuel_margin_laps {
-            Some(m) => calls.push(call("info", format!("Palivo do cíle stačí (+{} kola)", fmt1(m)))),
+            Some(m) => {
+                calls.push(call("info", format!("Palivo do cíle stačí (+{} kola)", fmt1(m))));
+                if let (Some(mm), Some(fmax)) = (p.fuel_margin_laps_max, p.fuel_per_lap_max) {
+                    if mm < p.reserve_laps {
+                        let short = (p.reserve_laps - mm) * fmax;
+                        calls.push(call(
+                            "warn",
+                            format!("Naplno ({} / kolo) palivo nevystačí – chybí {}. Jeď jako dosud.", fmt2(fmax), fmt1(short)),
+                        ));
+                    }
+                }
+            }
             None if p.total_laps.is_some() && fpl.is_none() && !p.no_fuel => {
                 calls.push(call("info", "Spotřeba: změřím po prvním kole".into()))
             }
@@ -1197,6 +1423,84 @@ mod tests {
         s.lap_done(3, 7.08, false, None);
         s.lap_done(4, 3.0, true, None);
         assert!((s.fuel_per_lap().unwrap() - 7.13).abs() < 1e-4);
+    }
+
+    #[test]
+    fn fuel_step_after_the_stop_starts_a_new_stretch() {
+        // NSX, Special Stage Route X 2026-10-26: lean first stint, richer map after the stop
+        let mut s = Strategy::load(None);
+        let mut race = barcelona(8).race.unwrap();
+        race.track = "Special Stage Route X".into();
+        s.set_race(race);
+        for (lap, used) in [(1, 18.2), (2, 18.35), (3, 18.58), (4, 16.6)] {
+            s.lap_done(lap, used, false, None);
+        }
+        assert!((s.fuel_per_lap().unwrap() - (18.35 + 18.58 + 16.6) / 3.0).abs() < 1e-3);
+        s.refuelled(5, 70.97);
+        s.lap_done(5, 13.0, true, None);
+        // The out-lap burns far more than before: it counts and starts a new stretch at once
+        s.lap_done(6, 32.2, false, None);
+        assert!((s.fuel_per_lap().unwrap() - 32.2).abs() < 1e-3);
+        s.update_live(Live { lap: 7, total_laps: 8, frac: 0.0, fuel: 53.6, capacity: 100.0, car_code: 3348, ..Default::default() });
+        let p = s.plan();
+        assert_eq!(p.fuel_step_lap, Some(6));
+        // Flat out = what is measured now, so no second figure
+        assert!(p.fuel_per_lap_max.is_none());
+        assert!(p.calls.iter().any(|c| c.text.contains("od kola 6")));
+    }
+
+    #[test]
+    fn flat_out_figure_from_an_earlier_stretch() {
+        // Driver went back to a lean map: plan as so far, but show the flat-out refuel too
+        let mut s = Strategy::load(None);
+        let mut race = barcelona(10).race.unwrap();
+        race.track = "Special Stage Route X".into();
+        race.pit_required = false;
+        s.set_race(race);
+        for (lap, used) in [(1, 30.0), (2, 31.0), (3, 30.0), (4, 18.0), (5, 18.4)] {
+            s.lap_done(lap, used, false, None);
+        }
+        s.update_live(Live { lap: 6, total_laps: 10, frac: 0.0, fuel: 60.0, capacity: 100.0, car_code: 3348, ..Default::default() });
+        let p = s.plan();
+        assert!((p.fuel_per_lap.unwrap() - 18.2).abs() < 1e-3);
+        let fmax = p.fuel_per_lap_max.unwrap();
+        assert!((fmax - 30.5).abs() < 1e-2); // lap 1 from the grid does not count
+        assert_eq!(p.fuel_max_source, "race");
+        // 5 laps left: 60 L lasts at 18.2 (3.3 laps spare? no: 60/18.2 = 3.3 < 5) – a stop is needed
+        assert!(p.add_now_max.unwrap() > p.add_now.unwrap());
+    }
+
+    #[test]
+    fn laps_on_another_track_are_not_stored_for_the_race() {
+        let circle = |r: f32| -> Vec<(f32, f32)> {
+            (0..1000).map(|i| i as f32 / 1000.0 * std::f32::consts::TAU).map(|a| (r * a.cos(), r * a.sin())).collect()
+        };
+        let mut s = Strategy::load(None);
+        s.practice.saved.shapes.push(practice::Shape {
+            track: "Yas Marina Circuit".into(),
+            pts: circle(500.0).iter().step_by(10).map(|(x, z)| [*x, *z]).collect(),
+            length_m: 3141.0,
+        });
+        let mut race = barcelona(8).race.unwrap();
+        race.track = "Special Stage Route X".into();
+        s.set_race(race);
+        s.update_live(live(2, 0.0, 90.0));
+        s.lap_done(1, 7.7, false, None);
+        // Lap 2 ends on Yas Marina: warning, and the race keeps nothing of this run
+        s.lap_shape(&circle(500.0));
+        s.lap_done(2, 7.5, false, None);
+        s.refuelled(2, 10.0);
+        assert!(s.saved.fuel_laps.is_empty() && s.saved.stops.is_empty());
+        let p = s.plan();
+        assert_eq!(p.track_mismatch.as_deref(), Some("Yas Marina Circuit"));
+        assert!(p.calls[0].text.contains("„Yas Marina Circuit“"));
+        // An unknown layout (Special X not stored) says nothing either way; picking a race clears it
+        s.lap_shape(&circle(900.0));
+        assert!(s.track_mismatch.is_some());
+        s.set_race(barcelona(8).race.unwrap());
+        assert!(s.track_mismatch.is_none());
+        s.lap_done(3, 7.5, false, None);
+        assert_eq!(s.saved.fuel_laps.len(), 1);
     }
 
     #[test]

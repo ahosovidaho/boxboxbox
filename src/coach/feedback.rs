@@ -232,8 +232,45 @@ fn now_hm() -> String {
     chrono::Local::now().format("%H:%M").to_string()
 }
 
+/// Short name of a lap: "K3", or "B2/K3" when the session holds several runs.
+pub fn lap_tag(res: &Comparison, l: &LapResult) -> String {
+    let (k, b) = (tr!("R", "L", "K"), tr!("L", "R", "B"));
+    if res.multi_run() {
+        format!("{b}{}/{k}{}", l.run, l.lap)
+    } else {
+        format!("{k}{}", l.lap)
+    }
+}
+
+/// Fuel use of a race by stretch: consecutive laps of one run without a stop in between and
+/// without a step of more than 20 % (fuel map changed). (first lap, last lap, run, L per lap)
+pub fn fuel_stretches(laps: &[(usize, i64, f64)]) -> Vec<(i64, i64, usize, f64)> {
+    let mut out: Vec<(i64, i64, usize, Vec<f64>)> = Vec::new();
+    for &(run, lap, used) in laps {
+        if used <= 0.0 {
+            continue;
+        }
+        match out.last_mut() {
+            Some((_, last, r, v))
+                if *r == run && lap == *last + 1 && (used - lap::mean(v.iter().copied())).abs() <= lap::mean(v.iter().copied()) * 0.2 =>
+            {
+                *last = lap;
+                v.push(used);
+            }
+            _ => out.push((lap, lap, run, vec![used])),
+        }
+    }
+    out.into_iter().map(|(a, b, r, v)| (a, b, r, lap::mean(v))).collect()
+}
+
 pub fn lap_feedback(res: &Comparison, lap: &LapResult, metrics: &LapMetrics, prev_best: Option<i64>) -> Value {
-    let (n, ms) = (lap.lap, lap.ms);
+    let ms = lap.ms;
+    let n = if res.multi_run() {
+        let (l, r) = (lap.lap, lap.run);
+        tr!("{l} (Lauf {r})", "{l} (run {r})", "{l} (běh {r})")
+    } else {
+        lap.lap.to_string()
+    };
     let best_ms = res.laps.iter().map(|l| l.ms).min().unwrap_or(ms);
     let is_best = ms == best_ms;
     let mut tone = if is_best || ms - best_ms < 300 { "good" } else { "tip" };
@@ -561,14 +598,15 @@ fn car_of(session: &Path, name: &str) -> String {
 pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<String, LapMetrics>) -> std::io::Result<Value> {
     let name = session.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let mut laps: Vec<&LapResult> = res.laps.iter().collect();
-    laps.sort_by_key(|l| l.lap);
+    laps.sort_by_key(|l| (l.run, l.lap));
     let times: Vec<f64> = laps.iter().map(|l| l.ms as f64).collect();
     let best = times.iter().copied().fold(f64::INFINITY, f64::min);
     let clean: Vec<f64> = times.iter().copied().filter(|t| *t < best * 1.03).collect();
     let race = metrics.values().any(|m| m.race);
     let kind = if race { tr!("Rennen", "race", "závod") } else { tr!("Zeitfahren", "time trial", "časovka") };
     let reference = laps[times.iter().position(|t| *t == best).unwrap_or(0)];
-    let (count, best_t, best_lap) = (laps.len(), t_loc(best), reference.lap);
+    let (count, best_t, best_lap) =
+        (laps.len(), t_loc(best), if res.multi_run() { lap_tag(res, reference) } else { reference.lap.to_string() });
     let (avg, spread) = (t_loc(lap::mean(clean.iter().copied())), secs(lap::pstdev(&clean) / 1000.0, 2));
     let mut points = vec![
         tr!(
@@ -582,6 +620,26 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
             "Průměr čistých kol {avg}, rozptyl ±{spread} s."
         ),
     ];
+    // Several runs (restart, practice before the race): each on its own line
+    if res.multi_run() {
+        let runs = laps.iter().map(|l| l.run).max().unwrap_or(1);
+        for r in 1..=runs {
+            let rl: Vec<&&LapResult> = laps.iter().filter(|l| l.run == r).collect();
+            let (Some(a), Some(b)) = (rl.first(), rl.last()) else { continue };
+            let Some(bl) = rl.iter().min_by_key(|l| l.ms) else { continue };
+            let (n, a, b, t, k) = (rl.len(), a.lap, b.lap, t_loc(bl.ms as f64), bl.lap);
+            let kol = match n {
+                1 => "kolo",
+                2..=4 => "kola",
+                _ => "kol",
+            };
+            points.push(tr!(
+                "Lauf {r}: {n} Runden (R{a}–R{b}), beste {t} (R{k}).",
+                "Run {r}: {n} laps (L{a}–L{b}), best {t} (L{k}).",
+                "Běh {r}: {n} {kol} (K{a}–K{b}), nejlepší {t} (K{k})."
+            ));
+        }
+    }
     if times.len() > 1 && times[0] > best {
         let d = secs((times[0] - best) / 1000.0, 2);
         points.push(tr!(
@@ -632,6 +690,8 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     }
     let tbs: Vec<(i64, i64)> =
         laps.iter().filter_map(|l| metrics.get(&l.file).and_then(|m| m.trail_braking.score).map(|s| (l.lap, s))).collect();
+    let tb_tags: Vec<String> =
+        laps.iter().filter(|l| metrics.get(&l.file).and_then(|m| m.trail_braking.score).is_some()).map(|l| lap_tag(res, l)).collect();
     if !tbs.is_empty() {
         let avg = lap::round_i(lap::mean(tbs.iter().map(|(_, s)| *s as f64)));
         let verdict = trailbrake::verdict(Some(avg));
@@ -641,8 +701,9 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
             "Trail braking prům. {avg}/100 ({verdict})"
         );
         if tbs.len() > 1 {
-            let ((l0, s0), (l1, s1)) = (tbs[0], tbs[tbs.len() - 1]);
-            line += &tr!(", von {s0} (R{l0}) auf {s1} (R{l1})", ", from {s0} (L{l0}) to {s1} (L{l1})", ", od {s0} (K{l0}) po {s1} (K{l1})");
+            let ((_, s0), (_, s1)) = (tbs[0], tbs[tbs.len() - 1]);
+            let (l0, l1) = (&tb_tags[0], &tb_tags[tb_tags.len() - 1]);
+            line += &tr!(", von {s0} ({l0}) auf {s1} ({l1})", ", from {s0} ({l0}) to {s1} ({l1})", ", od {s0} ({l0}) po {s1} ({l1})");
         }
         let issues = laps
             .iter()
@@ -663,10 +724,29 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
         ));
     }
     if race {
-        let fuel: Vec<f64> = metrics.values().map(|m| m.fuel_used).filter(|f| *f > 0.0).collect();
-        if !fuel.is_empty() {
-            let f = i18n::fuel(lap::mean(fuel), 2);
+        // By stretch: an average over a stop with another fuel map says nothing (NSX Special X
+        // 26 Oct: 18 L per lap before the stop, 30 after – "avg 21.4")
+        let used: Vec<(usize, i64, f64)> = laps.iter().filter_map(|l| metrics.get(&l.file).map(|m| (l.run, l.lap, m.fuel_used))).collect();
+        let st = fuel_stretches(&used);
+        if st.len() == 1 {
+            let f = i18n::fuel(st[0].3, 2);
             points.push(tr!("Spritverbrauch Ø {f} pro Runde.", "Fuel use avg {f} per lap.", "Spotřeba prům. {f} na kolo."));
+        } else if st.len() > 1 {
+            let multi = res.multi_run();
+            let parts: Vec<String> = st
+                .iter()
+                .map(|(a, b, r, f)| {
+                    let (k, run) = (tr!("R", "L", "K"), if multi { format!("{}{r}/", tr!("L", "R", "B")) } else { String::new() });
+                    let laps = if a == b { format!("{run}{k}{a}") } else { format!("{run}{k}{a}–{k}{b}") };
+                    format!("{laps} {}", i18n::fuel(*f, 1))
+                })
+                .collect();
+            let parts = parts.join(" · ");
+            points.push(tr!(
+                "Spritverbrauch nach Abschnitten (pro Runde): {parts}.",
+                "Fuel use by stretch (per lap): {parts}.",
+                "Spotřeba po úsecích (na kolo): {parts}."
+            ));
         }
     }
     let (car, date) = (car_of(session, &name), session_date(&name));
@@ -681,7 +761,7 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     });
     let data = json!({
         "item": item,
-        "laps": laps.iter().map(|l| json!({"lap": l.lap, "ms": l.ms})).collect::<Vec<_>>(),
+        "laps": laps.iter().map(|l| json!({"lap": l.lap, "ms": l.ms, "run": l.run})).collect::<Vec<_>>(),
         "trail_braking": tbs,
     });
     fs::write(dir.join("summary.json"), serde_json::to_string_pretty(&data).unwrap_or_default())?;

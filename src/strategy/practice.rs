@@ -325,6 +325,24 @@ impl Practice {
         self.layout_ok = self.layout_warning.is_none();
     }
 
+    /// Race mode: does the lap that just ended fit the stored layout of the race track?
+    pub fn layout_check(&self, track: &str, lap: &[(f32, f32)]) -> LayoutCheck {
+        if lap.len() < 50 || track.trim().is_empty() {
+            return LayoutCheck::Unknown;
+        }
+        let pts: Vec<[f32; 2]> = lap.iter().step_by(SHAPE_STEP).map(|(x, z)| [*x, *z]).collect();
+        let key = track_key(track);
+        let stored = self.saved.shapes.iter().find(|s| track_key(&s.track) == key);
+        if stored.is_some_and(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M) {
+            return LayoutCheck::Fits;
+        }
+        match (track_of(&self.saved.shapes, &pts), stored) {
+            (Some(other), _) => LayoutCheck::Other(other),
+            (None, Some(_)) => LayoutCheck::Different,
+            (None, None) => LayoutCheck::Unknown,
+        }
+    }
+
     /// Length (m) of the layout stored for the track name.
     pub fn track_length(&self, track: &str) -> Option<f32> {
         let key = track_key(track);
@@ -445,6 +463,18 @@ fn order(c: &str) -> (usize, usize) {
     let kind = ch.next().map_or(9, |k| "RSC".find(k).unwrap_or(9));
     let hard = ch.next().map_or(9, |h| "SMH".find(h).unwrap_or(9));
     (kind, hard)
+}
+
+/// Result of [`Practice::layout_check`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum LayoutCheck {
+    Fits,
+    /// The lap fits another stored track
+    Other(String),
+    /// The race track is stored and the lap does not fit it (nor any other stored track)
+    Different,
+    /// Nothing to compare with
+    Unknown,
 }
 
 /// Layout among `shapes` that the positions of a lap fit, if any.

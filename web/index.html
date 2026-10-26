@@ -78,6 +78,7 @@
   #rpm i.on-y { background: var(--yellow); }
   #rpm i.on-r { background: var(--red); }
   #rpm.flash i { background: var(--blue) !important; animation: flash .12s steps(1) infinite alternate; }
+  #rpm.limiter i { background: var(--red) !important; animation: flash .07s steps(1) infinite alternate; }
   @keyframes flash { to { opacity: .15; } }
 
   #tires { grid-area: tires; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; }
@@ -333,6 +334,8 @@
   #r_leds i.on { background: var(--c); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent); }
   #r_rev.flash #r_leds i { background: #3d6bff; box-shadow: 0 0 14px #3d6bff99; }
   #r_rev.flash.dim #r_leds i { background: #1c1c1c; box-shadow: none; }
+  #r_rev.limiter #r_leds i { background: #ff2a1a; box-shadow: 0 0 16px #ff2a1aaa; }
+  #r_rev.limiter.dim #r_leds i { background: #1c1c1c; box-shadow: none; }
   #r_revnum { display: flex; justify-content: center; align-items: baseline; gap: 10px; line-height: 1; }
   #r_rpm { font-size: min(22px, 4.5vh); letter-spacing: -.5px; }
   #r_left { grid-area: left; display: grid; grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr); gap: 8px; min-height: 0; }
@@ -1096,9 +1099,11 @@
         <span>Kolo</span><span id="stLap">–</span>
         <span>Zbývá kol</span><span id="stLeft">–</span>
         <span>Spotřeba / kolo</span><span id="stFpl">–</span>
+        <span>Naplno / kolo</span><span id="stFplMax">–</span>
         <span>Potřeba do cíle</span><span id="stNeed">–</span>
         <span>V nádrži</span><span id="stFuel">–</span>
         <span>Box teď: dotankovat</span><span id="stAdd">–</span>
+        <span>Box teď: naplno</span><span id="stAddMax">–</span>
         <span>Doba tankování</span><span id="stRefuel">–</span>
         <span>Rezerva v cíli</span><span id="stReserve">–</span>
       </div>
@@ -1907,8 +1912,13 @@
     const min = d.rpm_alert_min > 0 ? d.rpm_alert_min : max * 0.9;
     const start = max * 0.45;
     const lit = Math.max(0, Math.min(SEGMENTS, Math.round((d.rpm - start) / (max - start) * SEGMENTS)));
-    const flash = d.rpm >= max || d.rev_limiter;
+    // Blue = shift now (same shift point as the race dashboard), red = in the limiter. GT7's own
+    // "rev limiter" flag comes on at the start of its shift light range, well below the limiter
+    // (kart: from ~14 500 rpm, limiter ~15 050), so it is not used.
+    const limiter = atLimiter(d);
+    const flash = !limiter && d.rpm >= shiftPoint(d).rpm;
     rpmEl.classList.toggle('flash', flash);
+    rpmEl.classList.toggle('limiter', limiter);
     for (let i = 0; i < SEGMENTS; i++) {
       const frac = (i + 1) / SEGMENTS, segRpm = start + frac * (max - start);
       const cls = i < lit ? (segRpm >= min ? 'on-r' : frac > 0.6 ? 'on-y' : 'on-g') : '';
@@ -1917,7 +1927,7 @@
 
     // Gear / speed
     setText('gear', gearText(d.gear));
-    $('gear').classList.toggle('limit', flash);
+    $('gear').classList.toggle('limit', flash || limiter);
     setText('sugg', d.suggested_gear != null && d.suggested_gear !== d.gear ? '→ ' + gearText(d.suggested_gear) : '');
     setText('speed', String(Math.round(U.spd(d.speed_kmh))));
     setText('rpmnum', Math.round(d.rpm) + ' ' + t('U/min'));
@@ -2546,13 +2556,14 @@
       if (st.stop_add != null) {
         // Standing in the box: how much to put in
         txt = st.stop_add > 0.05 ? `DOTANKUJ +${nf(st.stop_add, 1)}` : 'BEZ TANKOVÁNÍ';
-        sub = st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '';
+        sub = [st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '', st.stop_add_max != null ? `naplno +${nf(st.stop_add_max, 1)}` : ''].filter(Boolean).join(' · ');
         cls = 'soon';
       } else if (st.laps_to_box != null) {
         const n = st.laps_to_box;
         txt = n === 0 ? 'BOX TOTO KOLO' : n === 1 ? 'BOX PŘÍŠTÍ KOLO' : `BOX ZA ${n} ${kol(n).toUpperCase()}`;
         cls = n === 0 ? 'now' : n === 1 ? 'soon' : '';
-        if (n <= 1 && st.next_stop_fuel != null) sub = st.next_stop_fuel > 0.05 ? `dotankovat +${nf(st.next_stop_fuel, 1)}` : 'bez tankování';
+        if (n <= 1 && st.next_stop_fuel != null) sub = (st.next_stop_fuel > 0.05 ? `dotankovat +${nf(st.next_stop_fuel, 1)}` : 'bez tankování')
+          + (st.next_stop_fuel_max != null ? ` · naplno +${nf(st.next_stop_fuel_max, 1)}` : '');
       } else if (st.fuel_margin_laps != null) {
         txt = st.pit_done ? 'DO CÍLE ✓' : 'BEZ ZASTÁVKY ✓';
         cls = 'done';
@@ -2595,7 +2606,7 @@
 
 
   // ---------- Race dashboard (race mode, "Rosso") ----------
-  // 15 rev LEDs like an F1 wheel: 5 green, 5 red, 5 blue; all blue flashing at the limiter
+  // 15 rev LEDs like an F1 wheel: 5 green, 5 red, 5 blue; all blue flashing at the shift point, all red in the limiter
   const LED_COLOURS = [...Array(5).fill('#2fd36b'), ...Array(5).fill('#ff2a1a'), ...Array(5).fill('#3d6bff')];
   $('r_leds').innerHTML = LED_COLOURS.map(c => `<i style="--c:${c}"></i>`).join('');
   const rLeds = [...$('r_leds').children];
@@ -2609,13 +2620,14 @@
     const next = st.options && st.options.best && st.options.best.stops[0];
     if (st.stop_add != null) {
       txt = st.stop_add > 0.05 ? `DOTANKUJ +${nf(st.stop_add, 1)}` : 'BEZ TANKOVÁNÍ';
-      sub = [st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '', next ? next.compound : ''].filter(Boolean).join(' · ');
+      sub = [st.stop_add_laps ? `na ${st.stop_add_laps} ${kol(st.stop_add_laps)}` : '', st.stop_add_max != null ? `naplno +${nf(st.stop_add_max, 1)}` : '', next ? next.compound : ''].filter(Boolean).join(' · ');
       cls = 'now';
     } else if (st.laps_to_box != null) {
       const n = st.laps_to_box;
       txt = n === 0 ? 'BOX TOTO KOLO' : n === 1 ? 'BOX PŘÍŠTÍ KOLO' : `BOX ZA ${n} ${kol(n).toUpperCase()}`;
       cls = n === 0 ? 'now' : n === 1 ? 'soon' : '';
-      const fuel = st.next_stop_fuel != null ? (st.next_stop_fuel > 0.05 ? `+${nf(st.next_stop_fuel, 1)} L` : 'bez tankování') : '';
+      const fuel = st.next_stop_fuel != null ? (st.next_stop_fuel > 0.05 ? `+${nf(st.next_stop_fuel, 1)} L` : 'bez tankování')
+        + (st.next_stop_fuel_max != null ? ` (naplno +${nf(st.next_stop_fuel_max, 1)})` : '') : '';
       sub = [n > 0 && st.target_lap != null ? `KOLO ${st.target_lap}` : '', fuel, next ? next.compound : ''].filter(Boolean).join(' · ');
     } else if (st.fuel_margin_laps != null) {
       txt = st.pit_done ? 'DO CÍLE ✓' : 'BEZ ZASTÁVKY ✓';
@@ -2633,6 +2645,30 @@
   // Two sources: all full-throttle driving with this car (practice, races: every gear) and the
   // launch runs of page 4. A source counts for a gear only if it is a real shift point, or if it
   // revved up to the limiter ("late" from a run that was shifted early says nothing).
+  // Limiter of the current car: where the revs pile up at the top. From live samples (25 rpm bins
+  // above 95 % of the game's shift light; the highest bin with at least 5 samples, so single
+  // overshoot spikes do not count) and the measured power curve. Unknown until the car has been
+  // there once – then no red.
+  const revBins = { car: null, bins: new Map() };
+  function limiterRpm(d) {
+    if (revBins.car !== d.car_code) { revBins.car = d.car_code; revBins.bins = new Map(); }
+    const game = d.rpm_alert_max > 0 ? d.rpm_alert_max : 0;
+    if (revBins.last !== d && game && d.rpm >= game * 0.95) {
+      revBins.last = d;
+      const b = Math.floor(d.rpm / 25) * 25;
+      revBins.bins.set(b, (revBins.bins.get(b) || 0) + 1);
+    }
+    let live = 0;
+    for (const [b, n] of revBins.bins) if (n >= 5 && b + 25 > live) live = b + 25;
+    const dy = perf && (perf.track_dyno && perf.track_dyno.dyno || perf.dyno);
+    const meas = dy && dy.max_rpm >= game * 0.97 ? dy.max_rpm : 0;
+    const top = Math.max(live, meas);
+    return top >= game * 0.97 && top > 0 ? top : null;
+  }
+  function atLimiter(d) {
+    const lim = limiterRpm(d);
+    return lim != null && d.rpm >= lim - 75;
+  }
   function shiftPoint(d) {
     const game = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
     const from = (dy, src) => {
@@ -2691,10 +2727,12 @@
     // shift light range, ~1000 rpm below the limiter, so it is not used here.)
     const sp = shiftPoint(d);
     const start = sp.rpm * 0.55;
-    const flash = d.rpm >= sp.rpm;
+    const limiter = atLimiter(d);
+    const flash = limiter || d.rpm >= sp.rpm;
     const lit = flash ? 15 : Math.max(0, Math.min(14, Math.floor((d.rpm - start) / (sp.rpm - start) * 15)));
-    $('r_rev').classList.toggle('flash', flash);
-    $('r_rev').classList.toggle('dim', flash && Math.floor(performance.now() / 90) % 2 === 1);
+    $('r_rev').classList.toggle('flash', flash && !limiter);
+    $('r_rev').classList.toggle('limiter', limiter);
+    $('r_rev').classList.toggle('dim', flash && Math.floor(performance.now() / (limiter ? 55 : 90)) % 2 === 1);
     rLeds.forEach((el, i) => { const on = i < lit; if (el.classList.contains('on') !== on) el.classList.toggle('on', on); });
     setText('r_rpm', Math.round(d.rpm).toLocaleString('cs-CZ'));
     setText('r_shift', `OT/MIN · ŘADIT ${Math.round(sp.rpm).toLocaleString('cs-CZ')} · ${sp.src}`);
@@ -3836,6 +3874,11 @@
     setText('stNeed', nf(st.fuel_needed));
     setText('stFuel', d.fuel_capacity > 0 ? `${nf(d.fuel)} / ${nf(d.fuel_capacity, 0)}` : nf(d.fuel));
     setText('stAdd', st.add_now == null ? '–' : '+' + nf(st.add_now));
+    // Flat out (fuel map 1): the highest steady consumption known for the car and track
+    setText('stFplMax', st.fuel_per_lap_max == null ? '– (stejně jako teď)'
+      : nf(st.fuel_per_lap_max, 2) + (st.fuel_max_source === 'history' ? ' (z dřívějších závodů)' : ' (dřív v tomto závodě)')
+        + (st.fuel_margin_laps_max != null ? ` · do cíle ${st.fuel_margin_laps_max >= 0 ? '+' : ''}${nf(st.fuel_margin_laps_max)} kola` : ''));
+    setText('stAddMax', st.add_now_max == null ? '–' : '+' + nf(st.add_now_max));
     setText('stRefuel', st.refuel_s == null ? '–' : '≈ ' + nf(st.refuel_s, 0) + ' s');
     setText('stReserve', nf(st.reserve_laps) + ' kola');
     // Tyres
