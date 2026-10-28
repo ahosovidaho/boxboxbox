@@ -408,10 +408,23 @@ fn references_json(s: &AppState) -> serde_json::Value {
         let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
         st.practice.saved.shapes.iter().map(|sh| sh.track.clone()).collect()
     };
+    // For each reference the newest own session on its track (the same car first): "compare"
+    let (track_of, layouts) = track_matcher(&s.strategy);
+    let all = crate::coach::library::index(&s.settings.data.recordings, &mut comparer(), &track_of, layouts);
+    let refs: Vec<serde_json::Value> = crate::coach::reference::list(&root)
+        .into_iter()
+        .map(|r| {
+            let on = crate::coach::library::of_track(&all, &r.track, None);
+            let session = on.iter().find(|i| i.car_code == r.car_code).or(on.first()).map(|i| i.session.clone());
+            let mut v = json!(r);
+            v["session"] = json!(session);
+            v
+        })
+        .collect();
     json!({
         "capture": crate::session::replay::status(&s.replay),
         "pending": crate::coach::reference::pending(&root),
-        "references": crate::coach::reference::list(&root),
+        "references": refs,
         "tracks": tracks,
     })
 }
@@ -909,7 +922,12 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
         });
         let safe_file = |n: &str| !n.is_empty() && !n.contains(['/', '\\']) && n != "..";
         let refs_root = crate::coach::reference::root(rec.parent().unwrap_or(&rec));
-        let ext = q.vs.as_deref().and_then(|v| v.strip_prefix("ref:")).and_then(|id| crate::coach::reference::get(&refs_root, id));
+        // A reference only for a session on its track (28 Oct: the Barcelona reference held against
+        // a lap of another track gave −94 s in a corner)
+        let key = crate::strategy::practice::track_key;
+        let wanted = q.vs.as_deref().and_then(|v| v.strip_prefix("ref:")).and_then(|id| crate::coach::reference::get(&refs_root, id));
+        let same_track = |r: &crate::coach::reference::Reference| me.as_ref().and_then(|m| m.track.as_deref()).is_some_and(|t| key(t) == key(&r.track));
+        let ext = wanted.clone().filter(|r| same_track(r));
         let vs = match q.vs.as_deref() {
             Some(v) if v.starts_with("ref:") => match ext.as_ref().and_then(|r| crate::coach::reference::file(&refs_root, &r.id)) {
                 Some(p) => crate::coach::compare::Versus::Lap(p),
@@ -951,6 +969,9 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
                 // External references on this track (the same car first)
                 let track = me.as_ref().and_then(|m| m.track.clone());
                 v["car_code"] = json!(car);
+                if let Some(r) = wanted.as_ref().filter(|r| !same_track(r)) {
+                    v["versus_note"] = json!(format!("Reference {} je z trati {} – tahle session je jinde.", r.driver, r.track));
+                }
                 v["references"] = json!(track.as_deref().map(|t| crate::coach::reference::of_track(&refs_root, t, Some(car))).unwrap_or_default());
                 if let (Some(r), crate::coach::compare::Versus::Lap(_)) = (&ext, &vs) {
                     v["versus"]["kind"] = json!("ref");

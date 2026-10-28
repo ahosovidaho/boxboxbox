@@ -1305,6 +1305,7 @@
     <b>Telemetrie</b>
     <select id="tLap" aria-label="Kolo"></select>
     <select id="tVs" aria-label="Porovnat s"><option value="">vs nejlepší kolo</option></select>
+    <button id="tSess" hidden style="height:36px;padding:0 12px;border-radius:9px;border:1px solid #2A2A31;background:#16161A;color:var(--text);font:600 13px Inter,system-ui,sans-serif"></button>
     <span class="tlg"><i style="background:#e8e8ec"></i><span id="tLapName">kolo</span></span>
     <span class="tlg"><i style="background:#b25cff"></i><span id="tRefName">nejlepší</span></span>
     <span class="grow"></span>
@@ -1615,6 +1616,8 @@
   // server (practice mode of the strategy), so all devices show the same.
   // Telemetry graphs page state (declared early: the start page may be page 9)
   let tData = null, tCorner = null, tWin = [0, 1], tFile = null, tUpdated = null, tBusy = false, tView = 'loss', tVs = '';
+  // Another session than the coach's latest one (opened from a reference)
+  let tSession = null;
   // Race: lift-and-coast plan (see loadLift)
   let liftPlan = null, liftKey = '', liftAt = 0;
   // Track page: briefing or notebook, chosen track ('' = race / practice track)
@@ -2563,7 +2566,11 @@
       return;
     }
     if (a === 'remove') { if (b.dataset.sure) return refAction({ action: 'remove', id: b.dataset.id }); b.dataset.sure = '1'; b.textContent = 'Opravdu smazat?'; return; }
-    if (a === 'open') { tVs = 'ref:' + b.dataset.id; showPage(9); }
+    if (a === 'open') {
+      const r = (refData.references || []).find(x => x.id === b.dataset.id);
+      if (!r || !r.session) { refErr = `Na trati ${r ? r.track : ''} zatím nemáš žádné své kolo – odjeď aspoň jedno a pak porovnej.`; renderRefs(); return; }
+      tVs = 'ref:' + r.id; tSession = r.session; tFile = null; tCorner = null; showPage(9);
+    }
   });
   loadRefs();
   // ---------- Measurements (page 4) ----------
@@ -3689,6 +3696,7 @@
       const p = new URLSearchParams();
       if (file) p.set('lap', file);
       if (tVs) p.set('vs', tVs);
+      if (tSession) p.set('session', tSession);
       const q = p.toString() ? '?' + p : '';
       const d = await (await fetch('api/traces' + q, { cache: 'no-store' })).json();
       tBusy = false;
@@ -3721,6 +3729,11 @@
   function renderTraceHead() {
     const d = tData;
     renderVs();
+    // Session opened from a reference: shown, and a tap goes back to the latest one
+    const sb = $('tSess');
+    sb.hidden = !tSession;
+    if (tSession) sb.textContent = `${d.track || 'session'} · ${tSession.slice(8, 10).replace(/^0/, '')}. ${tSession.slice(5, 7).replace(/^0/, '')}. ${tSession.slice(11, 16).replace('-', ':')} ✕`;
+    if (d.versus_note) setText('tRefName', d.versus_note);
     $('tLap').innerHTML = d.laps.slice().reverse().map(l => `<option value="${esc(l.file)}" ${l.file === d.lap.file ? 'selected' : ''}>${lapName(l.file)} · ${fmtLap(l.ms)}${l.file === d.reference.file ? ' ★' : ''}${l.ms > d.reference.ms * 1.07 ? ' ⚠' : ''}</option>`).join('');
     setText('tLapName', lapName(d.lap.file).toLowerCase());
     const dtc = v => v > 0.05 ? 'var(--red)' : v < -0.05 ? 'var(--green)' : 'var(--dim)';
@@ -3956,6 +3969,7 @@
   });
   $('tLap').addEventListener('change', e => loadTraces(e.target.value));
   $('tVs').addEventListener('change', e => { tVs = e.target.value; loadTraces(tFile); });
+  $('tSess').addEventListener('click', () => { tSession = null; tFile = null; tCorner = null; tVs = ''; loadTraces(); });
   const lapIncidents = () => tData ? (tData.incidents || []).filter(x => x.file === tData.lap.file) : [];
   $('tView').addEventListener('click', e => {
     const b = e.target.closest('button');
