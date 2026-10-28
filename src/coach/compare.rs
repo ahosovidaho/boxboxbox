@@ -105,6 +105,9 @@ pub struct Comparison {
     pub laps: Vec<LapResult>,
     /// Sum of the best corner sections over all laps
     pub theoretical_ms: Option<f64>,
+    /// Track the laps were driven on (recognised by the layouts stored in practice)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<String>,
 }
 
 impl Comparison {
@@ -412,6 +415,7 @@ impl Comparer {
         let mut result = Comparison {
             reference: Some(Reference { file: file_name(&ref_path), ms: ref_ms, lap: reference[0].lap as i64 }),
             steer_ratio: lap::round_to(ratio, 1),
+            track: data_dir(session).and_then(|d| self.track_of_rows(d, &reference)),
             ..Default::default()
         };
         for c in &corners {

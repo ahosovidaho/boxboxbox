@@ -760,6 +760,70 @@
   #cRadioList .tip { margin-top: 0; }
   #cRadioList .tip + .tip { margin-top: 8px; }
   @media (max-width: 820px) { #p3body { grid-template-columns: 1fr; } #cRight { order: -1; } }
+  /* Coach tabs and training (one corner, one change, checked on the next laps) */
+  #cTabs { display: inline-flex; background: #16161A; border-radius: 11px; padding: 3px; gap: 3px; margin-left: auto; }
+  #cTabs button { background: none; border: 0; color: var(--dim); font: 600 14px Inter, system-ui, sans-serif; height: 38px; padding: 0 16px; border-radius: 9px; }
+  #cTabs button.on { background: #2A2A31; color: var(--text); }
+  #p3train { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  #p3train[hidden], #p3prog[hidden], #p3body[hidden] { display: none; }
+  #tLeft, #tRight { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  #tRight > .card, #tLeft > .card { width: 100%; box-sizing: border-box; }
+  @media (max-width: 820px) { #p3train { grid-template-columns: 1fr; } }
+  #tTask { border-color: #3A3010; }
+  .tsteps { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--dim); }
+  .tsteps span { display: inline-flex; align-items: center; gap: 8px; }
+  .tsteps b { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 12px var(--mono); background: #1C1C22; color: var(--dim); }
+  .tsteps .done b { background: #1F7A45; color: #fff; } .tsteps .on { color: var(--text); } .tsteps .on b { background: #F2C230; color: #000; }
+  .ttitle { display: flex; align-items: center; gap: 12px; margin: 14px 0; }
+  .ttitle .tchip { height: 34px; min-width: 48px; font-size: 16px; }
+  .ttitle .lbl { color: #F2C230; }
+  .ttitle div > span:last-child { display: block; font-size: 21px; font-weight: 600; line-height: 1.2; }
+  .ttiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .ttiles > div { background: var(--panel2); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .ttiles > div.tgt { background: #1A1708; } .ttiles .tgt .lbl { color: #F2C230; }
+  .ttiles .v { font: 700 25px/1.15 var(--mono); }
+  .ttiles small { font-size: 12px; color: var(--dim); }
+  .tbars { position: relative; display: flex; align-items: flex-end; gap: 10px; height: 78px; border-bottom: 1px solid #26262D; margin-top: 6px; }
+  .tbars .goal { position: absolute; left: 0; right: 0; border-top: 1px dashed #F2C230; }
+  .tbars > div:not(.goal) { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; justify-content: flex-end; height: 100%; }
+  .tbars i { display: block; width: 100%; border-radius: 5px 5px 0 0; }
+  .tbars span, .tlaps span { font: 11px var(--mono); }
+  .tlaps { display: flex; gap: 10px; } .tlaps span { flex: 1; text-align: center; color: var(--dim); font-size: 12px; }
+  .tverdict { display: flex; gap: 12px; align-items: flex-start; border-radius: 12px; padding: 12px 14px; margin-top: 14px; background: var(--panel2); border: 1px solid var(--line); }
+  .tverdict.good { background: #0F2418; border-color: #1F4A30; } .tverdict.good b { color: var(--green); }
+  .tverdict.warn { background: #241C08; border-color: #4A3A10; } .tverdict.warn b { color: #F2C230; }
+  .tverdict.bad { background: #240F0E; border-color: #4A1F1C; } .tverdict.bad b { color: #FF5A4E; }
+  .tverdict b { display: block; font-size: 15px; font-weight: 600; } .tverdict small { display: block; color: var(--dim); font-size: 13px; margin-top: 3px; }
+  .tcards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .tcards .card p { margin: 6px 0 0; font-size: 14px; line-height: 1.45; }
+  .tacts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .tacts button, #cSuggest button, #tSheet button { height: 44px; padding: 0 18px; border-radius: 11px; border: 1px solid #2A2A31; background: #16161A; color: var(--text); font: 600 14px Inter, system-ui, sans-serif; }
+  .tacts button.pri, #cSuggest button.pri, #tSheet button.pri { background: #F2C230; border-color: #F2C230; color: #000; }
+  .trow { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+  .trow > div { flex: 1; min-width: 0; } .trow b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trow small { color: var(--dim); font-size: 12px; } .trow .c { font: 13px var(--mono); color: var(--red); }
+  .tmap g.rhi circle { fill: #F2C230; } .tmap g.rhi text { fill: #000; }
+  .tmap g.rmid circle { fill: #6E5A14; } .tmap g.rmid text { fill: #F4F4F6; }
+  #cSuggest { border-color: #3A3010; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  #cSuggest[hidden] { display: none; }
+  #cSuggest > div { flex: 1; min-width: 220px; } #cSuggest b { display: block; font-size: 16px; font-weight: 600; } #cSuggest small { color: var(--dim); font-size: 13px; }
+  #tSheet { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(640px, 100%); box-sizing: border-box; z-index: 60; background: #0E0E11; border: 1px solid #2A2A31; border-bottom: 0; border-radius: 18px 18px 0 0; padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px #000c; max-height: 70vh; overflow: auto; }
+  #tSheet[hidden] { display: none; }
+  #tSheet .shead { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  #tSheet .shead .tchip { height: 32px; min-width: 46px; font-size: 15px; }
+  #tSheet .shead b { font-size: 17px; } #tSheet .shead button { margin-left: auto; height: 36px; padding: 0 12px; }
+  #tSheet .smet { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  #tSheet .smet > div { flex: 1; min-width: 0; } #tSheet .smet b { display: block; font-weight: 600; } #tSheet .smet small { color: var(--dim); font-size: 13px; }
+  #tSheet .err { color: #FF5A4E; font-size: 13px; margin-top: 8px; }
+  #coachhint.task b { background: #F2C230; color: #000; padding: 0 6px; border-radius: 5px; }
+  @media (max-width: 600px) {
+    #p3head { flex-wrap: wrap; }
+    #cTabs { margin-left: 0; width: 100%; } #cTabs button { flex: 1; padding: 0 8px; }
+    .ttiles { gap: 6px; } .ttiles > div { padding: 9px 10px; } .ttiles .v { font-size: 18px; } .ttiles small { font-size: 11px; }
+    .ttitle div > span:last-child { font-size: 18px; }
+    .tcards { grid-template-columns: 1fr; }
+    .tsteps { gap: 10px; font-size: 12px; } #tTask .lhead > .muted { display: none; }
+  }
   .bkhero2 { display: flex; align-items: center; gap: 30px; flex-wrap: wrap; background: linear-gradient(90deg, #140707 0%, #0E0E11 40%) !important; }
   .bkrace { display: flex; flex-direction: column; gap: 5px; min-width: 280px; font-size: 14px; color: var(--dim); }
   .bkname { display: flex; align-items: center; gap: 10px; font: italic 800 28px/1 var(--disp); text-transform: uppercase; color: var(--text); }
@@ -986,11 +1050,13 @@
   <div id="p3head">
     <b data-t>Coach</b>
     <span id="coachUpdated"></span>
+    <span id="cTabs"><button data-ct="laps" class="on">Po kolech</button><button data-ct="train">Trénink</button><button data-ct="prog">Pokrok</button></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
   </div>
   <div id="p3body">
     <div id="cLeft">
+      <div class="card" id="cSuggest" hidden></div>
       <div class="card" id="cLatest"><span class="muted">Zatím žádné vyhodnocené kolo – odjeď kolo od čáry do čáry.</span></div>
       <div class="card" id="cHistory" hidden><h2>Předchozí kola</h2><div id="feed"></div></div>
     </div>
@@ -1000,6 +1066,18 @@
       <div class="card" id="cRadio" hidden><h2>Rádio</h2><div id="cRadioList"></div></div>
     </div>
   </div>
+  <div id="p3train" hidden>
+    <div id="tLeft">
+      <div class="card" id="tTask"></div>
+      <div class="tcards" id="tCards"></div>
+    </div>
+    <div id="tRight">
+      <div class="card" id="tMapCard"><h2>Okruh</h2><div id="tMapSvg"></div><div class="mleg"><span style="--c:#F2C230">úkol / častá ztráta</span><span style="--c:#6E5A14">občas</span></div></div>
+      <div class="card" id="tLosses"></div>
+    </div>
+  </div>
+  <div id="p3prog" hidden><div class="card" id="tProg"></div></div>
+  <div id="tSheet" hidden></div>
 </section>
 
 <!-- ======================= Page 4: measurements ======================= -->
@@ -2204,11 +2282,172 @@
       if (updated !== coachUpdated) {
         coachUpdated = updated;
         renderCoach(c);
+        if (coachTab === 'train' && trainData) renderTrainTab();
         if (page === 3) markCoachRead();
         else $$('.coachpill').forEach(el => { el.hidden = !updated || updated === coachSeen; });
       }
     } catch {}
   }
+  // ---------- Training (page 3, tabs "Trénink" and "Pokrok") ----------
+  // One corner, one change: the server keeps the task (coach/training.json), takes the laps driven
+  // after it was set and judges the series after 3–5 laps. Corners worth a task come with the
+  // coach feed ("candidates"); a tap on a corner of the map opens them as a sheet.
+  let trainData = null, coachTab = (() => { try { return localStorage.getItem('apexline.coachTab') || 'laps'; } catch { return 'laps'; } })();
+  const tLoss = (m, v) => m === 'apex' || m === 'exit' ? Math.max(0, -v) : m === 'brake' || m === 'release' ? Math.abs(v) : Math.max(0, v);
+  const tSigned = (v, u) => { if (v == null) return '–'; if (u === 'm') v = Math.round(v); return (v > 0.05 ? '+' : v < -0.05 ? '−' : '±') + nf(Math.abs(v), u === 'm' ? 0 : 1).replace(/,0$/, '') + (u ? ' ' + u : ''); };
+  const tTime = iso => { try { return new Date(iso).toLocaleString(locale, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+  async function pollTraining() {
+    try { trainData = await (await fetch('api/training', { cache: 'no-store' })).json(); renderTraining(); } catch {}
+  }
+  async function trainingAction(body) {
+    const r = await fetch('api/training', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    trainData = j;
+    renderTraining();
+    return j;
+  }
+  function setCoachTab(tab) {
+    coachTab = tab;
+    try { localStorage.setItem('apexline.coachTab', tab); } catch {}
+    $$('#cTabs button').forEach(b => b.classList.toggle('on', b.dataset.ct === tab));
+    $('p3body').hidden = tab !== 'laps';
+    $('p3train').hidden = tab !== 'train';
+    $('p3prog').hidden = tab !== 'prog';
+    renderTraining();
+  }
+  // Map marks: the task's corner, and corners where time goes in most laps
+  function trainMarks() {
+    const m = {};
+    for (const c of (trainData && trainData.candidates) || []) {
+      const rate = c.laps ? c.lost / c.laps : 0;
+      if (rate >= 0.7) m[c.n] = 'rhi'; else if (rate >= 0.4) m[c.n] = 'rmid';
+    }
+    const a = trainData && trainData.active;
+    if (a) m[a.n] = 'focus';
+    return m;
+  }
+  function renderTraining() {
+    if (!trainData) return;
+    const a = trainData.active, sug = trainData.suggestion;
+    // "Po kolech": the running task in short, or the coach's suggestion
+    const cs = $('cSuggest');
+    if (a) {
+      cs.hidden = false;
+      cs.innerHTML = `<span class="tchip">T${a.n}</span><div><span class="lbl" style="color:#F2C230">Úkol běží · ${esc(a.label)}</span><b>${esc(a.short)}</b>`
+        + `<small>Teď ${esc(a.now_text || '–')} · cíl ${esc(a.target_text)} · ${a.valid}/${a.need} kol</small></div><button data-ct-go="train">Otevřít</button>`;
+    } else if (sug) {
+      cs.hidden = false;
+      cs.innerHTML = `<span class="tchip">T${sug.n}</span><div><span class="lbl" style="color:#F2C230">Doporučuju další úkol · ${esc(sug.label)}</span><b>${esc(sug.short)}</b>`
+        + `<small>Ztráta v ${sug.lost} z ${sug.laps} kol · medián +${nf(sug.dt, 2)} s · ${esc(tSigned(sug.gap, sug.unit))} proti referenci</small></div>`
+        + `<button class="pri" data-start="${sug.n}|${esc(sug.metric)}">Zadat úkol</button><button data-ct-go="train">Jiný</button>`;
+    } else cs.hidden = true;
+    if (coachTab === 'train') renderTrainTab();
+    if (coachTab === 'prog') renderProgTab();
+  }
+  function renderTrainTab() {
+    const a = trainData.active;
+    const map = coachData && coachData.map, corners = coachData && coachData.corners;
+    const svg = trackSvg(map, corners, trainMarks(), coachSel);
+    $('tMapCard').hidden = !svg;
+    if (svg) $('tMapSvg').innerHTML = svg;
+    // Corners worth a task
+    const cands = trainData.candidates || [];
+    $('tLosses').innerHTML = `<h2>Opakované ztráty</h2>` + (cands.length ? cands.slice(0, 6).map(c => {
+      const m = c.metrics[0];
+      const cls = a && a.n === c.n ? '' : c.lost / c.laps >= 0.7 ? '' : 'lap';
+      return `<div class="trow" data-sheet="${c.n}"><span class="tchip ${cls}">T${c.n}</span><div><b>${esc(m.short)}</b><small>ztráta v ${c.lost} z ${c.laps} kol${a && a.n === c.n ? ' · teď úkol' : ''}</small></div><span class="c">+${nf(c.dt, 2)}</span></div>`;
+    }).join('') : '<p class="muted" style="font-size:14px">Po pár kolech tu budou zatáčky, kde čas ztrácíš pravidelně.</p>')
+      + ((trainData.done || []).length ? `<div class="lbl" style="margin-top:12px">Hotové úkoly</div>` + trainData.done.slice(0, 3).map(doneRow).join('') : '');
+    // The task
+    if (!a) {
+      const sug = trainData.suggestion;
+      $('tTask').innerHTML = `<div class="tsteps"><span class="on"><b>1</b>Zatáčka a cíl</span><span><b>2</b>Odjeď 3–5 kol</span><span><b>3</b>Výsledek</span></div>`
+        + `<div class="ttitle"><div><span class="lbl">Žádný úkol</span><span>Vyber zatáčku na mapě nebo v seznamu</span></div></div>`
+        + (sug ? `<p style="font-size:14px;color:var(--dim);margin:0">Návrh: <b style="color:var(--text)">T${sug.n} · ${esc(sug.short)}</b> – ztráta v ${sug.lost} z ${sug.laps} kol.</p>`
+          + `<div class="tacts"><button class="pri" data-start="${sug.n}|${esc(sug.metric)}">Zadat T${sug.n}</button><button data-sheet="${sug.n}">Jiný údaj</button></div>` : '');
+      $('tCards').innerHTML = '';
+      return;
+    }
+    const step = a.status !== 'active' ? 3 : 2;
+    const st = n => n < step ? 'done' : n === step ? 'on' : '';
+    const bars = a.laps.slice(-a.max);
+    const pad = Math.max(0, a.max - bars.length);
+    const losses = [...bars.map(l => l.value == null ? 0 : tLoss(a.metric, l.value)), tLoss(a.metric, a.before), a.target_loss];
+    const top = Math.max(...losses, 0.1) * 1.15, H = 60;
+    const goal = Math.round(a.target_loss / top * H);
+    const barHtml = bars.map(l => {
+      if (l.value == null) return `<div><span style="color:#FF5A4E">smyk</span><i style="height:3px;background:#5A2420"></i></div>`;
+      const h = Math.max(3, Math.round(tLoss(a.metric, l.value) / top * H));
+      return `<div><span style="color:${l.ok ? 'var(--green)' : '#FF5A4E'}">${esc(tSigned(l.value, '').trim())}</span><i style="height:${h}px;background:${l.ok ? '#1F7A45' : '#5A2420'}"></i></div>`;
+    }).join('') + '<div><span>·</span><i style="height:3px;background:#1C1C22"></i></div>'.repeat(pad);
+    const lapsHtml = bars.map(l => `<span>K${l.lap}</span>`).join('') + '<span>·</span>'.repeat(pad);
+    const v = a.verdict || {};
+    const icon = { good: '✓', warn: '!', bad: '✗' }[v.tone] || '…';
+    const fin = a.status !== 'active';
+    $('tTask').innerHTML = `<div class="lhead"><div class="tsteps"><span class="${st(1)}"><b>${step > 1 ? '✓' : 1}</b>Zatáčka a cíl</span><span class="${st(2)}"><b>${step > 2 ? '✓' : 2}</b>Odjeď 3–5 kol</span><span class="${st(3)}"><b>3</b>Výsledek</span></div>`
+      + `<span class="muted" style="font-size:13px">od ${esc(tTime(a.created))} · reference K${a.ref.lap} ${fmtLap(a.ref.ms)}</span></div>`
+      + `<div class="ttitle"><span class="tchip">T${a.n}</span><div><span class="lbl">Úkol · ${esc(a.label)}</span><span>${esc(a.short)}</span></div></div>`
+      + `<div class="ttiles"><div><span class="lbl">Předtím</span><span class="v" style="color:#FF5A4E">${esc(a.before_text)}</span><small>proti referenci · medián ${a.before_n} kol</small></div>`
+      + `<div class="tgt"><span class="lbl">Cíl série</span><span class="v">${esc(a.target_text)}</span><small>rozdíl o čtvrtinu menší</small></div>`
+      + `<div><span class="lbl">Teď</span><span class="v" style="color:${a.now == null ? 'var(--dim)' : a.now_ok ? 'var(--green)' : '#FF5A4E'}">${esc(a.now_text || '–')}</span><small>${a.valid ? `medián ${a.valid} nových kol` : 'po zadání úkolu'}</small></div></div>`
+      + `<div class="lhead" style="margin-top:14px"><span class="lbl">Nová kola · rozdíl (${esc(a.unit)})</span><span class="muted" style="font-size:12px">čára = cíl</span></div>`
+      + `<div class="tbars"><div class="goal" style="bottom:${goal}px"></div>${barHtml}</div><div class="tlaps">${lapsHtml}</div>`
+      + `<div class="tverdict ${esc(v.tone || '')}"><span style="font-size:18px;line-height:1">${icon}</span><div><b>${esc(v.title || '')}</b>${v.text ? `<small>${esc(v.text)}</small>` : ''}</div></div>`
+      + `<div class="tacts">${fin ? `<button class="pri" data-tact="again">Ještě jedna série</button>` : ''}<button data-tact="cancel">${fin ? 'Hotovo' : 'Zrušit úkol'}</button></div>`;
+    $('tCards').innerHTML = `<div class="card"><span class="lbl">Co ukazuje záznam</span><p>${esc(a.observed)}</p></div>`
+      + `<div class="card"><span class="lbl" style="color:#F2C230">Co zkusit</span><p>${esc(a.tip)}</p></div>`;
+  }
+  function doneRow(t) {
+    const col = { done: 'var(--green)', done_warn: '#F2C230', missed: '#FF5A4E' }[t.status] || 'var(--dim)';
+    const word = { done: 'splněno', done_warn: 'splněno, výjezd horší', missed: 'nesplněno', cancelled: 'zrušeno' }[t.status] || t.status;
+    return `<div class="trow" data-sheet="${t.n}"><span class="tchip" style="background:${t.status === 'done' ? '#1F7A45' : '#2A2A31'};color:#fff">T${t.n}</span><div><b>${esc(t.short)}</b><small>${esc(t.label)} · ${esc(t.track || '')}</small></div><span style="font-size:13px;color:${col};white-space:nowrap">${word} · ${esc(tTime(t.finished || t.created))}</span></div>`;
+  }
+  function renderProgTab() {
+    const done = trainData.done || [];
+    const ok = done.filter(t => t.status === 'done').length;
+    $('tProg').innerHTML = `<div class="lhead"><h2 style="margin:0">Pokrok</h2><span class="muted" style="font-size:13px">${ok} z ${done.length} úkolů splněno</span></div>`
+      + (done.length ? done.map(t => doneRow(t) + (t.result ? `<div style="font-size:13px;color:var(--dim);padding:0 0 8px 50px">${esc(t.result)}</div>` : '')).join('')
+        : '<p class="muted" style="font-size:14px">Zatím žádný hotový úkol. Zadej první na záložce Trénink.</p>');
+  }
+  // Sheet for a corner: what differs there and a task per figure
+  function openSheet(n) {
+    const c = ((trainData && trainData.candidates) || []).find(x => x.n === n);
+    const a = trainData && trainData.active;
+    const head = `<div class="shead"><span class="tchip">T${n}</span><div><b>${c ? `ztráta +${nf(c.dt, 2)} s v ${c.lost} z ${c.laps} kol` : 'Zatáčka ' + n}</b></div><button data-sheet-close="1">Zavřít</button></div>`;
+    const rows = c ? c.metrics.map(m => `<div class="smet"><div><b>${esc(m.short)}</b><small>${esc(m.label)} ${esc(tSigned(m.gap, m.unit))} proti referenci · v ${m.k} z ${c.laps} kol</small></div>`
+      + `<button class="${a && a.n === n && a.metric === m.metric ? '' : 'pri'}" data-start="${n}|${esc(m.metric)}">${a && a.n === n && a.metric === m.metric ? 'Znovu' : 'Zadat úkol'}</button></div>`).join('')
+      : '<p class="muted" style="font-size:14px">Tady pravidelně neztrácíš – není co trénovat. Vyber jinou zatáčku.</p>';
+    const el = $('tSheet');
+    el.innerHTML = head + (a && a.n !== n ? `<p class="muted" style="font-size:13px;margin:4px 0 8px">Nový úkol nahradí běžící úkol T${a.n}.</p>` : '') + rows + '<div class="err" id="tErr"></div>';
+    el.hidden = false;
+  }
+  $('cTabs').addEventListener('click', e => { const b = e.target.closest('button[data-ct]'); if (b) setCoachTab(b.dataset.ct); });
+  $('p3').addEventListener('click', async e => {
+    const go = e.target.closest('[data-ct-go]');
+    if (go) { setCoachTab(go.dataset.ctGo); return; }
+    if (e.target.closest('[data-sheet-close]')) { $('tSheet').hidden = true; return; }
+    const start = e.target.closest('[data-start]');
+    if (start) {
+      const [n, metric] = start.dataset.start.split('|');
+      start.disabled = true;
+      try { await trainingAction({ action: 'start', n: +n, metric }); $('tSheet').hidden = true; setCoachTab('train'); }
+      catch (err) { if ($('tSheet').hidden) openSheet(+n); const m = $('tErr'); if (m) m.textContent = err.message; }
+      start.disabled = false;
+      return;
+    }
+    const act = e.target.closest('[data-tact]');
+    if (act) {
+      try { await trainingAction({ action: act.dataset.tact }); } catch (err) { console.warn(err); }
+      return;
+    }
+    const row = e.target.closest('[data-sheet]');
+    if (row) { openSheet(+row.dataset.sheet); return; }
+    // (the "Po kolech" map may have been redrawn by its own handler already: the tapped corner is
+    // then in a detached copy of the map, so look for the map by its class)
+    const g = e.target.closest('.tmap g[data-n]');
+    if (g) openSheet(+g.dataset.n);
+  });
   // ---------- Measurements (page 4) ----------
   // The server detects the runs by itself (stop + throttle = acceleration, full braking from 100 km/h
   // to standstill = braking distance). Live state and marks reached come with the snapshot (d.perf),
@@ -2509,6 +2748,9 @@
   $('feed').dataset.empty = t('Noch kein Feedback.');
   pollCoach();
   setInterval(pollCoach, 5000);
+  setCoachTab(coachTab);
+  pollTraining();
+  setInterval(pollTraining, 5000);
   showPage(page);
 
 
@@ -2709,14 +2951,47 @@
     const next = chLast == null
       ? sorted.reduce((a, b) => (dist(a.x, a.z) < dist(b.x, b.z) ? a : b))
       : (sorted.find(c => c.n > chLast) || sorted[0]);
+    const near = next.bx != null && dist(next.bx, next.bz) < 250;
+    // Training task: the call before its corner, and right after it how the pass went (apex
+    // speed live from the speed near the apex; other figures from the last analysed lap)
+    const task = trainData && trainData.active && trainData.active.status === 'active' ? trainData.active : null;
+    if (task) {
+      const tc = coachCorners.find(c => c.n === task.n);
+      if (tc && task.metric === 'apex') {
+        const dd = dist(tc.x, tc.z);
+        if (dd < 35) { tZone = tZone || { v: 1e9 }; tZone.v = Math.min(tZone.v, d.speed_kmh); }
+        else if (tZone && dd > 55) {
+          const v = tZone.v - task.ref.value;
+          tPass = { n: task.n, v, ok: tLoss('apex', v) <= task.target_loss + 1e-9, until: performance.now() + 7000 };
+          tZone = null;
+        }
+      }
+      if (tPass && tPass.n === task.n && performance.now() < tPass.until) {
+        setText('chCorner', `T${task.n}`);
+        setText('chText', `průjezd ${tSigned(tPass.v, 'km/h')} ${tPass.ok ? '✓' : '✗'}`);
+        setText('chSub', `cíl ${task.target_text}`);
+        const cls = 'task ' + (tPass.ok ? 'ok' : 'bad');
+        if (el.className !== cls) el.className = cls;
+        return;
+      }
+      if (next.n === task.n) {
+        const last = task.laps.length ? task.laps[task.laps.length - 1] : null;
+        setText('chCorner', `T${task.n}`);
+        setText('chText', 'ÚKOL: ' + task.short);
+        setText('chSub', (last && last.value != null ? `minule ${tSigned(last.value, task.unit)} ${last.ok ? '✓' : '✗'} · ` : '') + `cíl ${task.target_text} · ${task.valid}/${task.need}`);
+        const cls = ['task', near ? 'near' : ''].join(' ').trim();
+        if (el.className !== cls) el.className = cls;
+        return;
+      }
+    }
     const h = cornerHint(next);
     setText('chCorner', `T${next.n}`);
     setText('chText', h.text);
     setText('chSub', next.dt != null ? `minule ${next.dt > 0 ? '+' : ''}${nf(next.dt, 2)} s · kolo ${next.lap}${h.typical ? ' · obvykle' : ''}` : (h.typical ? 'obvykle tu ztrácíš' : ''));
-    const near = next.bx != null && dist(next.bx, next.bz) < 250;
     const cls = [h.cls, near ? 'near' : ''].join(' ').trim();
     if (el.className !== cls) el.className = cls;
   }
+  let tZone = null, tPass = null;
 
   function renderRace(d, tireVals) {
     const st = d.strategy;

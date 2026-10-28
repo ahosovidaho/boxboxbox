@@ -19,6 +19,8 @@
 //! | GET  | `/api/notebook?track=&car=` | track notebook: records, ideal lap, reserves, risk, tyres, long runs, starts, setups, notes |
 //! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
+//! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
+//! | POST | `/api/training` | `{"action": "start", "n", "metric"}` / `{"action": "cancel"}` / `{"action": "again"}` |
 //! | GET  | `/api/storage` | what takes how much space: sessions, bin, disk; the recommended clean-up |
 //! | POST | `/api/storage/action` | `{"action": "pack"/"prune"/"remove"/"pin"/"unpin"/"restore"/"empty_trash"/"run_plan"/"config", …}` |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
@@ -73,6 +75,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/notebook", get(notebook))
         .route("/api/notebook/note", axum::routing::post(notebook_note))
         .route("/api/briefing", get(briefing))
+        .route("/api/training", get(training_state).post(training_action))
         .route("/api/storage", get(storage_state))
         .route("/api/storage/action", axum::routing::post(storage_action))
         .route("/api/prep", get(prep))
@@ -389,6 +392,97 @@ struct NotebookQuery {
 async fn notebook(State(s): State<AppState>, Query(q): Query<NotebookQuery>) -> impl IntoResponse {
     let body = tokio::task::spawn_blocking(move || notebook_json(&s, q.track, q.car).to_string()).await.unwrap_or_default();
     json_body(body)
+}
+
+fn training_file(s: &AppState) -> PathBuf {
+    let dir = s.settings.data.coach_feed.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| s.settings.data.root.join("coach"));
+    crate::coach::training::path(&dir)
+}
+
+fn coach_feed(s: &AppState) -> serde_json::Value {
+    std::fs::read_to_string(&s.settings.data.coach_feed).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// The active task, the finished ones and the corners of the latest session worth a task (with
+/// the coach's suggestion when no task is running).
+fn training_json(s: &AppState) -> serde_json::Value {
+    let saved = crate::coach::training::load(&training_file(s));
+    let feed = coach_feed(s);
+    let cands = feed["candidates"].clone();
+    let suggestion = if saved.active.is_none() {
+        cands.as_array().and_then(|a| a.first()).map(|c| {
+            let m = &c["metrics"][0];
+            json!({ "n": c["n"], "metric": m["metric"], "label": m["label"], "short": m["short"], "text": m["text"],
+                    "gap": m["gap"], "unit": m["unit"], "lost": c["lost"], "laps": c["laps"], "dt": c["dt"] })
+        })
+    } else {
+        None
+    };
+    json!({
+        "active": saved.active.as_ref().map(|t| t.view()),
+        "done": saved.done.iter().take(10).map(|t| t.view()).collect::<Vec<_>>(),
+        "candidates": if cands.is_null() { json!([]) } else { cands },
+        "suggestion": suggestion,
+        "session": feed["session"],
+    })
+}
+
+async fn training_state(State(s): State<AppState>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || training_json(&s).to_string()).await.unwrap_or_default();
+    json_body(body)
+}
+
+#[derive(Deserialize)]
+struct TrainingBody {
+    action: String,
+    #[serde(default)]
+    n: Option<usize>,
+    #[serde(default)]
+    metric: Option<String>,
+}
+
+/// Start (from the laps of the latest session), cancel, or start the same task again.
+async fn training_action(State(s): State<AppState>, Json(b): Json<TrainingBody>) -> impl IntoResponse {
+    let res = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use crate::coach::training;
+        let file = training_file(&s);
+        let mut saved = training::load(&file);
+        match b.action.as_str() {
+            "cancel" => training::retire(&mut saved, "cancelled"),
+            "start" | "again" => {
+                let (n, metric) = match b.action.as_str() {
+                    "again" => {
+                        let last = saved.active.as_ref().or(saved.done.first()).ok_or("no task")?;
+                        (last.corner, last.metric.clone())
+                    }
+                    _ => (b.n.ok_or("n missing")?, b.metric.clone().ok_or("metric missing")?),
+                };
+                let session = coach_feed(&s)["session"].as_str().map(str::to_string).ok_or("no session")?;
+                let dir = s.settings.data.recordings.join(&session);
+                let cmp = crate::storage::comparison(&dir, &mut comparer()).map_err(|e| e.to_string())?;
+                let track = cmp.track.clone().ok_or_else(|| {
+                    "Trať této session neznám – nahraj ji v Tréninku na stránce Strategie, ať ji poznám podle tvaru.".to_string()
+                })?;
+                let car = std::fs::read_to_string(dir.join("session.json"))
+                    .ok()
+                    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                    .and_then(|m| m["car_code"].as_i64())
+                    .unwrap_or(0) as i32;
+                let task = training::start(&cmp, &session, &track, car, n, &metric)?;
+                training::retire(&mut saved, "cancelled");
+                saved.active = Some(task);
+            }
+            _ => return Err("unknown action".into()),
+        }
+        training::save(&file, &saved).map_err(|e| e.to_string())?;
+        Ok(training_json(&s).to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
+    match res {
+        Ok(body) => json_body(body).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
 }
 
 #[derive(Deserialize)]

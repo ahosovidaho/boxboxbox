@@ -14,4 +14,5 @@ pub mod shifts;
 pub mod start;
 pub mod stint;
 pub mod trailbrake;
+pub mod training;
 pub mod worker;

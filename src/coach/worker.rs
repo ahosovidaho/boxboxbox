@@ -177,8 +177,10 @@ impl Coach {
         let corners: Option<Value> = (!res.corners.is_empty()).then(|| corners_json(&res, None));
         let dir = session.join("analysis");
         fs::create_dir_all(&dir)?;
+        let mut analysed = false;
         for name in new {
             if let Some(lap) = res.laps.iter().find(|l| l.file == name) {
+                analysed = true;
                 let m = feedback::lap_metrics(&session.join(&name))?;
                 let prev = res.laps.iter().filter(|l| state.laps.contains(&l.file)).map(|l| l.ms).min();
                 let item = feedback::lap_feedback(&res, lap, &m, prev);
@@ -192,6 +194,23 @@ impl Coach {
                 log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}", "kolo {n} vyhodnoceno: {title}"));
             }
             state.processed.push(name);
+        }
+        if analysed {
+            // Training: corners worth a task, and the active task's new laps
+            self.write_key("candidates", json!(super::training::candidates(&res)))?;
+            let car = fs::read_to_string(session.join("session.json"))
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                .and_then(|m| m["car_code"].as_i64())
+                .unwrap_or(0) as i32;
+            if let Some(parent) = self.feed_path.parent() {
+                if let Some(msg) = super::training::on_session(&super::training::path(parent), &res, session, car) {
+                    let mut radio = feedback::radio(&res);
+                    radio.insert(0, msg.clone());
+                    self.write_radio(radio)?;
+                    log(msg["text"].as_str().unwrap_or_default());
+                }
+            }
         }
         if fin && !res.laps.is_empty() && state.summarized_laps < state.laps.len() {
             let item = feedback::summary(session, &dir, &res, &state.metrics)?;

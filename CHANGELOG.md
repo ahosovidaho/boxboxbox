@@ -2,6 +2,22 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Trénink na Kouči: jedna zatáčka, jedna změna, ověření na dalších kolech** (inspirace
+  ApexTrace 0.6 „focused practice“). Kouč má záložky Po kolech · Trénink · Pokrok.
+  - Úkol = zatáčka + jeden údaj: rychlost na vrcholu, na výjezdu, bod brzdění, povolení brzdy,
+    plný plyn nebo jízda bez pedálu. **Předtím** = medián normálních kol proti referenčnímu
+    kolu, **cíl** = rozdíl o čtvrtinu menší, **teď** = medián kol odjetých po zadání.
+  - Počítají se jen nová kola; kolo se smykem v zatáčce nebo mimo tempo (nad 107 %) ne. Po
+    3 kolech se série vyhodnotí, nejpozději po 5: splněno / cíl splněn, ale výjezd o víc než
+    2 km/h horší / nesplněno („Ještě jedna série“).
+  - **Úkol z mapy**: čísla zatáček mají barvu podle toho, jak často tam ztrácíš; ťuknutí otevře
+    panel se ztrátou („v 7 z 7 kol“) a s úkolem pro každý údaj, který se liší.
+  - **Kouč navrhne další úkol** sám (karta nahoře na Po kolech, jedním ťuknutím zadat).
+  - **Za jízdy** živá nápověda před zatáčkou s úkolem ukáže „ÚKOL: …“, minulý průjezd a cíl;
+    u rychlosti na vrcholu hned za zatáčkou výsledek průjezdu („průjezd −3,0 km/h ✓“).
+  - **Konec série jako zpráva v rádiu** („T9 splněno: −3,1 km/h (předtím −4,8 km/h), výjezd ±0“).
+  - Ukládá se do `coach/training.json`; API `GET/POST /api/training`.
+
 - **Otáčkoměr: modře = řaď, červeně = omezovač** (Živá data i závodní LED). Modře bliká od bodu
   řazení (z naměřené výkonové křivky, jinak kontrolka hry), červeně až v omezovači – ten se učí
   z jízdy (kde se otáčky hromadí nahoře) nebo z měření. Příznak „rev limiter“ z GT7 se už
