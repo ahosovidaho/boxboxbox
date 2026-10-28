@@ -122,6 +122,12 @@ pub fn parse_time(s: &str) -> Option<i64> {
     if s.is_empty() {
         return None;
     }
+    // "1:50:099" (minutes, seconds, thousandths – a colon typed for the comma)
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() == 3 && parts[2].len() == 3 && !s.contains('.') {
+        let (m, sec, ms) = (parts[0].parse::<i64>().ok()?, parts[1].parse::<i64>().ok()?, parts[2].parse::<i64>().ok()?);
+        return (sec < 60).then_some((m * 60 + sec) * 1000 + ms);
+    }
     if !s.contains([':', '.']) {
         return s.parse::<i64>().ok().filter(|v| *v > 1000);
     }
@@ -293,6 +299,7 @@ mod tests {
         assert_eq!(parse_time("1:50.099"), Some(110_099));
         assert_eq!(parse_time("110.099"), Some(110_099));
         assert_eq!(parse_time("110099"), Some(110_099));
+        assert_eq!(parse_time("1:50:099"), Some(110_099));
         assert_eq!(parse_time(""), None);
     }
 

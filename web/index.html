@@ -1695,8 +1695,10 @@
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
     const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #p11body, #p12body, #tCharts, #tSide, button, input, select, textarea');
-    // Horizontal drags on a chart move its cursor instead of switching pages
-    press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
+    // Horizontal drags on a chart move its cursor instead of switching pages. Swiping between
+    // pages is for touch only (a mouse drag selects text), and never from a form field or the nav
+    const noSwipe = e.pointerType === 'mouse' || !!e.target.closest('input, select, textarea, label, #topnav, table, .rfform');
+    press = { x: e.clientX, y: e.clientY, chart: noSwipe || !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
   });
   pagesEl.addEventListener('pointermove', e => {
@@ -2524,9 +2526,10 @@
       <div class="muted" style="font-size:13px;margin-top:2px">${esc(tTime(p.created))} · z přehrávání ${fmtLap(p.telemetry_ms)} · ${nf(p.length_m / 1000, 2)} km</div>
       <div class="rfform" data-pend="${esc(p.id)}">
         <label>Jezdec<input name="driver" placeholder="např. RTW_Ran" autocomplete="off"></label>
-        <label>Oficiální čas kola<input name="time" placeholder="1:50,099" inputmode="decimal" autocomplete="off"></label>
+        <label>Oficiální čas kola (m:ss,mmm)<input name="time" placeholder="1:50,099" autocomplete="off"></label>
         <label style="grid-column:1/-1">Trať – jen když ji nepoznám podle tvaru (nová trať se uloží i s tvarem)<input name="track" list="rfTracks" placeholder="např. Circuit de Barcelona-Catalunya GP bez šikany" autocomplete="off"><datalist id="rfTracks">${tracks.map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
         <div class="acts"><button class="pri" data-ref="save">Uložit referenci</button><button class="danger" data-ref="discard">Zahodit</button></div>
+        ${refErr ? `<div class="rferr" style="grid-column:1/-1">${esc(refErr)}</div>` : ''}
       </div></div>`).join('');
     const refs = d.references || [];
     const list = `<div class="card wide"><h2>Uložené reference</h2>` + (refs.length ? `<table class="rftable"><thead><tr><th>Trať</th><th>Auto</th><th>Jezdec</th><th>Čas</th><th>Přehrávání</th><th></th></tr></thead><tbody>`
@@ -2534,7 +2537,7 @@
         + `<td class="t">${fmtLap(r.official_ms)}</td><td><small>${nf(r.k * 100, 1)} % rychlosti</small></td>`
         + `<td><button data-ref="open" data-id="${esc(r.id)}">Porovnat v Telemetrii</button><button class="danger" data-ref="remove" data-id="${esc(r.id)}">Smazat</button></td></tr>`).join('') + '</tbody></table>'
       : '<p class="muted" style="font-size:14px">Zatím žádná. Nahraj první kolo z přehrávání.</p>') + '</div>';
-    const html = capture + (pend || '') + (refErr ? `<div class="card wide rferr">${esc(refErr)}</div>` : '') + list;
+    const html = capture + (pend || '') + (refErr && !pend ? `<div class="card wide rferr">${esc(refErr)}</div>` : '') + list;
     const body = $('p12body');
     // Keep what is typed while the state refreshes
     const typed = {};
