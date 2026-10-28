@@ -19,7 +19,7 @@
 //! | GET  | `/api/notebook?track=&car=` | track notebook: records, ideal lap, reserves, risk, tyres, long runs, starts, setups, notes |
 //! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
-//! | GET/POST | `/api/replay` | diagnostic capture of a GT7 replay: state; `{"on": true/false}` arms it for 30 min |
+//! | GET/POST | `/api/references` | external reference laps from GT7 replays: capture state, captured laps, references; `{"action": "arm"/"stop"/"save"/"remove", …}` |
 //! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
 //! | POST | `/api/training` | `{"action": "start", "n", "metric"}` / `{"action": "cancel"}` / `{"action": "again"}` |
 //! | GET  | `/api/storage` | what takes how much space: sessions, bin, disk; the recommended clean-up |
@@ -79,7 +79,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/notebook/note", axum::routing::post(notebook_note))
         .route("/api/briefing", get(briefing))
         .route("/api/training", get(training_state).post(training_action))
-        .route("/api/replay", get(replay_state).post(replay_arm))
+        .route("/api/references", get(references_state).post(references_action))
         .route("/api/storage", get(storage_state))
         .route("/api/storage/action", axum::routing::post(storage_action))
         .route("/api/prep", get(prep))
@@ -398,18 +398,75 @@ async fn notebook(State(s): State<AppState>, Query(q): Query<NotebookQuery>) -> 
     json_body(body)
 }
 
-async fn replay_state(State(s): State<AppState>) -> impl IntoResponse {
-    json_body(serde_json::to_string(&crate::session::replay::status(&s.replay)).unwrap_or_default())
+fn references_root(s: &AppState) -> PathBuf {
+    crate::coach::reference::root(&s.settings.data.root)
+}
+
+fn references_json(s: &AppState) -> serde_json::Value {
+    let root = references_root(s);
+    let tracks: Vec<String> = {
+        let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+        st.practice.saved.shapes.iter().map(|sh| sh.track.clone()).collect()
+    };
+    json!({
+        "capture": crate::session::replay::status(&s.replay),
+        "pending": crate::coach::reference::pending(&root),
+        "references": crate::coach::reference::list(&root),
+        "tracks": tracks,
+    })
+}
+
+async fn references_state(State(s): State<AppState>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || references_json(&s).to_string()).await.unwrap_or_default();
+    json_body(body)
 }
 
 #[derive(Deserialize)]
-struct ReplayBody {
-    on: bool,
+struct ReferenceBody {
+    action: String,
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    driver: String,
+    #[serde(default)]
+    time: String,
+    #[serde(default)]
+    track: Option<String>,
 }
 
-async fn replay_arm(State(s): State<AppState>, Json(b): Json<ReplayBody>) -> impl IntoResponse {
-    crate::session::replay::arm(&s.replay, b.on);
-    json_body(serde_json::to_string(&crate::session::replay::status(&s.replay)).unwrap_or_default())
+/// `arm` / `stop` the capture from a replay, `save` a captured lap (driver, official time, track
+/// when not recognised), `remove` a captured lap or a reference.
+async fn references_action(State(s): State<AppState>, Json(b): Json<ReferenceBody>) -> impl IntoResponse {
+    let res = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use crate::coach::reference;
+        let root = references_root(&s);
+        match b.action.as_str() {
+            "arm" => crate::session::replay::arm(&s.replay, true),
+            "stop" => crate::session::replay::arm(&s.replay, false),
+            "save" => {
+                let ms = reference::parse_time(&b.time).ok_or("Zadej oficiální čas kola, např. 1:50,099.")?;
+                let (track_of, _) = track_matcher(&s.strategy);
+                // A track not stored yet: the reference lap gives its layout (so the own sessions
+                // on it are recognised too)
+                let pts = reference::pending_points(&root, &b.id);
+                let track = match (track_of(&pts), b.track.as_deref().filter(|t| !t.trim().is_empty())) {
+                    (Some(t), _) => Some(t),
+                    (None, Some(name)) => s.strategy.lock().unwrap_or_else(|e| e.into_inner()).practice.learn_layout(name, &pts),
+                    (None, None) => None,
+                };
+                reference::save(&root, &b.id, &b.driver, ms, track.as_deref(), &|_: &[[f32; 2]]| None)?;
+            }
+            "remove" => reference::remove(&root, &b.id)?,
+            _ => return Err("unknown action".into()),
+        }
+        Ok(references_json(&s).to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
+    match res {
+        Ok(body) => json_body(body).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
 }
 
 fn training_file(s: &AppState) -> PathBuf {
@@ -851,7 +908,13 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
             crate::coach::library::best(&same).cloned()
         });
         let safe_file = |n: &str| !n.is_empty() && !n.contains(['/', '\\']) && n != "..";
+        let refs_root = crate::coach::reference::root(rec.parent().unwrap_or(&rec));
+        let ext = q.vs.as_deref().and_then(|v| v.strip_prefix("ref:")).and_then(|id| crate::coach::reference::get(&refs_root, id));
         let vs = match q.vs.as_deref() {
+            Some(v) if v.starts_with("ref:") => match ext.as_ref().and_then(|r| crate::coach::reference::file(&refs_root, &r.id)) {
+                Some(p) => crate::coach::compare::Versus::Lap(p),
+                None => crate::coach::compare::Versus::Session,
+            },
             Some("ideal") => crate::coach::compare::Versus::Ideal,
             Some("track") => match &track_best {
                 Some(b) if b.session != session => {
@@ -885,7 +948,15 @@ async fn traces(State(s): State<AppState>, Query(q): Query<TraceQuery>) -> impl 
                 v["track_best"] = json!(track_best
                     .as_ref()
                     .map(|b| json!({ "session": b.session, "file": b.best_file, "ms": b.best_ms, "started": b.started, "same": b.session == session })));
-                if let crate::coach::compare::Versus::Lap(p) = &vs {
+                // External references on this track (the same car first)
+                let track = me.as_ref().and_then(|m| m.track.clone());
+                v["car_code"] = json!(car);
+                v["references"] = json!(track.as_deref().map(|t| crate::coach::reference::of_track(&refs_root, t, Some(car))).unwrap_or_default());
+                if let (Some(r), crate::coach::compare::Versus::Lap(_)) = (&ext, &vs) {
+                    v["versus"]["kind"] = json!("ref");
+                    v["versus"]["ms"] = json!(r.official_ms);
+                    v["versus"]["ref"] = json!(r);
+                } else if let crate::coach::compare::Versus::Lap(p) = &vs {
                     let sess = p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                     v["versus"]["session"] = json!(sess);
                     let other = all.iter().find(|i| i.session == sess);

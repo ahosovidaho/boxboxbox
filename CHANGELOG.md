@@ -2,9 +2,18 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
-- **Diagnostika přehrávání GT7** (krok 0 k externím referenčním kolům): na Živých datech
-  tlačítko „Nahrát přehrávání“. Na 30 minut zapne záznam paketů, které GT7 posílá při
-  přehrávání záznamu (bez příznaku „na trati“), do `replays/<datum>_car<ID>.csv`.
+- **Reference – kola jiných jezdců z přehrávání v GT7** (nová stránka v Tréninku za Měřením).
+  - „Nahrát kolo z přehrávání“ a v GT7 pustit přehrávání kola (např. z globálního žebříčku
+    online časovky). Nahraje se jedno celé kolo od čáry do čáry; pauza, přetočení nebo mezera
+    v datech kolo zneplatní a čeká se na další průjezd čárou.
+  - Přehrávání v GT7 běží o ~2 % pomaleji (28. 10.: RTW_Ran 1:50,099 → 1:52,3 v telemetrii;
+    rychlost, otáčky i otáčky kol odpovídají zpomalené jízdě). Po zadání jezdce a oficiálního
+    času se kolo přepočítá na skutečný čas (60 vzorků za sekundu) a rychlosti/otáčky/zrychlení
+    se upraví. Ukládá se zvlášť do `references/<trať>/` – nemíchá se s vlastními session.
+  - Neznámá trať: zadáš její název a tvar se uloží z referenčního kola (pak aplikace pozná
+    i tvoje vlastní session na ní).
+  - **Telemetrie**: „vs RTW_Ran · 1:50,099 · reference“ – delta, rychlost, pedály, volant
+    a ztráta po zatáčkách proti referenci.
 - Přehrávání už nekrmí strategii, trénink, handling, převod řízení, výkonovou křivku ani
   měření (jen vlastní jízda „na trati“) a živá nápověda kouče se při něm nezobrazuje.
 

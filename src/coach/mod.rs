@@ -9,6 +9,7 @@ pub mod incident;
 pub mod lap;
 pub mod library;
 pub mod notebook;
+pub mod reference;
 pub mod report;
 pub mod shifts;
 pub mod start;

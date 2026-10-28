@@ -221,7 +221,7 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
     // Demo: strategy works but nothing is stored
     let strategy = strategy::Strategy::load((!demo).then(|| data.root.join("strategy.json"))).shared();
     tracker.set_strategy(strategy.clone());
-    let replay = session::replay::shared(data.root.join("replays"));
+    let replay = session::replay::shared(coach::reference::root(&data.root));
     if !demo {
         tracker.set_replay(replay.clone());
     }

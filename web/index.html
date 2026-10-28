@@ -544,6 +544,29 @@
   #p11body .card { padding: 10px 13px; }
   #p11body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 7px; }
   #p11body .wide { grid-column: 1 / -1; }
+  /* Reference laps from GT7 replays */
+  #p12head { display: flex; align-items: center; gap: 10px; min-height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); flex-wrap: wrap; }
+  #p12head b { color: var(--text); font-weight: 600; } #p12head .grow { flex: 1; }
+  #p12body { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-content: start; padding-bottom: 12px; }
+  @media (max-width: 820px) { #p12body { grid-template-columns: 1fr; } }
+  #p12body .wide { grid-column: 1 / -1; }
+  #p12body button, #p12body input, #p12body select { height: 44px; border-radius: 11px; border: 1px solid #2A2A31; background: #16161A; color: var(--text); font: 600 14px Inter, system-ui, sans-serif; padding: 0 14px; box-sizing: border-box; }
+  #p12body input, #p12body select { font-weight: 500; min-width: 0; }
+  #p12body button.pri { background: #F2C230; border-color: #F2C230; color: #000; }
+  #p12body button.danger { color: #FF5A4E; }
+  .rfphase { font: 600 15px/1.35 Inter, system-ui, sans-serif; margin: 10px 0 4px; }
+  .rfphase.rec { color: #FF5A4E; } .rfphase.ok { color: var(--green); } .rfphase.bad { color: #F2C230; }
+  .rfsteps { margin: 10px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.55; color: var(--dim); }
+  .rfsteps b { color: var(--text); }
+  .rfform { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .rfform label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dim); }
+  .rfform .acts { grid-column: 1 / -1; display: flex; gap: 10px; flex-wrap: wrap; }
+  .rftable { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .rftable th { text-align: left; font: 600 11px var(--disp); letter-spacing: .12em; text-transform: uppercase; color: var(--label); padding: 6px 8px 6px 0; }
+  .rftable td { padding: 9px 8px 9px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+  .rftable .t { font: 700 14px var(--mono); color: #C99BFF; } .rftable small { color: var(--dim); font-size: 12px; }
+  .rftable td:last-child { text-align: right; white-space: nowrap; } .rftable td:last-child button { height: 36px; padding: 0 12px; margin-left: 6px; }
+  .rferr { color: #FF5A4E; font-size: 13px; margin-top: 8px; }
   .dsnums { display: flex; gap: 26px; flex-wrap: wrap; align-items: baseline; }
   .dsnums .big { font: 700 26px var(--mono); color: var(--text); }
   .dsnums .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); display: block; }
@@ -699,10 +722,10 @@
   #navtabs .sep { width: 1px; background: #26262D; margin: 14px 6px; flex-shrink: 0; }
   #topnav .conn { margin-left: 0; }
   #navGear { width: 40px; height: 40px; border-radius: 10px; border: 0; background: none; color: #8A8A94; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .rd .dots, :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) > .conn { display: none; }
+  .rd .dots, :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) > .conn { display: none; }
   /* Page head: big condensed title */
-  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) { height: auto; min-height: 40px; font-size: 13px; color: var(--dim); }
-  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head) > b:first-child { font: italic 800 30px/1 var(--disp); text-transform: uppercase; letter-spacing: .01em; color: var(--text); margin-right: 4px; }
+  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) { height: auto; min-height: 40px; font-size: 13px; color: var(--dim); }
+  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) > b:first-child { font: italic 800 30px/1 var(--disp); text-transform: uppercase; letter-spacing: .01em; color: var(--text); margin-right: 4px; }
   /* Panels, section titles, labels, numbers */
   .rd .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
   :is(#p2, #p3, #p4, #p5, #p7, #p8, #p9, #p10, #p11) .card h2 { font: 700 15px var(--disp); letter-spacing: .12em; text-transform: uppercase; color: var(--text); margin-bottom: 10px; }
@@ -1040,10 +1063,8 @@
         <span data-t>Tageszeit (Spiel)</span><span id="d_tod">–</span>
         <span data-t>Paketformat</span><span id="d_fmt">–</span>
         <span data-t>Aufzeichnung</span><span id="d_rec">–</span>
-        <span>Přehrávání (diagnostika)</span><span id="d_replay">–</span>
+        <span>Reference z přehrávání</span><span id="d_replay">–</span>
       </div>
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button id="replayArm" style="height:40px;padding:0 14px;border-radius:10px;border:1px solid #2A2A31;background:#16161A;color:var(--text);font:600 13px Inter,system-ui,sans-serif">Nahrát přehrávání</button></div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0;line-height:1.4">Zapni, pak v GT7 pusť přehrávání záznamu (např. kolo z žebříčku časovky). Nahrává se, dokud auto není „na trati“; uloží se do <code>replays/</code>.</p>
     </div>
   </div>
 </section>
@@ -1360,6 +1381,18 @@
   <div id="p11body"><span class="muted">Načítám…</span></div>
 </section>
 
+<!-- ======================= Reference laps from GT7 replays ======================= -->
+<section class="page rd" id="p12" hidden>
+  <div id="p12head">
+    <b>Reference</b>
+    <span>kola jiných jezdců z přehrávání v GT7 (žebříček online časovky)</span>
+    <span class="grow"></span>
+    <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
+    <span class="dots"></span>
+  </div>
+  <div id="p12body"><span class="muted">Načítám…</span></div>
+</section>
+
 <!-- ======================= Race mode: recap ======================= -->
 <section class="page rd" id="p7" hidden>
   <div id="p7head">
@@ -1591,10 +1624,10 @@
   // Sessions ticked for a bulk action
   const dsSel = new Set();
   // Pages in groups: driving | analysis | preparation | system (the nav bar shows the names)
-  const ORDER = { practice: [1, 3, 9, 4, 10, 5, 8, 2, 11], race: [6, 5, 10, 7, 2, 11] };
-  const PAGE_NAME = { 1: 'Jízda', 6: 'Jízda', 3: 'Kouč', 9: 'Telemetrie', 4: 'Měření', 10: 'Trať', 5: 'Strategie', 8: 'Setup', 7: 'Rekap', 2: 'Živá data', 11: 'Data' };
-  const PAGE_GROUP = { 1: 0, 6: 0, 3: 1, 9: 1, 4: 1, 10: 2, 5: 2, 8: 2, 7: 2, 2: 3, 11: 3 };
-  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const ORDER = { practice: [1, 3, 9, 4, 12, 10, 5, 8, 2, 11], race: [6, 5, 10, 7, 2, 11] };
+  const PAGE_NAME = { 1: 'Jízda', 6: 'Jízda', 3: 'Kouč', 9: 'Telemetrie', 4: 'Měření', 12: 'Reference', 10: 'Trať', 5: 'Strategie', 8: 'Setup', 7: 'Rekap', 2: 'Živá data', 11: 'Data' };
+  const PAGE_GROUP = { 1: 0, 6: 0, 3: 1, 9: 1, 4: 1, 12: 1, 10: 2, 5: 2, 8: 2, 7: 2, 2: 3, 11: 3 };
+  const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
   let page = ORDER[appMode][0];
   { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
@@ -1652,6 +1685,7 @@
     if (n === 5) loadPrep();
     if (n === 10) loadTrackPage();
     if (n === 11) loadStorage();
+    if (n === 12) loadRefs();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
@@ -1660,7 +1694,7 @@
   let press = null;
   const pagesEl = $('pages');
   pagesEl.addEventListener('pointerdown', e => {
-    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #p11body, #tCharts, #tSide, button, input, select, textarea');
+    const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #p11body, #p12body, #tCharts, #tSide, button, input, select, textarea');
     // Horizontal drags on a chart move its cursor instead of switching pages
     press = { x: e.clientX, y: e.clientY, chart: !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
@@ -2451,28 +2485,84 @@
     const g = e.target.closest('.tmap g[data-n]');
     if (g) openSheet(+g.dataset.n);
   });
-  // ---------- Replay capture (diagnostics, page 2 "Status") ----------
-  let replayState = null, replayTimer = null;
-  function renderReplay() {
-    const r = replayState;
-    if (!r) return;
-    const txt = r.recording ? `nahrávám · ${r.seconds} s · ${r.rows} paketů`
-      : r.armed ? `čekám na přehrávání (${Math.ceil(r.armed_left_s / 60)} min)`
-      : r.last_file ? `uloženo: ${r.last_file} (${r.last_rows} paketů)` : 'vypnuto';
-    setText('d_replay', txt);
-    $('replayArm').textContent = r.armed ? 'Zastavit' : 'Nahrát přehrávání';
-    if (r.armed && !replayTimer) replayTimer = setInterval(pollReplay, 2000);
-    if (!r.armed && replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  // ---------- Reference laps (page 12) ----------
+  // Armed here, the server keeps one lap of a GT7 replay from line to line (played straight
+  // through), corrects it for the slower replay with the official time and stores it apart from
+  // the own sessions. Telemetry can then compare a lap against it.
+  let refData = null, refTimer = null, refErr = '';
+  const PHASE = {
+    off: ['Vypnuto', ''], waiting: ['Čekám na přehrávání v GT7…', ''], line: ['Přehrávání běží – čekám na cílovou čáru', ''],
+    recording: ['● Nahrávám kolo', 'rec'], saved: ['✓ Kolo nahráno – doplň jezdce a čas níže', 'ok'], invalid: ['Kolo nejde použít', 'bad'],
+  };
+  async function loadRefs() {
+    try { refData = await (await fetch('api/references', { cache: 'no-store' })).json(); renderRefs(); } catch {}
   }
-  async function pollReplay() { try { replayState = await (await fetch('api/replay', { cache: 'no-store' })).json(); renderReplay(); } catch {} }
-  $('replayArm').addEventListener('click', async () => {
-    try {
-      const on = !(replayState && replayState.armed);
-      replayState = await (await fetch('api/replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }) })).json();
-      renderReplay();
-    } catch {}
+  async function refAction(body) {
+    const r = await fetch('api/references', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { refErr = j.error || r.statusText; renderRefs(); return null; }
+    refErr = ''; refData = j; renderRefs(); return j;
+  }
+  function renderRefs() {
+    const d = refData;
+    if (!d) return;
+    const c = d.capture;
+    const [ptxt, pcls] = PHASE[c.phase] || PHASE.off;
+    setText('d_replay', c.armed ? (PHASE[c.phase] || PHASE.off)[0] : 'vypnuto');
+    const live = c.phase === 'recording' ? ` · ${nf(c.seconds, 0)} s` : '';
+    const capture = `<div class="card"><h2>Nahrát z přehrávání</h2>
+      <div class="rfphase ${pcls}">${esc(ptxt)}${live}${c.note ? ` – ${esc(c.note)}` : ''}</div>
+      ${c.armed ? `<div class="muted" style="font-size:13px">Zapnuto ještě ${Math.ceil(c.armed_left_s / 60)} min</div>` : ''}
+      <div style="margin-top:12px">${c.armed ? '<button data-ref="stop">Zastavit</button>' : '<button class="pri" data-ref="arm">Nahrát kolo z přehrávání</button>'}</div>
+      <ol class="rfsteps"><li>Ťukni na <b>Nahrát kolo z přehrávání</b>.</li>
+        <li>V GT7: <b>Online časovka → Načíst záznam → Globální žebříček</b>, vyber kolo a pusť jeho přehrávání.</li>
+        <li>Nech ho projet <b>celé od čáry do čáry</b> bez pauzy a přetáčení. Kolo se nahraje samo, pak doplníš jezdce a oficiální čas.</li></ol>
+      <p class="muted" style="font-size:12px;line-height:1.45;margin:10px 0 0">Přehrávání v GT7 běží asi o 2 % pomaleji než skutečná jízda. Podle oficiálního času se kolo přepočítá na skutečný čas i rychlosti.</p></div>`;
+    const tracks = d.tracks || [];
+    const pend = (d.pending || []).map(p => `<div class="card"><h2>Nahrané kolo · doplň údaje</h2>
+      <div style="font-size:15px;font-weight:600">${esc(p.car || 'auto ' + p.car_code)}</div>
+      <div class="muted" style="font-size:13px;margin-top:2px">${esc(tTime(p.created))} · z přehrávání ${fmtLap(p.telemetry_ms)} · ${nf(p.length_m / 1000, 2)} km</div>
+      <div class="rfform" data-pend="${esc(p.id)}">
+        <label>Jezdec<input name="driver" placeholder="např. RTW_Ran" autocomplete="off"></label>
+        <label>Oficiální čas kola<input name="time" placeholder="1:50,099" inputmode="decimal" autocomplete="off"></label>
+        <label style="grid-column:1/-1">Trať – jen když ji nepoznám podle tvaru (nová trať se uloží i s tvarem)<input name="track" list="rfTracks" placeholder="např. Circuit de Barcelona-Catalunya GP bez šikany" autocomplete="off"><datalist id="rfTracks">${tracks.map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
+        <div class="acts"><button class="pri" data-ref="save">Uložit referenci</button><button class="danger" data-ref="discard">Zahodit</button></div>
+      </div></div>`).join('');
+    const refs = d.references || [];
+    const list = `<div class="card wide"><h2>Uložené reference</h2>` + (refs.length ? `<table class="rftable"><thead><tr><th>Trať</th><th>Auto</th><th>Jezdec</th><th>Čas</th><th>Přehrávání</th><th></th></tr></thead><tbody>`
+      + refs.map(r => `<tr><td>${esc(r.track)}</td><td>${esc(r.car || r.car_code)}</td><td><b>${esc(r.driver)}</b><br><small>${esc(tTime(r.created))}</small></td>`
+        + `<td class="t">${fmtLap(r.official_ms)}</td><td><small>${nf(r.k * 100, 1)} % rychlosti</small></td>`
+        + `<td><button data-ref="open" data-id="${esc(r.id)}">Porovnat v Telemetrii</button><button class="danger" data-ref="remove" data-id="${esc(r.id)}">Smazat</button></td></tr>`).join('') + '</tbody></table>'
+      : '<p class="muted" style="font-size:14px">Zatím žádná. Nahraj první kolo z přehrávání.</p>') + '</div>';
+    const html = capture + (pend || '') + (refErr ? `<div class="card wide rferr">${esc(refErr)}</div>` : '') + list;
+    const body = $('p12body');
+    // Keep what is typed while the state refreshes
+    const typed = {};
+    body.querySelectorAll('.rfform').forEach(f => { typed[f.dataset.pend] = [...f.querySelectorAll('input, select')].map(i => [i.name, i.value]); });
+    body.innerHTML = html;
+    body.querySelectorAll('.rfform').forEach(f => { for (const [n, v] of typed[f.dataset.pend] || []) { const i = f.querySelector(`[name="${n}"]`); if (i) i.value = v; } });
+    const busy = c.armed;
+    if (busy && !refTimer) refTimer = setInterval(loadRefs, 1500);
+    if (!busy && refTimer) { clearInterval(refTimer); refTimer = null; }
+  }
+  $('p12body').addEventListener('click', async e => {
+    const b = e.target.closest('[data-ref]');
+    if (!b) return;
+    const a = b.dataset.ref;
+    if (a === 'arm' || a === 'stop') return refAction({ action: a });
+    if (a === 'save' || a === 'discard') {
+      const f = b.closest('.rfform'), id = f.dataset.pend;
+      if (a === 'discard') return refAction({ action: 'remove', id });
+      const v = n => f.querySelector(`[name="${n}"]`).value;
+      b.disabled = true;
+      await refAction({ action: 'save', id, driver: v('driver'), time: v('time'), track: v('track') || null });
+      b.disabled = false;
+      return;
+    }
+    if (a === 'remove') { if (b.dataset.sure) return refAction({ action: 'remove', id: b.dataset.id }); b.dataset.sure = '1'; b.textContent = 'Opravdu smazat?'; return; }
+    if (a === 'open') { tVs = 'ref:' + b.dataset.id; showPage(9); }
   });
-  pollReplay();
+  loadRefs();
   // ---------- Measurements (page 4) ----------
   // The server detects the runs by itself (stop + throttle = acceleration, full braking from 100 km/h
   // to standstill = braking distance). Live state and marks reached come with the snapshot (d.perf),
@@ -3618,9 +3708,11 @@
     const day = iso => iso ? iso.slice(8, 10).replace(/^0/, '') + '. ' + iso.slice(5, 7).replace(/^0/, '') + '.' : '';
     $('tVs').innerHTML = `<option value="">vs nejlepší kolo session · ${fmtLap(d.reference.ms)}</option>`
       + (d.normal && d.normal.theoretical_ms ? `<option value="ideal" ${v.kind === 'ideal' ? 'selected' : ''}>vs ideální kolo (nejlepší zatáčky) · ${fmtLap(d.normal.theoretical_ms)}</option>` : '')
-      + (tb ? `<option value="track" ${v.kind === 'lap' ? 'selected' : ''}>vs rekord na trati (${day(tb.started)}) · ${fmtLap(tb.ms)}</option>` : '');
+      + (tb ? `<option value="track" ${v.kind === 'lap' ? 'selected' : ''}>vs rekord na trati (${day(tb.started)}) · ${fmtLap(tb.ms)}</option>` : '')
+      + (d.references || []).map(r => `<option value="ref:${esc(r.id)}" ${v.kind === 'ref' && v.ref && v.ref.id === r.id ? 'selected' : ''}>vs ${esc(r.driver)}${r.car_code !== d.car_code && r.car ? ' (' + esc(r.car) + ')' : ''} · ${fmtLap(r.official_ms)} · reference</option>`).join('');
     const names = { session: `nejlepší (${lapName(d.reference.file).toLowerCase()} · ${fmtLap(d.reference.ms)})`,
-      ideal: `ideální kolo · ${fmtLap(v.ms)}`, lap: `rekord ${day(v.started)} · ${fmtLap(v.ms)}` };
+      ideal: `ideální kolo · ${fmtLap(v.ms)}`, lap: `rekord ${day(v.started)} · ${fmtLap(v.ms)}`,
+      ref: v.ref ? `${v.ref.driver} · ${fmtLap(v.ms)}` : 'reference' };
     setText('tRefName', names[v.kind] || names.session);
   }
   function renderTraceHead() {

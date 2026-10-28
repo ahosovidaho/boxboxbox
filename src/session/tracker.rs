@@ -290,7 +290,8 @@ impl Tracker {
         if p.current_lap != self.lap {
             let crossed_line = self.last_tick.is_some();
             let finished = (self.lap > 0 && p.last_lap_ms > 0).then_some(p.last_lap_ms);
-            if let Some(ms) = finished {
+            // (laps of a replay are not the driver's)
+            if let Some(ms) = finished.filter(|_| on_track) {
                 self.snap.laps.push(ms);
                 if self.snap.laps.len() > LAP_HISTORY {
                     self.snap.laps.remove(0);
@@ -395,7 +396,7 @@ impl Tracker {
         let lap_ms = self.lap_start_tick.map(|t| ((p.packet_id - t) as f64 / TICKS_PER_SEC * 1000.0) as i64);
         let dyn_ = dynamics::compute(p, self.steer_cal.ratio);
         if let Some(c) = self.replay.as_mut() {
-            c.tick(p, &dyn_, lap_ms, now);
+            c.tick(p, &dyn_, now);
         }
         // Learning (steering ratio, handling, power curve, measurement runs) only from own driving
         if on_track {

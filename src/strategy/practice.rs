@@ -343,6 +343,27 @@ impl Practice {
         }
     }
 
+    /// Stores the layout of a full lap (e.g. a reference lap from a replay) under `name`, unless the
+    /// name has a layout already or the lap fits another stored track. Returns the track the lap
+    /// belongs to.
+    pub fn learn_layout(&mut self, name: &str, lap: &[[f32; 2]]) -> Option<String> {
+        if lap.len() < 50 || name.trim().is_empty() {
+            return None;
+        }
+        let pts: Vec<[f32; 2]> = lap.iter().step_by(SHAPE_STEP).copied().collect();
+        if let Some(t) = track_of(&self.saved.shapes, &pts) {
+            return Some(t);
+        }
+        let key = track_key(name);
+        if self.saved.shapes.iter().any(|s| track_key(&s.track) == key) {
+            return None; // the name belongs to another layout
+        }
+        let length_m: f32 = lap.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum();
+        self.saved.shapes.push(Shape { track: name.trim().to_string(), pts, length_m });
+        self.save();
+        Some(name.trim().to_string())
+    }
+
     /// Length (m) of the layout stored for the track name.
     pub fn track_length(&self, track: &str) -> Option<f32> {
         let key = track_key(track);
