@@ -685,6 +685,7 @@ impl Tracker {
             off_track_since: self.off_track_since,
             last_packet: self.last_packet,
             strategy: self.strategy.take(),
+            replay: self.replay.take(),
             ..Tracker::new(self.recorder.take(), self.perf_store.take())
         };
     }
@@ -693,6 +694,29 @@ impl Tracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_replay_capture_survives_a_reset() {
+        // 28 Oct: after a car change (and every restart of a replay at a lower lap) the capture
+        // was gone and "Waiting for a replay" stayed
+        let dir = std::env::temp_dir().join(format!("bbb-reset-{}", std::process::id()));
+        let shared = super::super::replay::shared(dir.clone());
+        let mut t = Tracker::new(None, None);
+        t.set_replay(shared.clone());
+        super::super::replay::arm(&shared, true);
+        let replay = |car: i32, lap: i16, id: i32| Packet {
+            car_code: car,
+            current_lap: lap,
+            packet_id: id,
+            speed_ms: 30.0,
+            flags: flags::IN_GEAR,
+            ..Default::default()
+        };
+        t.update(&replay(3656, 3, 1));
+        t.update(&replay(3590, 9, 2)); // other car: full reset
+        assert_eq!(super::super::replay::status(&shared).phase, "line");
+        let _ = std::fs::remove_dir_all(dir);
+    }
     use std::path::{Path, PathBuf};
 
     fn packet(car: i32, flags: u16, x: f32) -> Packet {

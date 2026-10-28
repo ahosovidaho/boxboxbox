@@ -112,6 +112,7 @@ pub struct Capture {
     prev_pos: Option<(f32, f32)>,
     frozen: u32,
     length: f64,
+    car: i32,
 }
 
 impl Capture {
@@ -126,6 +127,7 @@ impl Capture {
             prev_pos: None,
             frozen: 0,
             length: 0.0,
+            car: 0,
         }
     }
 
@@ -165,6 +167,11 @@ impl Capture {
                 st.phase = "waiting";
             }
             return;
+        }
+        // Another car: start over (its lap number says nothing about this one)
+        if p.car_code != self.car {
+            self.reset();
+            self.car = p.car_code;
         }
         // Continuity: packets one after the other, no pause, no jump in position
         let pos = (p.position[0], p.position[2]);
