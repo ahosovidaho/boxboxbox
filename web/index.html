@@ -1040,7 +1040,10 @@
         <span data-t>Tageszeit (Spiel)</span><span id="d_tod">–</span>
         <span data-t>Paketformat</span><span id="d_fmt">–</span>
         <span data-t>Aufzeichnung</span><span id="d_rec">–</span>
+        <span>Přehrávání (diagnostika)</span><span id="d_replay">–</span>
       </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button id="replayArm" style="height:40px;padding:0 14px;border-radius:10px;border:1px solid #2A2A31;background:#16161A;color:var(--text);font:600 13px Inter,system-ui,sans-serif">Nahrát přehrávání</button></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0;line-height:1.4">Zapni, pak v GT7 pusť přehrávání záznamu (např. kolo z žebříčku časovky). Nahrává se, dokud auto není „na trati“; uloží se do <code>replays/</code>.</p>
     </div>
   </div>
 </section>
@@ -2448,6 +2451,28 @@
     const g = e.target.closest('.tmap g[data-n]');
     if (g) openSheet(+g.dataset.n);
   });
+  // ---------- Replay capture (diagnostics, page 2 "Status") ----------
+  let replayState = null, replayTimer = null;
+  function renderReplay() {
+    const r = replayState;
+    if (!r) return;
+    const txt = r.recording ? `nahrávám · ${r.seconds} s · ${r.rows} paketů`
+      : r.armed ? `čekám na přehrávání (${Math.ceil(r.armed_left_s / 60)} min)`
+      : r.last_file ? `uloženo: ${r.last_file} (${r.last_rows} paketů)` : 'vypnuto';
+    setText('d_replay', txt);
+    $('replayArm').textContent = r.armed ? 'Zastavit' : 'Nahrát přehrávání';
+    if (r.armed && !replayTimer) replayTimer = setInterval(pollReplay, 2000);
+    if (!r.armed && replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  }
+  async function pollReplay() { try { replayState = await (await fetch('api/replay', { cache: 'no-store' })).json(); renderReplay(); } catch {} }
+  $('replayArm').addEventListener('click', async () => {
+    try {
+      const on = !(replayState && replayState.armed);
+      replayState = await (await fetch('api/replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }) })).json();
+      renderReplay();
+    } catch {}
+  });
+  pollReplay();
   // ---------- Measurements (page 4) ----------
   // The server detects the runs by itself (stop + throttle = acceleration, full braking from 100 km/h
   // to standstill = braking distance). Live state and marks reached come with the snapshot (d.perf),
@@ -2941,7 +2966,8 @@
   }
   function renderCoachHint(d) {
     const el = $('coachhint');
-    const show = appMode === 'practice' && page === 1 && coachCorners.length > 1 && d.pos;
+    // Not during a replay (GT7 sends it without "on track"): the hints are for the driver's own laps
+    const show = appMode === 'practice' && page === 1 && coachCorners.length > 1 && d.pos && d.on_track !== false;
     el.hidden = !show;
     if (!show) return;
     const x = d.pos[0], z = d.pos[2];

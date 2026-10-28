@@ -148,6 +148,8 @@ pub struct Tracker {
     steer_cal: dynamics::SteerCalibration,
     track: Track,
     recorder: Option<Recorder>,
+    /// Diagnostic capture of replays (packets without the "on track" flag)
+    replay: Option<super::replay::Capture>,
     session_car: Option<i32>,
     session_open: bool,
     paused_since: Option<Instant>,
@@ -202,6 +204,7 @@ impl Tracker {
             steer_cal: dynamics::SteerCalibration::with_dir(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
             track: Track::default(),
             recorder,
+            replay: None,
             session_car: None,
             session_open: false,
             paused_since: None,
@@ -225,6 +228,10 @@ impl Tracker {
             still_temp: 0.0,
             tyre_check: None,
         }
+    }
+
+    pub fn set_replay(&mut self, s: super::replay::Shared) {
+        self.replay = Some(super::replay::Capture::new(s));
     }
 
     pub fn set_strategy(&mut self, s: strategy::Shared) {
@@ -299,17 +306,18 @@ impl Tracker {
                 }
             }
             let closed = self.track.current_closed();
-            if self.lap > 0 && crossed_line && self.lap_full && closed {
+            // A replay (no "on track" flag) feeds nothing: not the race, practice or handling
+            if on_track && self.lap > 0 && crossed_line && self.lap_full && closed {
                 // Practice: which track (layout) the lap was driven on, before the lap is stored
                 let pts = self.track.current_points();
                 self.with_strategy(|s| s.lap_shape(&pts));
             }
             let handling = self.handling.take();
-            if self.lap > 0 && crossed_line && self.lap_full && closed && !self.lap_refuel {
+            if on_track && self.lap > 0 && crossed_line && self.lap_full && closed && !self.lap_refuel {
                 let car = p.car_code;
                 self.with_strategy(|s| s.handling_lap(car, handling));
             }
-            if self.lap > 0 && crossed_line && self.lap_full {
+            if on_track && self.lap > 0 && crossed_line && self.lap_full {
                 let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
                 let fuel_start = self.fuel_at_lap_start;
                 self.with_strategy(|s| {
@@ -386,8 +394,14 @@ impl Tracker {
 
         let lap_ms = self.lap_start_tick.map(|t| ((p.packet_id - t) as f64 / TICKS_PER_SEC * 1000.0) as i64);
         let dyn_ = dynamics::compute(p, self.steer_cal.ratio);
-        self.steer_cal.update(p, &dyn_);
-        self.handling.tick(p, &dyn_);
+        if let Some(c) = self.replay.as_mut() {
+            c.tick(p, &dyn_, lap_ms, now);
+        }
+        // Learning (steering ratio, handling, power curve, measurement runs) only from own driving
+        if on_track {
+            self.steer_cal.update(p, &dyn_);
+            self.handling.tick(p, &dyn_);
+        }
         let sample = perf::Sample::from_packet(p);
         // The active setup changes rarely: looked up once per lap (and when the car changes)
         if self.setup_car != p.car_code || self.setup_check != self.lap {
@@ -402,9 +416,11 @@ impl Tracker {
             }
             self.setup_id = id;
         }
-        self.track_dyno.update(p.car_code, &self.setup_id, &sample, p.angular_velocity[1]);
-        if let Some(run) = self.perf.update(sample) {
-            self.perf_finished(run, p.car_code);
+        if on_track {
+            self.track_dyno.update(p.car_code, &self.setup_id, &sample, p.angular_velocity[1]);
+            if let Some(run) = self.perf.update(sample) {
+                self.perf_finished(run, p.car_code);
+            }
         }
         let (x, z) = (p.position[0], p.position[2]);
         let mut delta = None;

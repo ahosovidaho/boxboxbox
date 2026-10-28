@@ -38,7 +38,7 @@ pub struct Recorder {
     tx: mpsc::Sender<Msg>,
 }
 
-const HEADER: &str = "lap,lap_ms,delta_ms,packet_id,flags,speed_kmh,rpm,gear,suggested_gear,throttle,brake,clutch_pedal,clutch_engagement,rpm_clutch_gearbox,\
+pub const HEADER: &str = "lap,lap_ms,delta_ms,packet_id,flags,speed_kmh,rpm,gear,suggested_gear,throttle,brake,clutch_pedal,clutch_engagement,rpm_clutch_gearbox,\
 steering,sway,heave,surge,\
 pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,rot_x,rot_y,rot_z,rot_w,angvel_x,angvel_y,angvel_z,\
 v_fwd,v_lat,yaw_rate,heading,pitch,roll,body_slip,slip_front,slip_rear,balance,\

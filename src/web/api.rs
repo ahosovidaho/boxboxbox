@@ -19,6 +19,7 @@
 //! | GET  | `/api/notebook?track=&car=` | track notebook: records, ideal lap, reserves, risk, tyres, long runs, starts, setups, notes |
 //! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
+//! | GET/POST | `/api/replay` | diagnostic capture of a GT7 replay: state; `{"on": true/false}` arms it for 30 min |
 //! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
 //! | POST | `/api/training` | `{"action": "start", "n", "metric"}` / `{"action": "cancel"}` / `{"action": "again"}` |
 //! | GET  | `/api/storage` | what takes how much space: sessions, bin, disk; the recommended clean-up |
@@ -52,6 +53,8 @@ pub struct AppState {
     pub web_dir: Option<PathBuf>,
     pub perf: perf::Store,
     pub strategy: strategy::Shared,
+    /// Diagnostic capture of GT7 replays
+    pub replay: crate::session::replay::Shared,
     pub settings: Arc<Settings>,
 }
 
@@ -76,6 +79,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/notebook/note", axum::routing::post(notebook_note))
         .route("/api/briefing", get(briefing))
         .route("/api/training", get(training_state).post(training_action))
+        .route("/api/replay", get(replay_state).post(replay_arm))
         .route("/api/storage", get(storage_state))
         .route("/api/storage/action", axum::routing::post(storage_action))
         .route("/api/prep", get(prep))
@@ -392,6 +396,20 @@ struct NotebookQuery {
 async fn notebook(State(s): State<AppState>, Query(q): Query<NotebookQuery>) -> impl IntoResponse {
     let body = tokio::task::spawn_blocking(move || notebook_json(&s, q.track, q.car).to_string()).await.unwrap_or_default();
     json_body(body)
+}
+
+async fn replay_state(State(s): State<AppState>) -> impl IntoResponse {
+    json_body(serde_json::to_string(&crate::session::replay::status(&s.replay)).unwrap_or_default())
+}
+
+#[derive(Deserialize)]
+struct ReplayBody {
+    on: bool,
+}
+
+async fn replay_arm(State(s): State<AppState>, Json(b): Json<ReplayBody>) -> impl IntoResponse {
+    crate::session::replay::arm(&s.replay, b.on);
+    json_body(serde_json::to_string(&crate::session::replay::status(&s.replay)).unwrap_or_default())
 }
 
 fn training_file(s: &AppState) -> PathBuf {

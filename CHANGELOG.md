@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Diagnostika přehrávání GT7** (krok 0 k externím referenčním kolům): na Živých datech
+  tlačítko „Nahrát přehrávání“. Na 30 minut zapne záznam paketů, které GT7 posílá při
+  přehrávání záznamu (bez příznaku „na trati“), do `replays/<datum>_car<ID>.csv`.
+- Přehrávání už nekrmí strategii, trénink, handling, převod řízení, výkonovou křivku ani
+  měření (jen vlastní jízda „na trati“) a živá nápověda kouče se při něm nezobrazuje.
+
 - **Trénink na Kouči: jedna zatáčka, jedna změna, ověření na dalších kolech** (inspirace
   ApexTrace 0.6 „focused practice“). Kouč má záložky Po kolech · Trénink · Pokrok.
   - Úkol = zatáčka + jeden údaj: rychlost na vrcholu, na výjezdu, bod brzdění, povolení brzdy,

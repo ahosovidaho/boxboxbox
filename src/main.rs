@@ -221,6 +221,10 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
     // Demo: strategy works but nothing is stored
     let strategy = strategy::Strategy::load((!demo).then(|| data.root.join("strategy.json"))).shared();
     tracker.set_strategy(strategy.clone());
+    let replay = session::replay::shared(data.root.join("replays"));
+    if !demo {
+        tracker.set_replay(replay.clone());
+    }
 
     if demo {
         println!("{}", tr!("Demo-Modus: simulierte Telemetrie", "Demo mode: simulated telemetry", "Demo režim: simulovaná telemetrie"));
@@ -236,6 +240,7 @@ async fn server(args: &Args, cfg: Config, config_file: &Path, data: DataPaths, d
         web_dir: args.web_dir.clone(),
         perf: perf_store,
         strategy,
+        replay,
         settings: Arc::new(web::api::Settings { config: Mutex::new(cfg), config_file: config_file.to_path_buf(), data, ps5: ps5_tx, port }),
     };
     web::server::serve(port, state).await

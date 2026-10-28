@@ -3,5 +3,6 @@
 //! ([`recorder`]), the track map is built from the driven line ([`track_map`]).
 
 pub mod recorder;
+pub mod replay;
 pub mod track_map;
 pub mod tracker;
