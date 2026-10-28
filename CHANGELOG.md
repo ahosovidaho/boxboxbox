@@ -2,6 +2,27 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Seznam tratí GT7** (databáze gt7info: 122 variant na 41 tratích – délka, varianta, směr,
+  počet zatáček, ztráta v boxech). GT7 trať v telemetrii neposílá; aplikace ji dál pozná podle
+  tvaru kola, ale teď ví, která varianta to je.
+  - **Přesnější rozpoznání**: kolo musí pokrýt celou uloženou trať (chybějící kus uvnitř kola
+    nad 80 m = jiná varianta, např. se šikanou / bez šikany), jet stejným směrem (opačný směr
+    = jiná varianta) a ležet z velké části na ní. Kus u cílové čáry se promíjí (start z roštu,
+    průjezd boxy). Ověřeno na tvých kolech: Nürburgring 21/21, Yas Marina, Willow (kart)
+    a Barcelona sedí; nesedí jen kola s výletem mimo trať a neúplná kola.
+  - **Neznámé kolo** (trať bez uloženého tvaru): na stránce Strategie se objeví „Na jaké trati
+    jezdíš?“ s variantami podle délky kola – jedno ťuknutí uloží tvar pod správným názvem.
+  - Pole trati (Trénink, Závod, Reference) nabízí názvy z databáze.
+  - **Data → Tratě**: uložené tvary a jejich varianta v databázi (lze opravit). Stávající
+    tratě se převedly samy: Nürburgring → Nurburgring GP, Yas Marina, Barcelona „GP bez
+    šikany“ → GP Layout No Chicane; Willow Springs čeká na volbu (Horse Thief Mile nebo
+    opačně).
+  - Závod zadaný jen názvem trati (web šampionátu: „Circuit de Barcelona-Catalunya“) sedí na
+    kteroukoli její variantu; závod s přesnou variantou jen na ni.
+  - Jedno kolo mimo tvar (výlet do štěrku) už nezastaví ukládání závodu – až dvě po sobě.
+  - Ztráta v boxech bez vlastního měření = průjezd boxy z databáze (Barcelona 28 s,
+    Nürburgring GP 23 s) místo obecných 25 s.
+
 - **Reference – kola jiných jezdců z přehrávání v GT7** (nová stránka v Tréninku za Měřením).
   - „Nahrát kolo z přehrávání“ a v GT7 pustit přehrávání kola (např. z globálního žebříčku
     online časovky). Nahraje se jedno celé kolo od čáry do čáry; pauza, přetočení nebo mezera

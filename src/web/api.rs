@@ -22,6 +22,7 @@
 //! | GET/POST | `/api/references` | external reference laps from GT7 replays: capture state, captured laps, references; `{"action": "arm"/"stop"/"save"/"remove", …}` |
 //! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
 //! | POST | `/api/training` | `{"action": "start", "n", "metric"}` / `{"action": "cancel"}` / `{"action": "again"}` |
+//! | GET/POST | `/api/tracks` | track catalogue (GT7 layouts), the stored layouts with their catalogue layout, the lap waiting for its track; `{"action": "answer", "course"}` / `{"action": "dismiss"}` / `{"action": "set_course", "track", "course"}` |
 //! | GET  | `/api/storage` | what takes how much space: sessions, bin, disk; the recommended clean-up |
 //! | POST | `/api/storage/action` | `{"action": "pack"/"prune"/"remove"/"pin"/"unpin"/"restore"/"empty_trash"/"run_plan"/"config", …}` |
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
@@ -80,6 +81,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/briefing", get(briefing))
         .route("/api/training", get(training_state).post(training_action))
         .route("/api/references", get(references_state).post(references_action))
+        .route("/api/tracks", get(tracks_state).post(tracks_action))
         .route("/api/storage", get(storage_state))
         .route("/api/storage/action", axum::routing::post(storage_action))
         .route("/api/prep", get(prep))
@@ -686,6 +688,74 @@ fn storage_json(s: &AppState) -> serde_json::Value {
         "plan_frees": plan.iter().map(|x| x.frees).sum::<u64>(),
         "trash": trash,
     })
+}
+
+fn tracks_json(s: &AppState) -> serde_json::Value {
+    use crate::strategy::courses;
+    let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    let shapes: Vec<serde_json::Value> = st
+        .practice
+        .saved
+        .shapes
+        .iter()
+        .map(|sh| {
+            let course = sh.course.and_then(courses::get);
+            let candidates: Vec<serde_json::Value> =
+                courses::candidates(sh.length_m, sh.base()).iter().map(|c| json!({ "id": c.id, "name": c.name })).collect();
+            json!({
+                "track": sh.track,
+                "length_m": (sh.length_m / 10.0).round() * 10.0,
+                "course": course,
+                "candidates": candidates,
+            })
+        })
+        .collect();
+    json!({
+        "courses": courses::all(),
+        "shapes": shapes,
+        "question": st.practice_state().question,
+    })
+}
+
+async fn tracks_state(State(s): State<AppState>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || tracks_json(&s).to_string()).await.unwrap_or_default();
+    json_body(body)
+}
+
+#[derive(Deserialize)]
+struct TracksBody {
+    action: String,
+    course: Option<i32>,
+    track: Option<String>,
+}
+
+/// `answer`: the lap waiting for its track is the catalogue layout `course`; `dismiss`: forget it;
+/// `set_course`: a stored layout is the catalogue layout `course` (none: not known).
+async fn tracks_action(State(s): State<AppState>, Json(b): Json<TracksBody>) -> impl IntoResponse {
+    let res = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        {
+            let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+            match b.action.as_str() {
+                "answer" => {
+                    st.practice.answer(b.course.ok_or("Vyber trať.")?)?;
+                }
+                "dismiss" => st.practice.question = None,
+                "set_course" => {
+                    if !st.practice.set_course(b.track.as_deref().unwrap_or_default(), b.course) {
+                        return Err("Trať není uložená.".into());
+                    }
+                }
+                _ => return Err("unknown action".into()),
+            }
+        }
+        Ok(tracks_json(&s).to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
+    match res {
+        Ok(body) => json_body(body).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
 }
 
 async fn storage_state(State(s): State<AppState>) -> impl IntoResponse {

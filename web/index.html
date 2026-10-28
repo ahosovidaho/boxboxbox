@@ -544,6 +544,13 @@
   #p11body .card { padding: 10px 13px; }
   #p11body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 7px; }
   #p11body .wide { grid-column: 1 / -1; }
+  table.tk { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tk td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+  table.tk td .sub { font-size: 11px; color: var(--label); }
+  table.tk select, #trackQ select { width: 100%; max-width: 420px; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 6px 8px; font: 14px -apple-system, system-ui, sans-serif; }
+  #trackQ { grid-column: 1 / -1; border-color: color-mix(in srgb, var(--orange) 60%, var(--line)); }
+  @media (max-width: 600px) { table.tk td { display: block; border-top: 0; padding: 2px 0; } table.tk tr { display: block; border-top: 1px solid var(--line); padding: 6px 0; } }
+  #trackQ[hidden] { display: none; }
   /* Reference laps from GT7 replays */
   #p12head { display: flex; align-items: center; gap: 10px; min-height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); flex-wrap: wrap; }
   #p12head b { color: var(--text); font-weight: 600; } #p12head .grow { flex: 1; }
@@ -1166,6 +1173,7 @@
     <span class="dots"></span>
   </div>
   <div id="p5body">
+    <div class="card wide tq" id="trackQ" hidden></div>
     <div id="stCalls" class="race-only"></div>
     <div class="card practice-only" id="prepCard" hidden><h2 id="prepTitle">Příprava na závod</h2><div id="prepItems"></div></div>
 
@@ -1455,7 +1463,7 @@
     <p id="raceInfo">Vyber závod z kalendáře šampionátu, nebo vyplň ručně.</p>
     <div id="raceList"></div>
     <label><span>Název</span> <input type="text" class="wide" id="rName"></label>
-    <label><span>Trať</span> <input type="text" class="wide" id="rTrack"></label>
+    <label><span>Trať</span> <input type="text" class="wide" id="rTrack" list="rTracks" autocomplete="off"><datalist id="rTracks"></datalist></label>
     <label><span>Počet kol</span> <input type="number" id="rLaps" inputmode="numeric" min="1"></label>
     <label><span>Opotřebení gum ×</span> <input type="number" id="rWear" inputmode="decimal" step="0.5"></label>
     <label><span>Spotřeba paliva ×</span> <input type="number" id="rFuelMult" inputmode="decimal" step="0.5"></label>
@@ -1687,7 +1695,7 @@
     if (n === 9) loadTraces();
     if (n === 5) loadPrep();
     if (n === 10) loadTrackPage();
-    if (n === 11) loadStorage();
+    if (n === 11) { loadStorage(); loadTracks(); }
     if (n === 12) loadRefs();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
     if (n === 3) markCoachRead();
@@ -2530,7 +2538,7 @@
       <div class="rfform" data-pend="${esc(p.id)}">
         <label>Jezdec<input name="driver" placeholder="např. RTW_Ran" autocomplete="off"></label>
         <label>Oficiální čas kola (m:ss,mmm)<input name="time" placeholder="1:50,099" autocomplete="off"></label>
-        <label style="grid-column:1/-1">Trať – jen když ji nepoznám podle tvaru (nová trať se uloží i s tvarem)<input name="track" list="rfTracks" placeholder="např. Circuit de Barcelona-Catalunya GP bez šikany" autocomplete="off"><datalist id="rfTracks">${tracks.map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
+        <label style="grid-column:1/-1">Trať – jen když ji nepoznám podle tvaru (nová trať se uloží i s tvarem)<input name="track" list="rfTracks" placeholder="např. Circuit de Barcelona-Catalunya GP bez šikany" autocomplete="off"><datalist id="rfTracks">${[...new Set([...tracks, ...courseNames()])].map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
         <div class="acts"><button class="pri" data-ref="save">Uložit referenci</button><button class="danger" data-ref="discard">Zahodit</button></div>
         ${refErr ? `<div class="rferr" style="grid-column:1/-1">${esc(refErr)}</div>` : ''}
       </div></div>`).join('');
@@ -3493,12 +3501,71 @@
           + `<button data-a="${r.pinned ? 'unpin' : 'pin'}" data-s="${esc(r.session)}">${r.pinned ? 'Odepnout' : '📌'}</button>`
           + `${r.pinned ? '' : `<button class="del" data-a="remove" data-s="${esc(r.session)}">Smazat</button>`}`}</td></tr>`).join('')
       + '</table></div>';
-    $('p11body').innerHTML = html;
+    $('p11body').innerHTML = html + '<div class="wide" id="tkWrap"></div>';
+    renderTracks();
     if ($('dsRun')) $('dsRun').onclick = () => dsAction({ action: 'run_plan' }, `Provést doporučený úklid (${d.plan.length} kroků, uvolní ~${gb(d.plan_frees)})? Mazané soubory půjdou do koše.`);
     if ($('dsEmpty')) $('dsEmpty').onclick = () => dsAction({ action: 'empty_trash' }, `Vysypat koš (${gb(t.trash)})? Tohle už nejde vrátit.`);
     $('dsSaveCfg').onclick = () => dsAction({ action: 'config', config: { compress: $('dsCompress').checked, auto_clean: $('dsAuto').checked,
       keep_days: +$('dsDays').value || 31, trash_days: +$('dsTrash').value || 7, pinned: [] } });
   }
+  // ---- Track catalogue (GT7 layouts): names for the track fields, the stored layouts, the lap
+  // waiting for its track
+  let tkData = null, tqKey = '';
+  const courseNames = () => tkData ? tkData.courses.map(c => c.name) : [];
+  const courseLabel = c => `${c.name}${c.reverse ? ' (opačně)' : ''} · ${nf(c.length_m / 1000, 2)} km`;
+  async function loadTracks() {
+    try { tkData = await (await fetch('api/tracks', { cache: 'no-store' })).json(); } catch { return; }
+    $('rTracks').innerHTML = courseNames().map(t => `<option value="${esc(t)}">`).join('');
+    try { prKey = ''; } catch { /* practice code not set up yet */ }
+    renderTracks();
+  }
+  async function tkAction(body, msg) {
+    try {
+      const d = await (await fetch('api/tracks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+      if (d.error) { if (msg) { msg.className = 'err'; msg.textContent = d.error; } return null; }
+      tkData = d; tqKey = ''; renderTracks();
+      return d;
+    } catch { if (msg) { msg.className = 'err'; msg.textContent = 'chyba'; } return null; }
+  }
+  function courseOptions(first, selected) {
+    const all = tkData ? tkData.courses : [];
+    const firstIds = new Set(first.map(c => c.id ?? c[0]));
+    const opt = c => `<option value="${c.id}"${c.id === selected ? ' selected' : ''}>${esc(courseLabel(c))}</option>`;
+    const byId = id => all.find(c => c.id === id);
+    const top = first.map(c => byId(c.id ?? c[0])).filter(Boolean);
+    return (top.length ? `<optgroup label="Podle délky kola">${top.map(opt).join('')}</optgroup>` : '')
+      + `<optgroup label="Všechny tratě">${all.filter(c => !firstIds.has(c.id)).map(opt).join('')}</optgroup>`;
+  }
+  function renderTrackQuestion(q) {
+    const el = $('trackQ');
+    const key = q ? `${q.length_m}|${q.candidates.map(c => c[0]).join(',')}|${!!tkData}` : '';
+    if (key === tqKey) return;
+    tqKey = key;
+    el.hidden = !q;
+    if (!q) { el.innerHTML = ''; return; }
+    if (!tkData) { loadTracks().then(() => { tqKey = ''; }); }
+    el.innerHTML = `<h2>Na jaké trati jezdíš?</h2>
+      <div class="pnote">Kolo dlouhé ${nf(q.length_m / 1000, 2)} km nesedí na žádnou uloženou trať. Vyber variantu – tvar se uloží a příště ji poznám sám. Pozor na varianty se šikanou a bez ní a na opačný směr.</div>
+      <div class="prow"><select id="tqSel">${courseOptions(q.candidates, q.candidates.length ? q.candidates[0][0] : null)}</select></div>
+      <div class="chips"><button id="tqOk">Uložit trať</button><button id="tqNo">Teď ne</button></div><span id="tqMsg"></span>`;
+    $('tqOk').onclick = async () => { if (await tkAction({ action: 'answer', course: +$('tqSel').value }, $('tqMsg'))) { tqKey = ''; prKey = ''; } };
+    $('tqNo').onclick = () => tkAction({ action: 'dismiss' }, $('tqMsg'));
+  }
+  function renderTracks() {
+    const w = $('tkWrap'); if (!w || !tkData) return;
+    const rows = tkData.shapes.map((s, i) => `<tr><td>${esc(s.track)}<div class="sub">${nf(s.length_m / 1000, 2)} km podle kola</div></td>
+      <td><select data-tk="${i}"><option value="">— nevím —</option>${courseOptions(s.candidates, s.course ? s.course.id : null)}</select></td></tr>`).join('');
+    w.innerHTML = `<div class="card"><h2>Tratě</h2>
+      <div class="pnote">Uložené tvary tratí a jejich varianta v databázi tratí GT7 (${tkData.courses.length} variant). Varianta určuje název, délku, počet zatáček a ztrátu v boxech. Zkontroluj hlavně tratě se šikanou / bez šikany a s opačným směrem.</div>
+      ${tkData.shapes.length ? `<table class="tk">${rows}</table>` : '<span class="muted">Zatím žádná – tvar se uloží po prvním celém kole.</span>'}
+      <span id="tkMsg"></span></div>`;
+    w.querySelectorAll('select[data-tk]').forEach(sel => sel.onchange = () => {
+      const s = tkData.shapes[+sel.dataset.tk];
+      tkAction({ action: 'set_course', track: s.track, course: sel.value ? +sel.value : null }, $('tkMsg'));
+    });
+  }
+  loadTracks();
+
   // Tick boxes: one session, all, quick selections; bulk actions on the ticked ones
   $('p11body').addEventListener('change', e => {
     const ck = e.target.closest('input[data-ck]');
@@ -4208,7 +4275,7 @@
     $('prCount').classList.toggle('on', ps.counting);
     setText('prCount', ps.counting ? 'Počítat kola ✓' : 'Nepočítat (automat)');
     if (!prData) return;
-    const tracks = [...new Set([stRace && stRace.track, ...(prData.tracks || [])].filter(Boolean))];
+    const tracks = [...new Set([stRace && stRace.track, ...(prData.tracks || []), ...courseNames()].filter(Boolean))];
     $('prTracks').innerHTML = tracks.map(t => `<option value="${esc(t)}">`).join('');
     const sm = prData.summary;
     const rows = sm && sm.compounds.length ? sm.compounds.map(c => `<tr><td>${c.compound}</td>`
@@ -4313,6 +4380,7 @@
       $$('#stMode button').forEach(b => b.classList.toggle('on', (b.dataset.m === '1') === (mode === 'practice')));
     }
     if (mode === 'practice') renderPractice(d);
+    renderTrackQuestion(st.practice && st.practice.question);
     // Rules
     setText('stTotal', st.total_laps ?? '–');
     setText('stPit', st.pit_required ? (st.pit_done ? '✓ hotovo' : 'ještě ne') : 'ne');
@@ -4453,7 +4521,7 @@
   async function runPreview() {
     try {
       const r = await (await fetch('api/strategy/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(raceFromForm()) })).json();
-      const src = { measured: 'změřeno na této trati', manual: 'zadáno ručně', default: 'odhad – trať zatím nezměřena' }[r.pit_loss_source] || '';
+      const src = { measured: 'změřeno na této trati', manual: 'zadáno ručně', catalogue: 'průjezd boxy podle databáze tratí GT7 – změří se při první zastávce', default: 'odhad – trať zatím nezměřena' }[r.pit_loss_source] || '';
       setText('rPitInfo', `Počítám se ztrátou zastávkou ${nf(r.pit_loss, 1)} s (${src}) + tankování.`
         + (r.practice_use ? '\n' + practiceFrom(r.practice_use) + ' Prázdná pole doplní trénink (šedá čísla).' : ''));
       const pu = {};

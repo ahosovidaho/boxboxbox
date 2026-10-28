@@ -10,6 +10,7 @@
 //!
 //! Saved in `strategy.json` in the data folder, so a restart keeps the race and the calibration.
 
+pub mod courses;
 pub mod handling;
 pub mod planner;
 pub mod practice;
@@ -210,7 +211,7 @@ pub struct Plan {
     /// Recommended and alternative strategy for the rest of the race
     pub options: planner::Options,
     pub pit_loss: f32,
-    /// "manual", "measured" or "default"
+    /// "manual", "measured", "catalogue" (pit lane delta of the GT7 track database) or "default"
     pub pit_loss_source: &'static str,
     /// Practice figures the plan uses (car, laps per compound), and the practice mode state
     pub practice_use: Option<PracticeUse>,
@@ -281,6 +282,15 @@ pub struct PracticeState {
     pub layout_warning: Option<String>,
     /// Length of the stored layout, m
     pub track_length_m: Option<f32>,
+    /// A full lap on a layout not stored yet: its length and the catalogue layouts it may be
+    pub question: Option<TrackQuestionView>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct TrackQuestionView {
+    pub length_m: f32,
+    /// (catalogue id, name)
+    pub candidates: Vec<(i32, String)>,
 }
 
 fn call(level: &'static str, text: String) -> Call {
@@ -304,6 +314,8 @@ pub struct Strategy {
     /// Race mode: the last lap did not fit the race track – the track it fits ("" = none
     /// stored). While set, laps, stops and handling are not stored for the race.
     pub track_mismatch: Option<String>,
+    /// Laps in a row that fit no stored layout (one is an excursion, two are another track)
+    misfits: u32,
 }
 
 impl Strategy {
@@ -325,6 +337,7 @@ impl Strategy {
             filled: None,
             history_scanned: Default::default(),
             track_mismatch: None,
+            misfits: 0,
         }
     }
 
@@ -356,6 +369,7 @@ impl Strategy {
         }
         self.saved.race = Some(race);
         self.track_mismatch = None;
+        self.misfits = 0;
         self.save();
     }
 
@@ -703,9 +717,19 @@ impl Strategy {
             return;
         }
         let Some(track) = self.saved.race.as_ref().map(|r| r.track.clone()) else { return };
-        match self.practice.layout_check(&track, map) {
+        let check = self.practice.layout_check(&track, map);
+        self.misfits = if check == practice::LayoutCheck::Different { self.misfits + 1 } else { 0 };
+        match check {
             practice::LayoutCheck::Fits => self.track_mismatch = None,
-            practice::LayoutCheck::Unknown => {}
+            // The race track has no layout stored yet: which one is it?
+            practice::LayoutCheck::Unknown => {
+                let pts: Vec<[f32; 2]> = map.iter().step_by(practice::SHAPE_STEP).map(|(x, z)| [*x, *z]).collect();
+                let length_m: f32 = map.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
+                self.practice.ask(pts, length_m, Some(&track));
+            }
+            // A lap that fits nothing: a trip across the gravel, a spin – only a second one in a
+            // row says it is another track (a lap that fits another stored layout says it at once)
+            practice::LayoutCheck::Different if self.misfits < 2 => {}
             other => {
                 let name = if let practice::LayoutCheck::Other(n) = other { n } else { String::new() };
                 if self.track_mismatch.is_none() {
@@ -752,6 +776,10 @@ impl Strategy {
             laps: p.laps.len(),
             layout_warning: self.practice.layout_warning.clone(),
             track_length_m: self.practice.track_length(&p.track),
+            question: self.practice.question.as_ref().map(|q| TrackQuestionView {
+                length_m: (q.length_m / 10.0).round() * 10.0,
+                candidates: q.candidates.iter().filter_map(|id| courses::get(*id)).map(|c| (c.id, c.name.clone())).collect(),
+            }),
         }
     }
 
@@ -1015,7 +1043,11 @@ fn pit_loss_of(saved: &Saved) -> (f32, &'static str) {
     match (race.pit_loss, saved.calibration.get(&format!("pit|{}", race.track))) {
         (Some(v), _) => (v, "manual"),
         (None, Some(v)) => (*v, "measured"),
-        _ => (DEFAULT_PIT_LOSS, "default"),
+        // The pit lane delta of the GT7 track database (drive-through, as a stop without service)
+        _ => match courses::pit_delta_of(&race.track) {
+            Some(v) => (v, "catalogue"),
+            None => (DEFAULT_PIT_LOSS, "default"),
+        },
     }
 }
 
@@ -1480,6 +1512,7 @@ mod tests {
             track: "Yas Marina Circuit".into(),
             pts: circle(500.0).iter().step_by(10).map(|(x, z)| [*x, *z]).collect(),
             length_m: 3141.0,
+            course: None,
         });
         let mut race = barcelona(8).race.unwrap();
         race.track = "Special Stage Route X".into();
@@ -1494,6 +1527,21 @@ mod tests {
         let p = s.plan();
         assert_eq!(p.track_mismatch.as_deref(), Some("Yas Marina Circuit"));
         assert!(p.calls[0].text.contains("„Yas Marina Circuit“"));
+        // One lap that fits nothing (a trip through the gravel) is not yet another track
+        s.set_race(barcelona(8).race.unwrap());
+        s.practice.saved.shapes[0].track = "Barcelona".into();
+        s.lap_shape(&circle(560.0));
+        assert!(s.track_mismatch.is_none());
+        s.lap_shape(&circle(500.0));
+        s.lap_shape(&circle(560.0));
+        assert!(s.track_mismatch.is_none(), "a good lap in between");
+        s.lap_shape(&circle(560.0));
+        assert!(s.track_mismatch.is_some(), "two in a row");
+        s.practice.saved.shapes[0].track = "Yas Marina Circuit".into();
+        let mut race = barcelona(8).race.unwrap();
+        race.track = "Special Stage Route X".into();
+        s.set_race(race);
+        s.lap_shape(&circle(500.0));
         // An unknown layout (Special X not stored) says nothing either way; picking a race clears it
         s.lap_shape(&circle(900.0));
         assert!(s.track_mismatch.is_some());

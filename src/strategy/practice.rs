@@ -15,9 +15,21 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Shape points: every n-th point of the map (2 m apart → ~20 m)
-const SHAPE_STEP: usize = 10;
-/// Same layout when the points are on average this close (m)
-const SHAPE_MATCH_M: f32 = 12.0;
+pub const SHAPE_STEP: usize = 10;
+/// Shape matching (see [`shape_fit`]): a point is on the other line within this distance (m)
+const FIT_TOL_M: f32 = 15.0;
+/// Share of the stored layout the lap has to cover, and the longest stretch of it the lap may
+/// leave (m): a missing or added chicane leaves ~150 m (Barcelona GP / GP without chicane)
+const FIT_SHAPE_COVER: f32 = 0.93;
+const FIT_SHAPE_GAP_M: f32 = 80.0;
+/// A stretch at the start and finish line the lap may leave out (grid, pit lane), m
+const FIT_LINE_GAP_M: f32 = 800.0;
+/// A stretch "at the line" starts or ends this close to it, m
+const FIT_NEAR_LINE_M: f32 = 60.0;
+/// Share of the lap that has to be on the layout (an excursion or a spin leaves some off it)
+const FIT_LAP_COVER: f32 = 0.8;
+/// Share of the covered points driven in the direction of the layout (a reverse layout: none)
+const FIT_DIRECTION: f32 = 0.75;
 /// A clean lap slower than the typical one by more than this (s or share) was a mistake
 const OUTLIER_S: f32 = 2.0;
 const OUTLIER_SHARE: f32 = 0.02;
@@ -62,6 +74,53 @@ pub struct Shape {
     pub pts: Vec<[f32; 2]>,
     #[serde(default)]
     pub length_m: f32,
+    /// Layout in the catalogue ([`super::courses`]); `None` = not known (yet)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub course: Option<i32>,
+}
+
+impl Shape {
+    /// Base track: from the layout, else from the name
+    pub fn base(&self) -> Option<i32> {
+        self.course.and_then(super::courses::get).map(|c| c.base).or_else(|| super::courses::base_of(&self.track))
+    }
+}
+
+/// A lap on a layout not stored yet, waiting for the driver to say which one it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrackQuestion {
+    /// Positions every [`SHAPE_STEP`] packets
+    pub pts: Vec<[f32; 2]>,
+    pub length_m: f32,
+    /// Catalogue layouts the length fits, closest first
+    pub candidates: Vec<i32>,
+}
+
+/// The catalogue layout a stored shape is, when it can be told without asking: the name is a
+/// layout of the catalogue, or exactly one layout of its base track fits its length (the name
+/// decides between a layout and its variant: "bez šikany"/"no chicane", "reverse"/"opačně").
+pub fn guess_course(name: &str, length_m: f32) -> Option<i32> {
+    if let Some(c) = super::courses::by_name(name) {
+        return Some(c.id);
+    }
+    let base = super::courses::base_of(name)?;
+    let mut c = super::courses::candidates(length_m, Some(base));
+    let k = track_key(name);
+    let no_chicane = k.contains("bezsikany") || k.contains("nochicane");
+    let reverse = k.contains("reverse") || k.contains("opacn") || k.contains("obracen");
+    if c.len() > 1 {
+        // The name says nothing of the direction and the layout runs both ways: the driver says
+        if !reverse && c.iter().any(|x| x.reverse) && c.iter().any(|x| !x.reverse) {
+            return None;
+        }
+        c.retain(|x| x.reverse == reverse);
+        if no_chicane {
+            c.retain(|x| track_key(&x.name).contains("nochicane"));
+        } else if c.iter().any(|x| track_key(&x.name).contains("nochicane")) && c.len() > 1 {
+            c.retain(|x| !track_key(&x.name).contains("nochicane"));
+        }
+    }
+    (c.len() == 1).then(|| c[0].id)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -189,6 +248,8 @@ pub struct Practice {
     /// The lap running now had a pit stop / the previous one ended in the pit
     pit_this_lap: bool,
     pit_last_lap: bool,
+    /// A full lap on a layout not stored yet: which one is it? (the driver picks from the catalogue)
+    pub question: Option<TrackQuestion>,
     /// The lap just finished fits the layout of the track name (set by [`Practice::shape`])
     layout_ok: bool,
     /// Why the last lap did not fit the track name
@@ -199,9 +260,37 @@ pub struct Practice {
 
 impl Practice {
     pub fn load(file: Option<PathBuf>) -> Self {
-        let saved =
+        let mut saved: PracticeSaved =
             file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Practice { saved, file, pit_this_lap: false, pit_last_lap: false, layout_ok: true, layout_warning: None, fuel_start: None }
+        // Layouts stored before the catalogue: the catalogue layout where it is clear
+        let mut changed = false;
+        for sh in saved.shapes.iter_mut().filter(|s| s.course.is_none()) {
+            sh.course = guess_course(&sh.track, sh.length_m);
+            changed |= sh.course.is_some();
+        }
+        let p = Practice {
+            saved,
+            file,
+            pit_this_lap: false,
+            pit_last_lap: false,
+            question: None,
+            layout_ok: true,
+            layout_warning: None,
+            fuel_start: None,
+        };
+        if changed {
+            p.save();
+        }
+        p
+    }
+
+    /// Sets the catalogue layout of a stored shape (the driver confirmed it).
+    pub fn set_course(&mut self, track: &str, course: Option<i32>) -> bool {
+        let key = track_key(track);
+        let Some(sh) = self.saved.shapes.iter_mut().find(|s| track_key(&s.track) == key) else { return false };
+        sh.course = course;
+        self.save();
+        true
     }
 
     pub fn save(&self) {
@@ -280,24 +369,35 @@ impl Practice {
     /// track when none is set, remember the shape of a new track name, and check that the lap
     /// fits the layout stored for the name.
     pub fn shape(&mut self, lap: &[(f32, f32)]) {
-        if lap.len() < 50 {
+        // A lap into or out of the pit runs partly in the pit lane: it says nothing about the layout
+        if lap.len() < 50 || self.pit_this_lap || self.pit_last_lap {
             return;
         }
         let pts: Vec<[f32; 2]> = lap.iter().step_by(SHAPE_STEP).map(|(x, z)| [*x, *z]).collect();
         let length_m: f32 = lap.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
-        let matching = self.saved.shapes.iter().find(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M).map(|s| s.track.clone());
+        let matching = track_of(&self.saved.shapes, &pts);
         let name = self.saved.track.clone();
+        if matching.is_some() {
+            self.question = None;
+        }
         if name.is_empty() {
-            if let Some(t) = matching {
-                self.saved.track = t;
-                self.layout_warning = None;
-                self.save();
+            match matching {
+                Some(t) => {
+                    self.saved.track = t;
+                    self.layout_warning = None;
+                    self.save();
+                }
+                None => self.ask(pts, length_m, None),
             }
             return;
         }
         let key = track_key(&name);
         let stored = self.saved.shapes.iter().find(|s| track_key(&s.track) == key);
-        let fits = stored.map(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M);
+        let fits = stored.map(|s| shape_fit(&pts, &s.pts).is_some());
+        // The whole layout driven, only part of the lap off it: an excursion, not another layout
+        let excursion = stored
+            .and_then(|s| fit_metrics(&pts, &s.pts))
+            .is_some_and(|m| m.shape_cover >= FIT_SHAPE_COVER && m.longest_gap_m <= FIT_SHAPE_GAP_M && m.direction >= FIT_DIRECTION);
         // A shape stored by an older version has no length yet: take it from this lap
         if fits == Some(true) {
             if let Some(s) = self.saved.shapes.iter_mut().find(|s| track_key(&s.track) == key && s.length_m <= 0.0) {
@@ -310,6 +410,9 @@ impl Practice {
             (Some(false), Some(other)) => {
                 Some(format!("Kolo odpovídá trati „{other}“, ne „{name}“. Oprav název trati – kolo se nepočítá."))
             }
+            (Some(false), None) if excursion => {
+                Some("Kolo vedlo kus mimo trať (výlet, hodiny) – nepočítá se.".to_string())
+            }
             (Some(false), None) => Some(format!(
                 "Kolo má jiný tvar než uložená trať „{name}“ – jiná varianta? Pojmenuj ji jinak (např. „{name} – varianta 2“). Kolo se nepočítá."
             )),
@@ -317,7 +420,8 @@ impl Practice {
                 Some(format!("Kolo odpovídá už uložené trati „{other}“. Vyber ji, ať se data nerozdělí. Kolo se nepočítá."))
             }
             (None, None) => {
-                self.saved.shapes.push(Shape { track: name, pts, length_m });
+                let course = guess_course(&name, length_m);
+                self.saved.shapes.push(Shape { track: name, pts, length_m, course });
                 self.save();
                 None
             }
@@ -333,11 +437,25 @@ impl Practice {
         let pts: Vec<[f32; 2]> = lap.iter().step_by(SHAPE_STEP).map(|(x, z)| [*x, *z]).collect();
         let key = track_key(track);
         let stored = self.saved.shapes.iter().find(|s| track_key(&s.track) == key);
-        if stored.is_some_and(|s| shape_distance(&pts, &s.pts) < SHAPE_MATCH_M) {
+        if stored.is_some_and(|s| shape_fit(&pts, &s.pts).is_some()) {
             return LayoutCheck::Fits;
         }
-        match (track_of(&self.saved.shapes, &pts), stored) {
-            (Some(other), _) => LayoutCheck::Other(other),
+        match (best_fit(&self.saved.shapes, &pts), stored) {
+            (Some(other), _) => {
+                // The race names a layout of the catalogue: it has to be that one. It names only the
+                // base track (the championship website: "Circuit de Barcelona-Catalunya"): any
+                // layout of it fits.
+                let exact = super::courses::by_name(track);
+                let same = match exact {
+                    Some(c) => other.course == Some(c.id),
+                    None => super::courses::base_of(track).is_some_and(|b| other.base() == Some(b)),
+                };
+                if same {
+                    LayoutCheck::Fits
+                } else {
+                    LayoutCheck::Other(other.track.clone())
+                }
+            }
             (None, Some(_)) => LayoutCheck::Different,
             (None, None) => LayoutCheck::Unknown,
         }
@@ -359,9 +477,43 @@ impl Practice {
             return None; // the name belongs to another layout
         }
         let length_m: f32 = lap.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum();
-        self.saved.shapes.push(Shape { track: name.trim().to_string(), pts, length_m });
+        let course = guess_course(name, length_m);
+        self.saved.shapes.push(Shape { track: name.trim().to_string(), pts, length_m, course });
         self.save();
         Some(name.trim().to_string())
+    }
+
+    /// Asks which layout a lap fits no stored shape of. `hint`: a track name that narrows the
+    /// candidates to its base track (the race track).
+    pub fn ask(&mut self, pts: Vec<[f32; 2]>, length_m: f32, hint: Option<&str>) {
+        if pts.len() < 50 || self.question.as_ref().is_some_and(|q| shape_fit(&pts, &q.pts).is_some()) {
+            return;
+        }
+        let base = hint.and_then(super::courses::base_of);
+        let mut c = super::courses::candidates(length_m, base);
+        if c.is_empty() {
+            c = super::courses::candidates(length_m, None);
+        }
+        let candidates = c.iter().take(16).map(|c| c.id).collect();
+        self.question = Some(TrackQuestion { pts, length_m, candidates });
+    }
+
+    /// The driver says which catalogue layout the asked lap is: its shape is stored under the
+    /// layout's name, and practice takes it as the track when none is set.
+    pub fn answer(&mut self, course: i32) -> Result<String, String> {
+        let c = super::courses::get(course).ok_or("Neznámá trať.")?;
+        let q = self.question.as_ref().ok_or("Žádné kolo nečeká na trať.")?;
+        let key = track_key(&c.name);
+        if self.saved.shapes.iter().any(|s| track_key(&s.track) == key || s.course == Some(course)) {
+            return Err(format!("„{}“ už má uložený jiný tvar – kolo je asi jiná varianta.", c.name));
+        }
+        self.saved.shapes.push(Shape { track: c.name.clone(), pts: q.pts.clone(), length_m: q.length_m, course: Some(course) });
+        self.question = None;
+        if self.saved.track.is_empty() && self.saved.active {
+            self.saved.track = c.name.clone();
+        }
+        self.save();
+        Ok(c.name.clone())
     }
 
     /// Length (m) of the layout stored for the track name.
@@ -500,27 +652,113 @@ pub enum LayoutCheck {
 
 /// Layout among `shapes` that the positions of a lap fit, if any.
 pub fn track_of(shapes: &[Shape], pts: &[[f32; 2]]) -> Option<String> {
+    best_fit(shapes, pts).map(|s| s.track.clone())
+}
+
+/// The stored layout that fits the lap best.
+pub fn best_fit<'a>(shapes: &'a [Shape], pts: &[[f32; 2]]) -> Option<&'a Shape> {
     if pts.len() < 50 {
         return None;
     }
-    shapes
-        .iter()
-        .map(|s| (s, shape_distance(pts, &s.pts)))
-        .filter(|(_, d)| *d < SHAPE_MATCH_M)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(s, _)| s.track.clone())
+    shapes.iter().filter_map(|s| shape_fit(pts, &s.pts).map(|d| (s, d))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(s, _)| s)
 }
 
-/// Average distance from the points of `a` to the nearest point of `b` (m).
-fn shape_distance(a: &[[f32; 2]], b: &[[f32; 2]]) -> f32 {
-    if a.is_empty() || b.is_empty() {
-        return f32::MAX;
+fn dist(a: &[f32; 2], b: &[f32; 2]) -> f32 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
+}
+
+/// Every n-th point, so at most `max` are left
+fn thin(v: &[[f32; 2]], max: usize) -> Vec<[f32; 2]> {
+    let step = v.len().div_ceil(max.max(1)).max(1);
+    v.iter().step_by(step).copied().collect()
+}
+
+/// Nearest point of `line` to `p`: index and distance.
+fn nearest(line: &[[f32; 2]], p: &[f32; 2]) -> (usize, f32) {
+    line.iter().enumerate().map(|(i, q)| (i, dist(p, q))).min_by(|a, b| a.1.total_cmp(&b.1)).unwrap_or((0, f32::MAX))
+}
+
+/// Direction of travel at point `i` of an ordered line
+fn tangent(line: &[[f32; 2]], i: usize) -> [f32; 2] {
+    let (a, b) = (line[i.saturating_sub(1)], line[(i + 1).min(line.len() - 1)]);
+    [b[0] - a[0], b[1] - a[1]]
+}
+
+/// Does a lap (ordered positions) fit a stored layout (ordered positions)? `Some(mean distance)`
+/// when the lap covers the layout over its whole length (no stretch of it left out: a chicane
+/// is a different layout), most of the lap lies on the layout, and it is driven the same way
+/// round (a reverse layout is a different layout).
+pub fn shape_fit(lap: &[[f32; 2]], shape: &[[f32; 2]]) -> Option<f32> {
+    let m = fit_metrics(lap, shape)?;
+    (m.shape_cover >= FIT_SHAPE_COVER && m.longest_gap_m <= FIT_SHAPE_GAP_M && m.direction >= FIT_DIRECTION && m.lap_cover >= FIT_LAP_COVER)
+        .then_some(m.mean_m)
+}
+
+/// How a lap lies on a stored layout (see [`shape_fit`]).
+#[derive(Debug, Clone, Copy)]
+pub struct FitMetrics {
+    /// Share of the layout the lap covers, longest stretch of it left out (m)
+    pub shape_cover: f32,
+    pub longest_gap_m: f32,
+    /// Share of the covered points driven the same way round
+    pub direction: f32,
+    /// Share of the lap on the layout
+    pub lap_cover: f32,
+    pub mean_m: f32,
+}
+
+pub fn fit_metrics(lap: &[[f32; 2]], shape: &[[f32; 2]]) -> Option<FitMetrics> {
+    if lap.len() < 10 || shape.len() < 10 {
+        return None;
     }
-    let step = (a.len() / 60).max(1);
-    let sample: Vec<&[f32; 2]> = a.iter().step_by(step).collect();
-    let total: f32 =
-        sample.iter().map(|p| b.iter().map(|q| ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)).sqrt()).fold(f32::MAX, f32::min)).sum();
-    total / sample.len() as f32
+    let lap = thin(lap, 1500);
+    let shape = thin(shape, 1500);
+    let (mut covered, mut agree, mut sum) = (0usize, 0usize, 0f32);
+    // Stretches of the layout the lap leaves out: (first point, points, metres)
+    let mut gaps: Vec<(usize, usize, f32)> = Vec::new();
+    for (i, p) in shape.iter().enumerate() {
+        let (j, d) = nearest(&lap, p);
+        if d <= FIT_TOL_M {
+            covered += 1;
+            sum += d;
+            let (t, u) = (tangent(&shape, i), tangent(&lap, j));
+            if t[0] * u[0] + t[1] * u[1] > 0.0 {
+                agree += 1;
+            }
+        } else {
+            let step = if i > 0 { dist(p, &shape[i - 1]) } else { 0.0 };
+            match gaps.last_mut() {
+                Some(g) if g.0 + g.1 == i => {
+                    g.1 += 1;
+                    g.2 += step;
+                }
+                _ => gaps.push((i, 1, step)),
+            }
+        }
+    }
+    // A stretch at the line (where a stored lap starts and ends) is the grid of a standing start
+    // or the pit lane: the lap is still this layout. A layout variant differs inside the lap.
+    let n = shape.len();
+    // Arc length along the layout up to each point
+    let mut arc = vec![0f32; n];
+    for i in 1..n {
+        arc[i] = arc[i - 1] + dist(&shape[i], &shape[i - 1]);
+    }
+    let total = arc[n - 1];
+    let touches = |g: &(usize, usize, f32)| arc[g.0] <= FIT_NEAR_LINE_M || total - arc[g.0 + g.1 - 1] <= FIT_NEAR_LINE_M;
+    let at_line: (usize, f32) = gaps.iter().filter(|g| touches(g)).fold((0, 0.0), |a, g| (a.0 + g.1, a.1 + g.2));
+    let excused = if at_line.1 <= FIT_LINE_GAP_M { at_line.0 } else { 0 };
+    let longest =
+        gaps.iter().filter(|g| excused == 0 || !touches(g)).map(|g| g.2).chain((excused == 0).then_some(at_line.1)).fold(0f32, f32::max);
+    let sample = thin(&lap, 200);
+    let on = sample.iter().filter(|p| nearest(&shape, p).1 <= FIT_TOL_M).count();
+    Some(FitMetrics {
+        shape_cover: covered as f32 / (n - excused).max(1) as f32,
+        longest_gap_m: longest,
+        direction: agree as f32 / covered.max(1) as f32,
+        lap_cover: on as f32 / sample.len().max(1) as f32,
+        mean_m: sum / covered.max(1) as f32,
+    })
 }
 
 #[cfg(test)]
@@ -641,5 +879,62 @@ mod tests {
         // Back on GP but still named Nordschleife: the lap belongs to the other name
         p.shape(&circle(500.0));
         assert!(p.layout_warning.as_deref().unwrap().contains("„Nürburgring GP“"));
+    }
+
+    fn ring(r: f32, n: usize) -> Vec<[f32; 2]> {
+        (0..n).map(|i| i as f32 / n as f32 * std::f32::consts::TAU).map(|a| [r * a.cos(), r * a.sin()]).collect()
+    }
+
+    #[test]
+    fn a_reverse_layout_and_a_chicane_are_other_layouts() {
+        let gp = ring(700.0, 400); // ~4.4 km, a point every 11 m
+        assert!(shape_fit(&ring(704.0, 900), &gp).is_some(), "the same layout on another line");
+        let reverse: Vec<[f32; 2]> = gp.iter().rev().copied().collect();
+        assert!(shape_fit(&reverse, &gp).is_none(), "driven the other way round");
+        // A chicane: 150 m of the lap 35 m off the line
+        let chicane: Vec<[f32; 2]> = ring(700.0, 400)
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| if (100..114).contains(&i) { [p[0] * 1.05, p[1] * 1.05] } else { p })
+            .collect();
+        assert!(shape_fit(&chicane, &gp).is_none() && shape_fit(&gp, &chicane).is_none());
+        // An excursion of a spin (40 m off for 60 m) is still the layout
+        let spin: Vec<[f32; 2]> = ring(700.0, 400)
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| if (200..205).contains(&i) { [p[0] * 1.06, p[1] * 1.06] } else { p })
+            .collect();
+        assert!(shape_fit(&spin, &gp).is_some());
+    }
+
+    #[test]
+    fn an_unknown_lap_asks_for_its_track() {
+        let mut p = Practice::load(None);
+        p.saved.active = true;
+        // ~4.57 km, the length of a Barcelona lap
+        let lap: Vec<(f32, f32)> = ring(728.0, 4000).iter().map(|q| (q[0], q[1])).collect();
+        p.shape(&lap);
+        let q = p.question.clone().expect("asked");
+        assert!(q.candidates.contains(&874) && q.candidates.contains(&1249), "{:?}", q.candidates);
+        assert_eq!(p.answer(874).unwrap(), "Circuit de Barcelona-Catalunya Grand Prix Layout");
+        assert!(p.question.is_none());
+        assert_eq!(p.saved.track, "Circuit de Barcelona-Catalunya Grand Prix Layout");
+        // A race named by the base track only (the championship website) fits that layout...
+        assert_eq!(p.layout_check("Circuit de Barcelona-Catalunya", &lap), LayoutCheck::Fits);
+        // ...a race on the other layout does not
+        assert!(matches!(p.layout_check("Circuit de Barcelona-Catalunya GP Layout No Chicane", &lap), LayoutCheck::Other(_)));
+        // Answered twice for one layout: refused
+        p.shape(&ring(300.0, 2000).iter().map(|q| (q[0], q[1])).collect::<Vec<_>>());
+        assert!(p.answer(874).is_err());
+    }
+
+    #[test]
+    fn stored_layouts_get_their_catalogue_layout() {
+        assert_eq!(guess_course("Nürburgring", 5083.0), Some(349));
+        assert_eq!(guess_course("Yas Marina Circuit", 5219.0), Some(2003));
+        assert_eq!(guess_course("Circuit de Barcelona-Catalunya – GP bez šikany", 4573.7), Some(1249));
+        assert_eq!(guess_course("Circuit de Barcelona-Catalunya", 4573.7), Some(874), "with the chicane unless said");
+        // Horse Thief Mile or its reverse: the driver says which
+        assert_eq!(guess_course("Willow Springs International Raceway", 1511.0), None);
     }
 }
