@@ -4429,7 +4429,8 @@
     const laps = String(fval(fl, 'pocet_kol'));
     return {
       id: doc.name.split('/').pop(),
-      name: fval(fl, 'nazev'), track: fval(fl, 'trat'),
+      // The exact GT7 layout when the website gives one (field "varianta"), else the track
+      name: fval(fl, 'nazev'), track: fval(fl, 'varianta') || fval(fl, 'trat'),
       laps: /min/i.test(laps) ? null : numIn(laps),
       tyre_wear: numIn(fval(fl, 'opotrebovani')), fuel_mult: numIn(fval(fl, 'spotreba')),
       refuel_rate: numIn(fval(fl, 'rychlost_doplneni')),

@@ -19,6 +19,8 @@
     opačně).
   - Závod zadaný jen názvem trati (web šampionátu: „Circuit de Barcelona-Catalunya“) sedí na
     kteroukoli její variantu; závod s přesnou variantou jen na ni.
+  - Kalendář šampionátu: když má závod na webu vyplněnou variantu trati (pole `varianta`),
+    vezme se přesná varianta místo obecné trati.
   - Jedno kolo mimo tvar (výlet do štěrku) už nezastaví ukládání závodu – až dvě po sobě.
   - Ztráta v boxech bez vlastního měření = průjezd boxy z databáze (Barcelona 28 s,
     Nürburgring GP 23 s) místo obecných 25 s.
