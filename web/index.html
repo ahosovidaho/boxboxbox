@@ -61,7 +61,8 @@
   #p1[hidden] { transform: translateX(-24px); }
   #p2[hidden], #p3[hidden], #p4[hidden], #p5[hidden] { transform: translateX(24px); }
   .dots { display: flex; gap: 5px; align-items: center; }
-  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); cursor: pointer; position: relative; }
+  .dots i::after { content: ''; position: absolute; inset: -7px -3px; }
   .dots i.on { background: var(--dim); }
 
   /* ---------- Page 1: driving ---------- */
@@ -1643,7 +1644,7 @@
   let page = ORDER[appMode][0];
   { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
   function updateDots() {
-    const html = ORDER[appMode].map(p => `<i class="${p === page ? 'on' : ''}"></i>`).join('')
+    const html = ORDER[appMode].map(p => `<i class="${p === page ? 'on' : ''}" data-page="${p}" title="${PAGE_NAME[p]}"></i>`).join('')
       + `<button class="modechip ${appMode}">${appMode === 'race' ? 'ZÁVOD' : 'TRÉNINK'}</button>`;
     $$('.dots').forEach(el => { if (el.innerHTML !== html) el.innerHTML = html; });
     // Top navigation on every page but the driving dashboards
@@ -1671,6 +1672,15 @@
     showPage(ORDER[m][0]);
   }
   $('navtabs').addEventListener('click', e => { const b = e.target.closest('button[data-page]'); if (b) showPage(+b.dataset.page); });
+  // The page dots of the driving dashboards (no top navigation there): a click opens that page
+  document.addEventListener('click', e => { const d = e.target.closest('.dots i[data-page]'); if (d) showPage(+d.dataset.page); });
+  // Keyboard on a computer: ← / → switch pages (not while typing)
+  document.addEventListener('keydown', e => {
+    if (e.altKey || e.ctrlKey || e.metaKey || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    if (e.target.closest('input, select, textarea, [contenteditable]') || !$('start').hidden) return;
+    const o = ORDER[appMode], i = o.indexOf(page);
+    showPage(o[Math.max(0, Math.min(o.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)))]);
+  });
   $('navGear').addEventListener('click', () => openSettings());
   // The chip next to the page dots switches the mode
   document.addEventListener('click', async e => {
@@ -1708,7 +1718,8 @@
     const inList = e.target.closest('#p2body, #p3body, #p4body, #p5body, #p7body, #p8body, #p10body, #p11body, #p12body, #tCharts, #tSide, button, input, select, textarea');
     // Horizontal drags on a chart move its cursor instead of switching pages. Swiping between
     // pages is for touch only (a mouse drag selects text), and never from a form field or the nav
-    const noSwipe = e.pointerType === 'mouse' || !!e.target.closest('input, select, textarea, label, #topnav, table, .rfform');
+    const driving = page === 1 || page === 6;
+    const noSwipe = (e.pointerType === 'mouse' && !driving) || !!e.target.closest('input, select, textarea, label, #topnav, table, .rfform');
     press = { x: e.clientX, y: e.clientY, chart: noSwipe || !!e.target.closest('.pchart'),
               timer: inList ? null : setTimeout(() => { press = null; openSettings(); }, 600) };
   });

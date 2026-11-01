@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- Oprava: z jízdního dashboardu (Jízda) se na počítači nedalo přejít jinam – horní lišta
+  tam není a přetahování myší bylo vypnuté. Teď: tažení myší na jízdních stránkách, šipky
+  ← / → na klávesnici a kliknutí na tečky stránek dole.
+
 - **Seznam tratí GT7** (databáze gt7info: 122 variant na 41 tratích – délka, varianta, směr,
   počet zatáček, ztráta v boxech). GT7 trať v telemetrii neposílá; aplikace ji dál pozná podle
   tvaru kola, ale teď ví, která varianta to je.
