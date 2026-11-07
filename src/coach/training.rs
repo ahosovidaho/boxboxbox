@@ -64,6 +64,12 @@ pub struct Task {
     pub ref_session: String,
     pub ref_lap: i64,
     pub ref_ms: i64,
+    /// Set against a lap of the reference library (its id and driver): the new laps are judged
+    /// against that lap, not against the best lap of their session
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ext_ref: Option<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub ext_driver: String,
     /// Figure of the reference lap (km/h or m along the lap)
     pub ref_value: f64,
     /// Median gap of the laps before (and how many), median exit speed and time lost
@@ -288,8 +294,8 @@ fn incident_in(l: &LapResult, n: usize) -> bool {
 /// Normal laps of a session for corner `n` (not the reference lap, within 107 %, no spin or
 /// slide in the corner).
 fn normal_laps(res: &Comparison, n: usize) -> Vec<&LapResult> {
-    let Some(r) = res.reference_lap() else { return vec![] };
-    let limit = r.ms as f64 * NORMAL;
+    let (Some(r), Some(pace)) = (res.reference_lap(), res.pace_ms()) else { return vec![] };
+    let limit = pace as f64 * NORMAL;
     res.laps.iter().filter(|l| l.file != r.file && (l.ms as f64) <= limit && !incident_in(l, n)).collect()
 }
 
@@ -407,11 +413,21 @@ pub fn start(res: &Comparison, session: &str, track: &str, car: i32, n: usize, m
     let (short, tip) = cand.as_ref().map_or_else(|| generic(metric, baseline), |m| (m.short.clone(), m.text.clone()));
     let k = rows.iter().filter(|r| loss(metric, r.0) >= min_loss(metric)).count();
     let (lab, gap, total, rl) = (label(metric), signed(baseline, unit(metric)), rows.len(), reference.lap);
-    let observed = tr!(
-        "{lab}: {gap} gegenüber der Referenz (R{rl}) – in {k} von {total} Runden.",
-        "{lab}: {gap} against the reference (L{rl}) – in {k} of {total} laps.",
-        "{lab}: {gap} proti referenci (K{rl}) – v {k} z {total} kol."
-    );
+    let observed = match &res.external {
+        Some(e) => {
+            let d = &e.driver;
+            tr!(
+                "{lab}: {gap} gegenüber {d} – in {k} von {total} Runden.",
+                "{lab}: {gap} against {d} – in {k} of {total} laps.",
+                "{lab}: {gap} proti {d} – v {k} z {total} kol."
+            )
+        }
+        None => tr!(
+            "{lab}: {gap} gegenüber der Referenz (R{rl}) – in {k} von {total} Runden.",
+            "{lab}: {gap} against the reference (L{rl}) – in {k} of {total} laps.",
+            "{lab}: {gap} proti referenci (K{rl}) – v {k} z {total} kol."
+        ),
+    };
     let now = chrono::Local::now();
     Ok(Task {
         id: format!("{}-T{n}-{metric}", now.format("%Y%m%d%H%M%S")),
@@ -427,6 +443,8 @@ pub fn start(res: &Comparison, session: &str, track: &str, car: i32, n: usize, m
         ref_session: session.to_string(),
         ref_lap: reference.lap,
         ref_ms: reference.ms,
+        ext_ref: res.external.as_ref().map(|e| e.id.clone()),
+        ext_driver: res.external.as_ref().map(|e| e.driver.clone()).unwrap_or_default(),
         ref_value,
         baseline,
         baseline_n: rows.len(),
@@ -481,7 +499,7 @@ impl Task {
             return None;
         }
         // One lap at a time, so a catch-up over several laps judges the series where it ended
-        let limit = res.reference_lap().map_or(f64::MAX, |r| r.ms as f64 * NORMAL);
+        let limit = res.pace_ms().map_or(f64::MAX, |ms| ms as f64 * NORMAL);
         let mut msg = None;
         for l in &res.laps {
             if self.status != "active" {
@@ -607,7 +625,8 @@ impl Task {
             "id": self.id, "status": self.status, "n": self.corner, "metric": self.metric, "label": label(&self.metric), "unit": u,
             "short": self.short, "tip": self.tip, "observed": self.observed, "track": self.track, "car": self.car,
             "created": self.created, "finished": self.finished, "result": self.result,
-            "ref": { "session": self.ref_session, "lap": self.ref_lap, "ms": self.ref_ms, "value": self.ref_value },
+            "ref": { "session": self.ref_session, "lap": self.ref_lap, "ms": self.ref_ms, "value": self.ref_value,
+                     "ext": self.ext_ref, "driver": self.ext_driver },
             "before": self.baseline, "before_n": self.baseline_n, "before_text": signed(self.baseline, u),
             "target_loss": self.target_loss, "target_text": self.target_text(),
             "now": now, "now_text": now.map(|v| signed(v, u)), "now_ok": now.map(|v| self.ok(v)),
@@ -620,6 +639,11 @@ impl Task {
 
 /// Coach worker: after a session's laps were analysed, the active task gets its new laps when
 /// the session is on its track with its car. Returns the radio message when the series ended.
+/// The reference of the active task when it was set against a lap of the reference library.
+pub fn active_ext(file: &Path) -> Option<String> {
+    load(file).active.and_then(|t| t.ext_ref)
+}
+
 pub fn on_session(file: &Path, res: &Comparison, session_dir: &Path, car: i32) -> Option<Value> {
     let mut s = load(file);
     let t = s.active.as_mut()?;
@@ -723,6 +747,29 @@ mod tests {
         let radio = t.update(&more, "s2", Path::new("/nonexistent")).unwrap();
         assert_eq!(t.status, "done");
         assert!(radio["text"].as_str().unwrap().contains("9"), "{radio}");
+    }
+
+    #[test]
+    fn a_task_against_a_reference_of_another_driver() {
+        use crate::coach::compare::External;
+        // The reference is 6 % faster than the own laps: against the session's pace the own laps
+        // are normal ones, not against the reference's time (they would all be beyond 107 %)
+        let mut laps = vec![lap("ref:bcn", 0, 110_099, 80.0, 120.0, 0.0)];
+        for i in 0..4 {
+            laps.push(lap(&format!("00{i}_lap0{i}.csv"), i, 117_000 + i * 100, 74.0, 119.0, 0.3));
+        }
+        let mut res = session(laps);
+        res.reference = Some(Reference { file: "ref:bcn".into(), ms: 110_099, lap: 0 });
+        res.external = Some(External { id: "bcn".into(), driver: "RTW_Tan".into(), car_code: 3590, car: "Elantra".into() });
+        assert_eq!(res.pace_ms(), Some(117_000));
+        assert_eq!(res.own_laps().count(), 4);
+        let c = candidates(&res);
+        assert_eq!(c[0].n, 9, "the own laps count as normal laps");
+        let t = start(&res, "s1", "x", 3590, 9, "apex").unwrap();
+        assert_eq!(t.ext_ref.as_deref(), Some("bcn"));
+        assert!(t.observed.contains("RTW_Tan"), "{}", t.observed);
+        assert_eq!(t.baseline_n, 4);
+        assert_eq!(t.view()["ref"]["driver"], "RTW_Tan");
     }
 
     #[test]

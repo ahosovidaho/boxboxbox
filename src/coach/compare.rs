@@ -108,9 +108,38 @@ pub struct Comparison {
     /// Track the laps were driven on (recognised by the layouts stored in practice)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<String>,
+    /// The reference is a saved lap of another driver ([`Comparer::against`]); it is in `laps`
+    /// as a lap of its own (file "ref:<id>"), not one of the session
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external: Option<External>,
+}
+
+/// A reference lap from the library (a leaderboard lap from a replay).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct External {
+    pub id: String,
+    pub driver: String,
+    pub car_code: i32,
+    pub car: String,
 }
 
 impl Comparison {
+    /// The laps of the session (without an external reference lap)
+    pub fn own_laps(&self) -> impl Iterator<Item = &LapResult> {
+        let ext = self.external.as_ref().and(self.reference.as_ref()).map(|r| r.file.clone());
+        self.laps.iter().filter(move |l| ext.as_ref() != Some(&l.file))
+    }
+
+    /// Lap time the normal laps are measured by: the reference lap of the session, or – against
+    /// a lap of another driver – the best own lap
+    pub fn pace_ms(&self) -> Option<i64> {
+        if self.external.is_some() {
+            self.own_laps().map(|l| l.ms).min()
+        } else {
+            self.reference_lap().map(|l| l.ms)
+        }
+    }
+
     pub fn reference_lap(&self) -> Option<&LapResult> {
         let file = &self.reference.as_ref()?.file;
         self.laps.iter().find(|l| &l.file == file)
@@ -219,6 +248,8 @@ pub struct Comparer {
     results: HashMap<ResultKey, LapResult>,
     /// Stored track layouts (practice.json) and when they were read
     shapes: Option<(SystemTime, Vec<crate::strategy::practice::Shape>)>,
+    /// Laps compared with a reference lap of another driver
+    ext_results: HashMap<ResultKey, LapResult>,
 }
 
 pub fn lap_files(session: &Path) -> Vec<PathBuf> {
@@ -482,6 +513,77 @@ impl Comparer {
                         })
                         .sum::<f64>(),
         );
+        Ok(result)
+    }
+}
+
+impl Comparer {
+    /// Compares the complete laps of a session with a reference lap of another driver
+    /// (`ref_file`: a lap of the reference library, corrected for the replay speed, `ref_ms`:
+    /// its official time). The corners are the session's (the track's fixed list), mapped onto
+    /// the reference lap; every lap's time loss and figures are against the reference.
+    pub fn against(&mut self, session: &Path, ref_file: &Path, ref_ms: i64, ext: External) -> std::io::Result<Comparison> {
+        // The session's own comparison first: it decides the corners and the runs
+        let own = self.compare(session)?;
+        if own.laps.is_empty() {
+            return Ok(Comparison { external: Some(ext), ..Default::default() });
+        }
+        let mut reference = lap::load(ref_file)?;
+        let (ref_ratio, _) = lap::steer_ratio(&reference);
+        prepare(&mut reference, ref_ratio);
+        project(&mut reference, None);
+        let corners_path = session.join("corners.json");
+        let corners = map_corner_defs(&corners_path, &reference)?;
+        let ckey: Vec<(usize, usize, usize)> = corners.iter().map(|c| (c.n, c.from, c.to)).collect();
+        let ref_name = format!("ref:{}", ext.id);
+        let mut result = Comparison {
+            reference: Some(Reference { file: ref_name.clone(), ms: ref_ms, lap: 0 }),
+            steer_ratio: own.steer_ratio,
+            track: own.track.clone(),
+            external: Some(ext),
+            ..Default::default()
+        };
+        for c in &corners {
+            let stats = corner_stats(&reference, s_of(&reference, c.from), s_of(&reference, c.to), c.s);
+            let brake_pos = stats.as_ref().and_then(|st| st.brake_at).and_then(|b| {
+                reference.iter().find(|r| r.s.is_some_and(|s| s >= b)).map(|r| [lap::round_to(r.pos_x, 1), lap::round_to(r.pos_z, 1)])
+            });
+            result.corners.push(CornerInfo {
+                n: c.n,
+                dir: c.dir.clone(),
+                x: lap::round_to(c.x, 1),
+                z: lap::round_to(c.z, 1),
+                s: lap::round_i(c.s),
+                reference: stats,
+                brake_pos,
+            });
+        }
+        // The reference itself, as a lap (training needs its figures as the target)
+        let mut ref_lap = evaluate_lap(ref_file, ref_ms, ref_ms, &reference, &reference, &corners);
+        ref_lap.file = ref_name;
+        ref_lap.lap = 0;
+        result.laps.push(ref_lap);
+        let ratio = own.steer_ratio.max(1.0);
+        for l in &own.laps {
+            let path = session.join(&l.file);
+            if !lap::exists(&path) {
+                continue;
+            }
+            let key = (path.clone(), ref_file.to_path_buf(), ckey.clone());
+            if !self.ext_results.contains_key(&key) {
+                let mut rows = lap::load(&path)?;
+                prepare(&mut rows, ratio);
+                project(&mut rows, Some(&reference));
+                let mut r = evaluate_lap(&path, l.ms, ref_ms, &rows, &reference, &corners);
+                r.run = l.run;
+                self.ext_results.insert(key.clone(), r);
+            }
+            result.laps.push(self.ext_results[&key].clone());
+        }
+        // Only the laps of the latest sessions and references in the cache
+        if self.ext_results.len() > 400 {
+            self.ext_results.retain(|k, _| k.1 == ref_file);
+        }
         Ok(result)
     }
 }

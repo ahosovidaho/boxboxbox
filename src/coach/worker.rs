@@ -204,7 +204,13 @@ impl Coach {
                 .and_then(|m| m["car_code"].as_i64())
                 .unwrap_or(0) as i32;
             if let Some(parent) = self.feed_path.parent() {
-                if let Some(msg) = super::training::on_session(&super::training::path(parent), &res, session, car) {
+                // A task against a reference lap: the new laps against that lap
+                let tfile = super::training::path(parent);
+                let ext = super::training::active_ext(&tfile).and_then(|id| {
+                    let root = super::reference::root(session.parent()?.parent()?);
+                    super::reference::compare(&mut self.comparer, &root, session, &id).ok()
+                });
+                if let Some(msg) = super::training::on_session(&tfile, ext.as_ref().unwrap_or(&res), session, car) {
                     let mut radio = feedback::radio(&res);
                     radio.insert(0, msg.clone());
                     self.write_radio(radio)?;

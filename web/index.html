@@ -796,7 +796,29 @@
   #cTabs button { background: none; border: 0; color: var(--dim); font: 600 14px Inter, system-ui, sans-serif; height: 38px; padding: 0 16px; border-radius: 9px; }
   #cTabs button.on { background: #2A2A31; color: var(--text); }
   #p3train { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; align-items: start; }
-  #p3train[hidden], #p3prog[hidden], #p3body[hidden] { display: none; }
+  #p3train[hidden], #p3prog[hidden], #p3body[hidden], #p3ref[hidden] { display: none; }
+  #p3ref { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  #vLeft, #vRight { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  @media (max-width: 820px) { #p3ref { grid-template-columns: 1fr; } }
+  .vsum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+  .vsum > div { background: #16161A; border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .vsum .v { display: block; font: 700 22px 'JetBrains Mono', ui-monospace, monospace; margin-top: 2px; white-space: nowrap; }
+  .vsum small { color: var(--dim); font-size: 12px; }
+  #vHead select { width: 100%; background: #1c1c21; color: var(--text); border: 1px solid #2c2c33; border-radius: 8px; padding: 7px 8px; font: 14px Inter, system-ui, sans-serif; margin-top: 8px; }
+  .vrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .vrow.sel { background: #1A1A20; margin: 0 -10px; padding: 9px 10px; border-radius: 10px; }
+  .vrow b { display: block; font-size: 14px; font-weight: 600; }
+  .vrow small { color: var(--dim); font-size: 12px; }
+  .vrow .c { font: 700 15px 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
+  .vbar { height: 4px; border-radius: 2px; background: #FF5A4E; margin-top: 5px; }
+  .vcmp { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; }
+  .vcmp td { padding: 5px 4px; border-top: 1px solid var(--line); }
+  .vcmp td:nth-child(n+2) { text-align: right; font-family: 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
+  .vcmp th { font-size: 11px; color: var(--label); font-weight: 600; text-align: right; padding: 0 4px 4px; }
+  .vcmp th:first-child { text-align: left; }
+  .vtip { background: #16161A; border-left: 3px solid #F2C230; border-radius: 8px; padding: 9px 11px; margin-top: 8px; font-size: 14px; }
+  .vtip b { display: block; margin-bottom: 2px; }
+  @media (max-width: 600px) { .vsum .v { font-size: 18px; } .vsum { gap: 6px; } .vsum > div { padding: 8px; } }
   #tLeft, #tRight { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   #tRight > .card, #tLeft > .card { width: 100%; box-sizing: border-box; }
   @media (max-width: 820px) { #p3train { grid-template-columns: 1fr; } }
@@ -840,9 +862,10 @@
   #cSuggest > div { flex: 1; min-width: 220px; } #cSuggest b { display: block; font-size: 16px; font-weight: 600; } #cSuggest small { color: var(--dim); font-size: 13px; }
   #tSheet { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(640px, 100%); box-sizing: border-box; z-index: 60; background: #0E0E11; border: 1px solid #2A2A31; border-bottom: 0; border-radius: 18px 18px 0 0; padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px #000c; max-height: 70vh; overflow: auto; }
   #tSheet[hidden] { display: none; }
-  #tSheet .shead { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  #tSheet .shead, #vDetail .shead { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  #vDetail .shead > div { flex: 1; min-width: 0; } #vDetail .shead small { display: block; font-size: 12px; }
   #tSheet .shead .tchip { height: 32px; min-width: 46px; font-size: 15px; }
-  #tSheet .shead b { font-size: 17px; } #tSheet .shead button { margin-left: auto; height: 36px; padding: 0 12px; }
+  #tSheet .shead b, #vDetail .shead b { font-size: 17px; } #tSheet .shead button, #vDetail .shead button { margin-left: auto; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #2A2A31; background: #16161A; color: var(--text); font: 600 13px Inter, system-ui, sans-serif; }
   #tSheet .smet { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
   #tSheet .smet > div { flex: 1; min-width: 0; } #tSheet .smet b { display: block; font-weight: 600; } #tSheet .smet small { color: var(--dim); font-size: 13px; }
   #tSheet .err { color: #FF5A4E; font-size: 13px; margin-top: 8px; }
@@ -1082,7 +1105,7 @@
   <div id="p3head">
     <b data-t>Coach</b>
     <span id="coachUpdated"></span>
-    <span id="cTabs"><button data-ct="laps" class="on">Po kolech</button><button data-ct="train">Trénink</button><button data-ct="prog">Pokrok</button></span>
+    <span id="cTabs"><button data-ct="laps" class="on">Po kolech</button><button data-ct="train">Trénink</button><button data-ct="prog">Pokrok</button><button data-ct="ref">Reference</button></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
   </div>
@@ -1109,6 +1132,16 @@
     </div>
   </div>
   <div id="p3prog" hidden><div class="card" id="tProg"></div></div>
+  <div id="p3ref" hidden>
+    <div id="vLeft">
+      <div class="card" id="vHead"><span class="muted">Načítám…</span></div>
+      <div class="card" id="vList" hidden></div>
+    </div>
+    <div id="vRight">
+      <div class="card" id="vMapCard" hidden><h2>Okruh</h2><div id="vMapSvg"></div><div class="mleg"><span style="--c:#FF5A4E">ztráta nad 0,4 s</span><span style="--c:#F2C230">0,2–0,4 s</span></div></div>
+      <div class="card" id="vDetail" hidden></div>
+    </div>
+  </div>
   <div id="tSheet" hidden></div>
 </section>
 
@@ -2377,7 +2410,9 @@
     $('p3body').hidden = tab !== 'laps';
     $('p3train').hidden = tab !== 'train';
     $('p3prog').hidden = tab !== 'prog';
+    $('p3ref').hidden = tab !== 'ref';
     renderTraining();
+    if (tab === 'ref') loadVsRef();
   }
   // Map marks: the task's corner, and corners where time goes in most laps
   function trainMarks() {
@@ -2494,8 +2529,9 @@
     if (start) {
       const [n, metric] = start.dataset.start.split('|');
       start.disabled = true;
-      try { await trainingAction({ action: 'start', n: +n, metric }); $('tSheet').hidden = true; setCoachTab('train'); }
-      catch (err) { if ($('tSheet').hidden) openSheet(+n); const m = $('tErr'); if (m) m.textContent = err.message; }
+      const reference = start.dataset.ref || undefined;
+      try { await trainingAction({ action: 'start', n: +n, metric, reference }); $('tSheet').hidden = true; setCoachTab('train'); }
+      catch (err) { if ($('tSheet').hidden && !start.closest('#p3ref')) openSheet(+n); const m = start.closest('#p3ref') ? $('vDetail').querySelector('.err') : $('tErr'); if (m) m.textContent = err.message; }
       start.disabled = false;
       return;
     }
@@ -2511,6 +2547,107 @@
     const g = e.target.closest('.tmap g[data-n]');
     if (g) openSheet(+g.dataset.n);
   });
+  // ---------- Coach against a reference lap (page 3, tab "Reference") ----------
+  // The laps of the coach's session (or the newest own session on the reference's track) against
+  // a lap of the reference library: time lost per corner, the figures side by side, what to do
+  // differently, and a training task with the reference's figure as the target.
+  let vsData = null, vsSel = null, vsQuery = { session: '', ref: '' }, vsErr = '';
+  async function loadVsRef(q) {
+    if (q) vsQuery = q;
+    const u = new URLSearchParams();
+    if (vsQuery.session) u.set('session', vsQuery.session);
+    if (vsQuery.ref) u.set('ref', vsQuery.ref);
+    try {
+      const r = await fetch('api/coach/reference?' + u, { cache: 'no-store' });
+      const j = await r.json();
+      vsErr = r.ok ? '' : (j.error || r.statusText);
+      vsData = r.ok ? j : null;
+    } catch (e) { vsErr = 'chyba spojení'; vsData = null; }
+    // No reference on the coach's track: the references and their own sessions
+    if (vsData && vsData.note && !(vsData.references || []).length && !refData) await loadRefs();
+    renderVsRef();
+  }
+  const vsLoss = d => d == null ? '–' : (d >= 0 ? '+' : '−') + nf(Math.abs(d), 2);
+  const vsM = (a, b) => a == null || b == null ? '–' : (b - a > 0 ? '+' : b - a < 0 ? '−' : '±') + Math.round(Math.abs(b - a)) + ' m';
+  const vsK = (a, b) => a == null || b == null ? '–' : (b - a > 0 ? '+' : b - a < 0 ? '−' : '±') + Math.round(Math.abs(b - a)) + ' km/h';
+  function renderVsRef() {
+    const head = $('vHead'), list = $('vList');
+    if (!vsData) { head.innerHTML = `<h2>Proti referenci</h2><p class="err">${esc(vsErr || 'Nic k zobrazení.')}</p>`; list.hidden = true; $('vMapCard').hidden = true; $('vDetail').hidden = true; return; }
+    const d = vsData;
+    if (d.note) {
+      // Offer the references with their newest own session on the same track
+      const refs = ((refData && refData.references) || []).filter(r => r.session);
+      head.innerHTML = `<h2>Proti referenci</h2><p class="muted" style="font-size:14px">${esc(d.note)}</p>`
+        + (refs.length ? `<div class="lbl" style="margin-top:10px">Reference s tvou session na stejné trati</div>` + refs.map(r =>
+          `<div class="trow" data-vs="${esc(r.session)}|${esc(r.id)}"><span class="tchip lap">REF</span><div><b>${esc(r.driver)} · ${fmtLap(r.official_ms)}</b><small>${esc(r.track)} · ${esc(r.car || '')}</small></div><span class="c">›</span></div>`).join('') : '');
+      list.hidden = true; $('vMapCard').hidden = true; $('vDetail').hidden = true;
+      return;
+    }
+    const opts = (d.references || []).map(r => `<option value="${esc(r.id)}" ${r.id === d.reference ? 'selected' : ''}>${esc(r.driver)} · ${fmtLap(r.ms)}${r.same_car ? '' : ' · ' + esc(r.car || 'jiné auto')}</option>`).join('');
+    const gap = d.best.gap_ms / 1000;
+    head.innerHTML = `<div class="lhead"><h2 style="margin:0">Proti referenci</h2><span class="muted" style="font-size:13px">${esc(d.track || '')}</span></div>`
+      + `<select id="vRef">${opts}</select>`
+      + `<div class="vsum"><div><span class="lbl">Ty</span><span class="v">${fmtLap(d.best.ms)}</span><small>nejlepší kolo ${d.best.lap}</small></div>`
+      + `<div><span class="lbl">${esc(d.ref.driver)}</span><span class="v">${fmtLap(d.ref.ms)}</span><small>${d.ref.same_car ? 'stejné auto' : esc(d.ref.car || 'jiné auto')}</small></div>`
+      + `<div><span class="lbl">Ztráta</span><span class="v" style="color:${gap > 0 ? '#FF5A4E' : 'var(--green)'}">${gap > 0 ? '+' : '−'}${nf(Math.abs(gap), 3)}</span><small>${d.normal_laps} normální kola</small></div></div>`
+      + (d.ref.same_car ? '' : `<p class="muted" style="font-size:12px;margin:8px 0 0">Reference je s jiným autem – brzdné body a rychlosti ber s rezervou.</p>`);
+    const corners = [...d.corners].sort((a, b) => (b.best || 0) - (a.best || 0));
+    const top = Math.max(...corners.map(c => c.best || 0), 0.1);
+    list.hidden = false;
+    list.innerHTML = `<div class="lhead"><h2 style="margin:0">Kde ztrácíš</h2><span class="muted" style="font-size:12px">nejlepší kolo · medián kol</span></div>`
+      + corners.map(c => {
+        const t = c.best > 0.08 ? (c.tips || [])[0] : null;
+        const w = Math.max(2, Math.round(Math.max(0, c.best) / top * 100));
+        return `<div class="vrow${vsSel === c.n ? ' sel' : ''}" data-vn="${c.n}"><span class="tchip${c.best >= 0.4 ? ' risk' : c.best >= 0.2 ? '' : ' lap'}">T${c.n}</span>`
+          + `<div><b>${t ? esc(t.short) : c.best <= 0.08 ? 'Tady jedeš jako reference' : 'Bez jasné příčiny – srovnej v telemetrii'}</b><small>${c.dir === 'links' ? 'levá' : 'pravá'}${c.typical != null && c.laps > 1 ? ' · medián ' + vsLoss(c.typical) + ' s' : ''}</small><div class="vbar" style="width:${w}%;background:${c.best >= 0.4 ? '#FF5A4E' : c.best >= 0.2 ? '#F2C230' : '#3A3A42'}"></div></div>`
+          + `<span class="c" style="color:${c.best >= 0.2 ? '#FF5A4E' : 'var(--dim)'}">${vsLoss(c.best)}</span></div>`;
+      }).join('');
+    // Map: corners coloured by the time lost
+    const marks = {};
+    d.corners.forEach(c => { if (c.best >= 0.4) marks[c.n] = 'risk'; else if (c.best >= 0.2) marks[c.n] = 'tip'; });
+    const svg = coachData && trackSvg(coachData.map, coachData.corners, marks, vsSel);
+    $('vMapCard').hidden = !svg || !coachData || coachData.session !== d.session;
+    if (svg) $('vMapSvg').innerHTML = svg;
+    renderVsDetail();
+  }
+  function renderVsDetail() {
+    const el = $('vDetail'), d = vsData;
+    const c = d && d.corners && d.corners.find(x => x.n === vsSel);
+    if (!c) { el.hidden = true; return; }
+    const r = c.ref || {}, y = c.you || {}, drv = esc(d.ref.driver);
+    const row = (label, a, b, fmt, diff) => `<tr><td>${label}</td><td>${a == null ? '–' : fmt(a)}</td><td>${b == null ? '–' : fmt(b)}</td><td>${diff}</td></tr>`;
+    const mm = v => Math.round(v) + ' m', kk = v => Math.round(v) + ' km/h';
+    el.hidden = false;
+    el.innerHTML = `<div class="shead"><span class="tchip${c.best >= 0.4 ? ' risk' : c.best >= 0.2 ? '' : ' lap'}">T${c.n}</span><div><b>${vsLoss(c.best)} s proti ${drv}</b><small class="muted">${c.dir === 'links' ? 'levá' : 'pravá'} zatáčka</small></div><button data-vn-close="1">Zavřít</button></div>`
+      + `<table class="vcmp"><tr><th></th><th>${drv}</th><th>ty</th><th>rozdíl</th></tr>`
+      + row('Začátek brzdění', r.brake_at, y.brake_at, mm, vsM(r.brake_at, y.brake_at))
+      + row('Brzda pryč', r.brake_off, y.brake_off, mm, vsM(r.brake_off, y.brake_off))
+      + row('Rychlost ve vrcholu', r.v_min, y.v_min, kk, vsK(r.v_min, y.v_min))
+      + row('Nejnižší stupeň', r.gear_min, y.gear_min, v => v + '.', r.gear_min != null && y.gear_min != null && r.gear_min !== y.gear_min ? (y.gear_min - r.gear_min > 0 ? '+' : '−') + Math.abs(y.gear_min - r.gear_min) : '–')
+      + row('Plný plyn', r.full_at, y.full_at, mm, vsM(r.full_at, y.full_at))
+      + row('Výjezd', r.v_exit, y.v_exit, kk, vsK(r.v_exit, y.v_exit))
+      + `</table><p class="muted" style="font-size:12px;margin:0">Body jsou metry od cílové čáry; + znamená později / víc než ${drv}.</p>`
+      + (c.tips || []).map(t => `<div class="vtip"><b>${esc(t.short)}</b>${esc(t.text)}</div>`).join('')
+      + `<div class="tacts" style="margin-top:12px">`
+      + (c.task || []).slice(0, 2).map(m => `<button class="pri" data-start="${c.n}|${esc(m.metric)}" data-ref="${esc(d.reference)}">Úkol: ${esc(m.label)}</button>`).join('')
+      + `<button data-vs-tele="${c.n}">Telemetrie T${c.n}</button></div>`
+      + (c.task && c.task.length ? '' : `<p class="muted" style="font-size:12px;margin:8px 0 0">Úkol půjde zadat po 3 normálních kolech v session.</p>`)
+      + '<div class="err" id="tErr"></div>';
+  }
+  $('p3ref').addEventListener('click', e => {
+    // Task buttons go on to the coach page's handler; everything else stays here
+    if (e.target.closest('[data-start]')) return;
+    e.stopPropagation();
+    const vs = e.target.closest('[data-vs]');
+    if (vs) { const [session, ref] = vs.dataset.vs.split('|'); vsSel = null; loadVsRef({ session, ref }); return; }
+    if (e.target.closest('[data-vn-close]')) { vsSel = null; renderVsRef(); return; }
+    const tele = e.target.closest('[data-vs-tele]');
+    if (tele && vsData) { tVs = 'ref:' + vsData.reference; tSession = vsData.session; tFile = vsData.best.file; tCorner = +tele.dataset.vsTele; showPage(9); return; }
+    const row = e.target.closest('[data-vn]') || e.target.closest('.tmap g[data-n]');
+    if (row) { const n = +(row.dataset.vn || row.dataset.n); vsSel = vsSel === n ? null : n; renderVsRef(); if (vsSel != null && innerWidth <= 820) $('vDetail').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  });
+  $('p3ref').addEventListener('change', e => { if (e.target.id === 'vRef') { vsSel = null; loadVsRef({ session: vsData ? vsData.session : '', ref: e.target.value }); } });
+
   // ---------- Reference laps (page 12) ----------
   // Armed here, the server keeps one lap of a GT7 replay from line to line (played straight
   // through), corrects it for the slower replay with the official time and stores it apart from
@@ -3346,6 +3483,13 @@
     html += bkMap(n, bkMarks(n));
     const gain = (n.reserves || []).reduce((a, x) => a + x.loss, 0);
     html += `<div class="card bk"><h2>Kde je čas${gain ? ` <span class="mono" style="float:right;font-size:13px;color:var(--label);letter-spacing:0">−${nf(gain, 2)} s / kolo</span>` : ''}</h2><div class="tiplist">${itemsReserves(n.reserves)}</div></div>`;
+    const vr = b.vsref;
+    if (vr) {
+      const g = vr.best.gap_ms / 1000;
+      html += `<div class="card bk"><h2>Proti ${esc(vr.ref.driver)} <span class="mono" style="float:right;font-size:13px;color:var(--label);letter-spacing:0">${fmtLap(vr.ref.ms)} · ${g > 0 ? '+' : '−'}${nf(Math.abs(g), 3)} s</span></h2><div class="tiplist">`
+        + (vr.top.length ? vr.top.map(c => `<div class="item"><b>T${c.n} +${nf(c.best, 2)} s</b> ${c.short ? '– ' + esc(c.short) : ''}</div>`).join('') : '<div class="item">V žádné zatáčce neztrácíš víc než 0,1 s.</div>')
+        + `</div><div class="muted" style="margin-top:6px">Tvoje nejlepší ${fmtLap(vr.best.ms)}${vr.ref.same_car ? '' : ' · reference s jiným autem'}. Podrobně: Kouč → Reference.</div></div>`;
+    }
     const prep = b.prep;
     const open = prep && prep.items ? prep.items.filter(i => i.status !== 'ok') : [];
     html += `<div class="bkcol"><div class="card bk"><h2>Pozor</h2><div class="tiplist">${itemsRisk(n.risk, 2)}</div></div>`

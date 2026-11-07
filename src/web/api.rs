@@ -20,6 +20,7 @@
 //! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
 //! | GET/POST | `/api/references` | external reference laps from GT7 replays: capture state, captured laps, references; `{"action": "arm"/"stop"/"save"/"remove", …}` |
+//! | GET  | `/api/coach/reference?session=&ref=` | the laps of a session (default: the coach's) against a reference lap of the library (default: the best on its track, the same car first): time lost per corner, figures, what to work on |
 //! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
 //! | POST | `/api/training` | `{"action": "start", "n", "metric"}` / `{"action": "cancel"}` / `{"action": "again"}` |
 //! | GET/POST | `/api/tracks` | track catalogue (GT7 layouts), the stored layouts with their catalogue layout, the lap waiting for its track; `{"action": "answer", "course"}` / `{"action": "dismiss"}` / `{"action": "set_course", "track", "course"}` |
@@ -80,6 +81,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/notebook/note", axum::routing::post(notebook_note))
         .route("/api/briefing", get(briefing))
         .route("/api/training", get(training_state).post(training_action))
+        .route("/api/coach/reference", get(coach_reference))
         .route("/api/references", get(references_state).post(references_action))
         .route("/api/tracks", get(tracks_state).post(tracks_action))
         .route("/api/storage", get(storage_state))
@@ -341,6 +343,8 @@ fn track_and_car(s: &AppState, track: Option<String>, car: Option<i32>) -> (Stri
     let track = track.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| {
         st.saved.race.as_ref().map(|r| r.track.clone()).filter(|t| !t.trim().is_empty()).unwrap_or_else(|| st.practice.saved.track.clone())
     });
+    // A race named by its base track or by a catalogue layout: the layout stored for it
+    let track = st.practice.stored_name(&track).unwrap_or(track);
     let car = car.or_else(|| st.practice_car(&track));
     (track, car)
 }
@@ -529,6 +533,128 @@ struct TrainingBody {
     n: Option<usize>,
     #[serde(default)]
     metric: Option<String>,
+    /// A task against this lap of the reference library (else against the session's best lap)
+    #[serde(default)]
+    reference: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct VsRefQuery {
+    session: Option<String>,
+    #[serde(rename = "ref")]
+    reference: Option<String>,
+}
+
+fn session_car(dir: &std::path::Path) -> i32 {
+    std::fs::read_to_string(dir.join("session.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|m| m["car_code"].as_i64())
+        .unwrap_or(0) as i32
+}
+
+/// The laps of a session against a reference lap of the library (Coach → Proti referenci).
+fn vsref_json(s: &AppState, q: &VsRefQuery) -> Result<serde_json::Value, String> {
+    use crate::coach::{reference, training};
+    let session = match q.session.clone().filter(|x| !x.is_empty()) {
+        Some(x) => x,
+        None => coach_feed(s)["session"].as_str().map(str::to_string).ok_or("Zatím žádná session.")?,
+    };
+    if session.contains('/') || session.contains("..") {
+        return Err("bad session".into());
+    }
+    let dir = s.settings.data.recordings.join(&session);
+    let mut cmp = comparer();
+    let own = crate::storage::comparison(&dir, &mut cmp).map_err(|e| e.to_string())?;
+    let car = session_car(&dir);
+    let root = reference::root(&s.settings.data.root);
+    let Some(track) = own.track.clone() else {
+        return Ok(json!({ "session": session, "track": null, "references": [],
+            "note": "Trať této session neznám – reference se hledají podle trati." }));
+    };
+    let refs = reference::of_track(&root, &track, Some(car));
+    let list: Vec<serde_json::Value> = refs
+        .iter()
+        .map(|r| json!({ "id": r.id, "driver": r.driver, "ms": r.official_ms, "car": r.car, "same_car": r.car_code == car }))
+        .collect();
+    let chosen = match q.reference.as_deref().filter(|x| !x.is_empty()) {
+        Some(id) => refs.iter().find(|r| r.id == id).ok_or("Tahle reference na trať této session nepatří.")?,
+        None => match refs.first() {
+            Some(r) => r,
+            None => {
+                return Ok(json!({ "session": session, "track": track, "references": [],
+                    "note": "Na tuhle trať zatím nemáš žádnou referenci – ulož ji na stránce Reference." }))
+            }
+        },
+    };
+    let res = reference::compare(&mut cmp, &root, &dir, &chosen.id).map_err(|e| e.to_string())?;
+    drop(cmp);
+    let best = res.own_laps().min_by_key(|l| l.ms);
+    let Some(best) = best else {
+        return Ok(json!({ "session": session, "track": track, "references": list, "reference": chosen.id,
+            "note": "V session zatím není žádné celé kolo." }));
+    };
+    let pace = res.pace_ms().unwrap_or(best.ms) as f64;
+    let normal: Vec<&crate::coach::compare::LapResult> = res.own_laps().filter(|l| l.ms as f64 <= pace * 1.07).collect();
+    let cands = training::candidates(&res);
+    let median = |mut v: Vec<f64>| -> Option<f64> {
+        if v.is_empty() {
+            return None;
+        }
+        v.sort_by(f64::total_cmp);
+        Some(v[v.len() / 2])
+    };
+    // The coach's sentences say "the best lap": here it is the reference driver
+    let driver = chosen.driver.clone();
+    let word = |t: &str| {
+        t.replace(" (nejlepší kolo začíná brzdit", " (začíná brzdit")
+            .replace("v nejlepším kole", &format!("u {driver}"))
+            .replace("nejlepší kolo", &driver)
+    };
+    let corners: Vec<serde_json::Value> = res
+        .corners
+        .iter()
+        .map(|c| {
+            let typical = median(normal.iter().map(|l| l.corner(c.n).dt).collect());
+            let cand = cands.iter().find(|x| x.n == c.n);
+            // What to do differently: the typical corner of the normal laps against the reference
+            let stats: Vec<&crate::coach::compare::CornerStats> =
+                normal.iter().filter(|l| !l.incidents.iter().any(|i| i.corner == Some(c.n))).filter_map(|l| l.corner(c.n).stats.as_ref()).collect();
+            let tips: Vec<serde_json::Value> = match (crate::coach::advice::typical(&stats), c.reference.as_ref()) {
+                (Some(t), Some(r)) => crate::coach::advice::corner_tips(&t, r)
+                    .into_iter()
+                    .take(2)
+                    .map(|t| json!({ "key": t.key, "text": word(&t.text), "short": word(&t.short) }))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            json!({
+                "n": c.n, "dir": c.dir, "x": c.x, "z": c.z,
+                "best": best.corner(c.n).dt, "typical": typical, "laps": normal.len(),
+                "ref": c.reference, "you": best.corner(c.n).stats,
+                "tips": tips,
+                // A training task needs a series (3 normal laps): the figures it can be set on
+                "task": cand.map(|x| x.metrics.iter().map(|m| json!({ "metric": m.metric, "label": m.label, "gap": m.gap, "unit": m.unit })).collect::<Vec<_>>()),
+            })
+        })
+        .collect();
+    Ok(json!({
+        "session": session, "track": track, "car": car,
+        "references": list, "reference": chosen.id,
+        "ref": { "id": chosen.id, "driver": chosen.driver, "ms": chosen.official_ms, "car": chosen.car, "same_car": chosen.car_code == car },
+        "best": { "file": best.file, "lap": best.lap, "ms": best.ms, "gap_ms": best.ms - chosen.official_ms },
+        "normal_laps": normal.len(),
+        "corners": corners,
+        "candidates": cands,
+    }))
+}
+
+async fn coach_reference(State(s): State<AppState>, Query(q): Query<VsRefQuery>) -> impl IntoResponse {
+    let res = tokio::task::spawn_blocking(move || vsref_json(&s, &q)).await.unwrap_or_else(|e| Err(e.to_string()));
+    match res {
+        Ok(v) => json_body(v.to_string()).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
 }
 
 /// Start (from the laps of the latest session), cancel, or start the same task again.
@@ -549,7 +675,17 @@ async fn training_action(State(s): State<AppState>, Json(b): Json<TrainingBody>)
                 };
                 let session = coach_feed(&s)["session"].as_str().map(str::to_string).ok_or("no session")?;
                 let dir = s.settings.data.recordings.join(&session);
-                let cmp = crate::storage::comparison(&dir, &mut comparer()).map_err(|e| e.to_string())?;
+                let ext = b.reference.clone().filter(|x| !x.is_empty()).or_else(|| {
+                    // "again" keeps the reference of the task it repeats
+                    (b.action == "again").then(|| saved.active.as_ref().or(saved.done.first()).and_then(|t| t.ext_ref.clone())).flatten()
+                });
+                let cmp = match &ext {
+                    Some(id) => {
+                        crate::coach::reference::compare(&mut comparer(), &crate::coach::reference::root(&s.settings.data.root), &dir, id)
+                    }
+                    None => crate::storage::comparison(&dir, &mut comparer()),
+                }
+                .map_err(|e| e.to_string())?;
                 let track = cmp.track.clone().ok_or_else(|| {
                     "Trať této session neznám – nahraj ji v Tréninku na stránce Strategie, ať ji poznám podle tvaru.".to_string()
                 })?;
@@ -634,6 +770,21 @@ async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
                 .and_then(|sess| crate::coach::fuelsave::analyse(&s.settings.data.recordings.join(sess), &mut c, save).ok())
                 .unwrap_or(json!(null))
         };
+        // Against the best reference on the track: where the fastest own session loses the most
+        let vsref = book["best"]["session"]
+            .as_str()
+            .and_then(|sess| vsref_json(&s, &VsRefQuery { session: Some(sess.to_string()), reference: None }).ok())
+            .filter(|v| v["note"].is_null() && v["best"].is_object())
+            .map(|v| {
+                let mut top: Vec<&serde_json::Value> =
+                    v["corners"].as_array().into_iter().flatten().filter(|c| c["best"].as_f64().unwrap_or(0.0) >= 0.1).collect();
+                top.sort_by(|a, b| b["best"].as_f64().unwrap_or(0.0).total_cmp(&a["best"].as_f64().unwrap_or(0.0)));
+                json!({
+                    "ref": v["ref"], "best": v["best"], "session": v["session"],
+                    "top": top.iter().take(4).map(|c| json!({ "n": c["n"], "best": c["best"], "short": c["tips"][0]["short"] })).collect::<Vec<_>>(),
+                })
+            })
+            .unwrap_or(json!(null));
         json!({
             "race": race,
             "track": track,
@@ -649,6 +800,7 @@ async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
             "fuel": fuel,
             "book": book,
             "prep": prep,
+            "vsref": vsref,
         })
         .to_string()
     })

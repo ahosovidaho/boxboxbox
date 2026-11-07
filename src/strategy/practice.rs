@@ -284,6 +284,26 @@ impl Practice {
         p
     }
 
+    /// The stored layout a track name stands for: the shape of that name, else the one of the
+    /// catalogue layout the name is, else the only one stored of its base track (a race named
+    /// "Circuit de Barcelona-Catalunya" on the championship website → the stored Barcelona layout).
+    pub fn stored_name(&self, track: &str) -> Option<String> {
+        let key = track_key(track);
+        if key.is_empty() {
+            return None;
+        }
+        let shapes = &self.saved.shapes;
+        if let Some(sh) = shapes.iter().find(|s| track_key(&s.track) == key) {
+            return Some(sh.track.clone());
+        }
+        if let Some(c) = super::courses::by_name(track) {
+            return shapes.iter().find(|s| s.course == Some(c.id)).map(|s| s.track.clone());
+        }
+        let base = super::courses::base_of(track)?;
+        let on: Vec<&Shape> = shapes.iter().filter(|s| s.base() == Some(base)).collect();
+        (on.len() == 1).then(|| on[0].track.clone())
+    }
+
     /// Sets the catalogue layout of a stored shape (the driver confirmed it).
     pub fn set_course(&mut self, track: &str, course: Option<i32>) -> bool {
         let key = track_key(track);
@@ -926,6 +946,20 @@ mod tests {
         // Answered twice for one layout: refused
         p.shape(&ring(300.0, 2000).iter().map(|q| (q[0], q[1])).collect::<Vec<_>>());
         assert!(p.answer(874).is_err());
+    }
+
+    #[test]
+    fn a_race_named_by_its_base_track_finds_the_stored_layout() {
+        let mut p = Practice::load(None);
+        let bcn = "Circuit de Barcelona-Catalunya – GP bez šikany";
+        p.saved.shapes.push(Shape { track: bcn.into(), pts: vec![], length_m: 4574.0, course: Some(1249) });
+        p.saved.shapes.push(Shape { track: "Nürburgring".into(), pts: vec![], length_m: 5083.0, course: Some(349) });
+        assert_eq!(p.stored_name("Circuit de Barcelona-Catalunya").as_deref(), Some(bcn));
+        assert_eq!(p.stored_name("Circuit de Barcelona-Catalunya GP Layout No Chicane").as_deref(), Some(bcn));
+        assert_eq!(p.stored_name("Circuit de Barcelona-Catalunya Grand Prix Layout"), None, "another layout");
+        assert_eq!(p.stored_name("Nürburgring GP").as_deref(), Some("Nürburgring"));
+        assert_eq!(p.stored_name(bcn).as_deref(), Some(bcn));
+        assert_eq!(p.stored_name("Suzuka Circuit"), None);
     }
 
     #[test]

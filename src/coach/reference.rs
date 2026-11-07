@@ -116,6 +116,20 @@ pub fn get(root: &Path, id: &str) -> Option<Reference> {
     list(root).into_iter().find(|r| r.id == id)
 }
 
+/// The laps of a session against the saved reference `id` (see [`Comparer::against`]).
+pub fn compare(
+    comparer: &mut super::compare::Comparer,
+    root: &Path,
+    session: &Path,
+    id: &str,
+) -> std::io::Result<super::compare::Comparison> {
+    let not_found = || std::io::Error::new(std::io::ErrorKind::NotFound, "reference not found");
+    let r = get(root, id).ok_or_else(not_found)?;
+    let f = file(root, id).ok_or_else(not_found)?;
+    let ext = super::compare::External { id: r.id.clone(), driver: r.driver.clone(), car_code: r.car_code, car: r.car.clone() };
+    comparer.against(session, &f, r.official_ms, ext)
+}
+
 /// "1:50,099", "1:50.099", "110.099", "110099" → ms
 pub fn parse_time(s: &str) -> Option<i64> {
     let s = s.trim().replace(',', ".");

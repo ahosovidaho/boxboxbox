@@ -2,6 +2,20 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Kouč proti referenci** (Kouč → záložka Reference): kola session proti uloženému
+  referenčnímu kolu (např. RTW_Tan 1:50.099 z žebříčku časovky). Ztráta celkem a po
+  zatáčkách (nejlepší kolo i medián), mapa obarvená podle ztráty a u každé zatáčky srovnání
+  vedle sebe (brzdný bod, puštění brzdy, rychlost ve vrcholu, stupeň, plný plyn, výjezd)
+  s radou kouče („Brzdíš o 39 m dřív – RTW_Tan brzdí až o 39 m dál“). Výběr reference,
+  odkaz rovnou do Telemetrie na tu zatáčku. Ověřeno na Barceloně: součet zatáček 3,953 s
+  proti skutečné ztrátě kola 3,951 s.
+  - **Trénink z reference**: úkol s cílem podle reference; nová kola se hodnotí proti
+    stejné referenci (ne proti nejlepšímu kolu jejich session). Normální kola se měří
+    tvým tempem, ne tempem reference.
+  - **Briefing**: karta „Proti …“ – kde proti referenci ztrácíš nejvíc.
+- Závod zadaný obecným názvem trati (web šampionátu) teď najde uloženou variantu trati –
+  Briefing a Zápisník mají data i pro „Circuit de Barcelona-Catalunya“.
+
 - Oprava: přepínání stránek tažením myší funguje zase na všech stránkách (jako dřív), jen
   ne z formulářů, tabulek a grafů a ne krátkým tahem (myš: aspoň 120 px). Navíc šipky ← / →
   na klávesnici a kliknutí na tečky stránek na jízdním dashboardu.
