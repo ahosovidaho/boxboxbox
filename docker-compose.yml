@@ -20,3 +20,5 @@ services:
       - ./telemetry-data:/data
     environment:
       - TZ=Europe/Prague
+      # jazyk kouče a logu při nastavení „Automaticky“ (dashboard se řídí jazykem prohlížeče)
+      - LANG=cs_CZ.UTF-8

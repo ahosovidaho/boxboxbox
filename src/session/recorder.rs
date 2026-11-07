@@ -30,13 +30,15 @@ pub enum Msg {
     },
     Lap(i16),
     Row(String),
+    /// Id of the car setup driven from now on (stored per lap file in `session.json`)
+    Setup(String),
 }
 
 pub struct Recorder {
     tx: mpsc::Sender<Msg>,
 }
 
-const HEADER: &str = "lap,lap_ms,delta_ms,packet_id,flags,speed_kmh,rpm,gear,suggested_gear,throttle,brake,clutch_pedal,clutch_engagement,rpm_clutch_gearbox,\
+pub const HEADER: &str = "lap,lap_ms,delta_ms,packet_id,flags,speed_kmh,rpm,gear,suggested_gear,throttle,brake,clutch_pedal,clutch_engagement,rpm_clutch_gearbox,\
 steering,sway,heave,surge,\
 pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,rot_x,rot_y,rot_z,rot_w,angvel_x,angvel_y,angvel_z,\
 v_fwd,v_lat,yaw_rate,heading,pitch,roll,body_slip,slip_front,slip_rear,balance,\
@@ -191,6 +193,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
     // Files are created with their first row only, so menus (lap −1/0 without driving) don't
     // leave empty files.
     let mut pending_lap: Option<i16> = None;
+    let mut setup = String::new();
     for msg in rx {
         match msg {
             Msg::Session { car, car_code, resume } => {
@@ -211,7 +214,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                     seq = last_seq(&dir);
                     write_meta(&dir, &meta);
                     let d = dir.display();
-                    println!("{}", tr!("Aufzeichnung fortgesetzt: {d}", "Recording continued: {d}"));
+                    println!("{}", tr!("Aufzeichnung fortgesetzt: {d}", "Recording continued: {d}", "Záznam pokračuje: {d}"));
                     session = Some(dir);
                     continue;
                 }
@@ -220,7 +223,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                 match fs::create_dir_all(&dir) {
                     Ok(()) => {
                         let d = dir.display();
-                        println!("{}", tr!("Aufzeichnung: {d}", "Recording: {d}"));
+                        println!("{}", tr!("Aufzeichnung: {d}", "Recording: {d}", "Záznam: {d}"));
                         meta = serde_json::json!({ "car": car, "car_code": car_code, "started": now_iso(),
                                                    "ended": null, "end_reason": null, "resumed": 0 });
                         write_meta(&dir, &meta);
@@ -229,7 +232,14 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                     }
                     Err(e) => {
                         let d = dir.display();
-                        eprintln!("{}", tr!("Aufzeichnung nicht möglich ({d}): {e}", "Recording not possible ({d}): {e}"));
+                        eprintln!(
+                            "{}",
+                            tr!(
+                                "Aufzeichnung nicht möglich ({d}): {e}",
+                                "Recording not possible ({d}): {e}",
+                                "Záznam není možný ({d}): {e}"
+                            )
+                        );
                         session = None;
                     }
                 }
@@ -244,6 +254,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                     write_meta(dir, &meta);
                 }
             }
+            Msg::Setup(id) => setup = id,
             Msg::Lap(lap) => {
                 file = None;
                 notify();
@@ -253,6 +264,14 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                 if let (None, Some(lap), Some(dir)) = (&file, pending_lap.take(), &session) {
                     seq += 1;
                     let path = dir.join(format!("{seq:03}_lap{lap:02}.csv"));
+                    if !setup.is_empty() {
+                        let name = format!("{seq:03}_lap{lap:02}.csv");
+                        if !meta["lap_setups"].is_object() {
+                            meta["lap_setups"] = serde_json::json!({});
+                        }
+                        meta["lap_setups"][name] = setup.clone().into();
+                        write_meta(dir, &meta);
+                    }
                     match File::create(&path) {
                         Ok(f) => {
                             let mut w = BufWriter::new(f);
@@ -261,7 +280,7 @@ fn writer(root: PathBuf, rx: mpsc::Receiver<Msg>, wake: Option<mpsc::Sender<()>>
                         }
                         Err(e) => {
                             let p = path.display();
-                            eprintln!("{}", tr!("Kann {p} nicht anlegen: {e}", "Cannot create {p}: {e}"));
+                            eprintln!("{}", tr!("Kann {p} nicht anlegen: {e}", "Cannot create {p}: {e}", "Nelze vytvořit {p}: {e}"));
                         }
                     }
                 }

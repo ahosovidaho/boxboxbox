@@ -30,6 +30,8 @@ struct Overview<'a> {
     /// Power curve of the most recent run that has one (short runs have none)
     dyno: Option<&'a Dyno>,
     dyno_time: Option<&'a str>,
+    /// Power curve and shift points from all full-throttle driving with this car
+    track_dyno: Option<super::track::TrackDynoFile>,
 }
 
 #[derive(Serialize)]
@@ -86,6 +88,10 @@ impl Store {
         self.saved.load(Ordering::Relaxed)
     }
 
+    pub fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+
     fn car_dir(&self, car: i32) -> PathBuf {
         self.dir.join(car.to_string())
     }
@@ -104,7 +110,7 @@ impl Store {
         let store = self.clone();
         std::thread::spawn(move || {
             if let Err(e) = store.save(&run) {
-                eprintln!("{}", crate::tr!("Messung nicht gespeichert: {e}", "Measurement not saved: {e}"));
+                eprintln!("{}", crate::tr!("Messung nicht gespeichert: {e}", "Measurement not saved: {e}", "Měření neuloženo: {e}"));
             }
         });
     }
@@ -161,7 +167,7 @@ impl Store {
     /// Everything page 4 shows for one car (default: the car of the most recent run) as JSON:
     /// best values, the list of runs, and full traces of the last and the best acceleration run
     /// and of the last braking run.
-    pub fn overview(&self, car: Option<i32>) -> String {
+    pub fn overview(&self, car: Option<i32>, setup_of: impl FnOnce(i32) -> String) -> String {
         let Some(car) = car.or_else(|| self.latest_car()) else {
             return json!({ "car_code": null, "runs": [], "best": {} }).to_string();
         };
@@ -180,7 +186,15 @@ impl Store {
         let best_id = ["0-100", "0-50"].iter().find_map(|k| best.get(k).map(|b| b.2.id.as_str()));
         let best_accel = runs.iter().find(|r| Some(r.id.as_str()) == best_id && Some(&r.id) != last_accel.map(|l| &l.id));
 
-        let dyno_run = runs.iter().find(|r| r.dyno.is_some());
+        // The run that reached the highest rpm: a run shifted early cannot tell whether revving
+        // higher pays off (every gear looks "late"); newest first among equals
+        let dyno_run = runs.iter().filter(|r| r.dyno.is_some()).fold(None::<&Run>, |best, r| {
+            let rpm = |x: &Run| x.dyno.as_ref().map_or(0.0, |d| d.max_rpm);
+            match best {
+                Some(b) if rpm(b) >= rpm(r) => Some(b),
+                _ => Some(r),
+            }
+        });
         let overview = Overview {
             car_code: car,
             car: runs.first().map(|r| r.car.clone()).or_else(|| crate::telemetry::cars::name(car).map(str::to_string)),
@@ -206,6 +220,7 @@ impl Store {
             last_brake: runs.iter().find(|r| r.kind == Kind::Brake),
             dyno: dyno_run.and_then(|r| r.dyno.as_ref()),
             dyno_time: dyno_run.map(|r| r.time.as_str()),
+            track_dyno: super::track::read(&self.dir, car, &setup_of(car)),
         };
         serde_json::to_string(&overview).unwrap_or_default()
     }

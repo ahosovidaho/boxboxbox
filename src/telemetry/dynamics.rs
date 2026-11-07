@@ -90,22 +90,73 @@ pub fn compute(p: &Packet, steer_ratio: f32) -> Dynamics {
 
 /// Learns the steering ratio of the current car: at moderate speed and little lateral acceleration
 /// the tyres roll almost without slip, then wheel angle ≈ wheelbase · yaw rate / speed.
+///
+/// The ratio is a property of the car, so it is learned once and then kept (`perf/<car>/steer.json`):
+/// a ratio that kept moving with the samples of the last minutes made the balance drift during a
+/// session (F3500: 20.3 → 18.4 over 25 laps, understeer 11 % → 38 % without the car changing).
 pub struct SteerCalibration {
     samples: std::collections::VecDeque<f32>,
     pub ratio: f32,
+    car: i32,
+    locked: bool,
+    dir: Option<std::path::PathBuf>,
 }
 
 impl Default for SteerCalibration {
     fn default() -> Self {
-        SteerCalibration { samples: Default::default(), ratio: 20.0 }
+        SteerCalibration { samples: Default::default(), ratio: 20.0, car: 0, locked: false, dir: None }
     }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedRatio {
+    ratio: f32,
+    samples: usize,
 }
 
 impl SteerCalibration {
     const MAX_SAMPLES: usize = 900;
     const MIN_SAMPLES: usize = 60;
+    /// Samples after which the ratio is fixed for the car (~15 s of gentle cornering)
+    const LOCK_SAMPLES: usize = 900;
+
+    /// `dir`: folder for the per-car files (perf data); `None` = nothing is stored (demo, tests).
+    pub fn with_dir(dir: Option<std::path::PathBuf>) -> Self {
+        SteerCalibration { dir, ..Default::default() }
+    }
+
+    fn file(&self, car: i32) -> Option<std::path::PathBuf> {
+        self.dir.as_ref().map(|d| d.join(car.to_string()).join("steer.json"))
+    }
+
+    /// The car changed: its stored ratio, or learn it from scratch.
+    fn switch(&mut self, car: i32) {
+        self.car = car;
+        self.samples.clear();
+        let saved: Option<SavedRatio> =
+            self.file(car).and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok());
+        match saved {
+            Some(s) if (5.0..60.0).contains(&s.ratio) => {
+                self.ratio = s.ratio;
+                self.locked = true;
+            }
+            _ => {
+                self.ratio = 20.0;
+                self.locked = false;
+            }
+        }
+    }
 
     pub fn update(&mut self, p: &Packet, d: &Dynamics) {
+        if p.car_code == 0 {
+            return;
+        }
+        if p.car_code != self.car {
+            self.switch(p.car_code);
+        }
+        if self.locked {
+            return;
+        }
         let v = d.v_fwd;
         let r = d.yaw_rate;
         let gentle = (8.0..30.0).contains(&v) && p.sway.abs() < 3.0 && d.body_slip.is_some_and(|b| b.abs() < 2.0);
@@ -124,6 +175,16 @@ impl SteerCalibration {
             let mut sorted: Vec<f32> = self.samples.iter().copied().collect();
             sorted.sort_by(f32::total_cmp);
             self.ratio = sorted[sorted.len() / 2];
+        }
+        if self.samples.len() >= Self::LOCK_SAMPLES {
+            self.locked = true;
+            if let Some(f) = self.file(self.car) {
+                if let Some(d) = f.parent() {
+                    let _ = std::fs::create_dir_all(d);
+                }
+                let s = SavedRatio { ratio: (self.ratio * 100.0).round() / 100.0, samples: self.samples.len() };
+                let _ = std::fs::write(f, serde_json::to_string(&s).unwrap_or_default());
+            }
         }
     }
 }

@@ -1,10 +1,11 @@
 // Texts and units of the dashboard.
 //
-// German is the source language: the German text is the key, EN holds the English text.
+// German is the source language: the German text is the key, EN holds the English text and
+// CS the Czech text (a missing Czech text falls back to English).
 // t('Runde {n}', { n: 3 }) → "Runde 3" / "Lap 3". In index.html, elements with `data-t` are
 // translated by translatePage(), `data-t-ph` translates a placeholder and `data-u` shows a unit.
 // Language and units come from the server (config.toml, injected into <script id="server-settings">):
-// "auto" = browser language, and units follow the language (German metric, English imperial).
+// "auto" = browser language, and units follow the language (Czech, German metric; English imperial).
 // The server sends everything metric; U converts for display.
 (() => {
   const EN = {
@@ -33,6 +34,13 @@
     'Übersteuern': 'Oversteer',
     'Rd.': 'laps',
     'Pause': 'Paused',
+    'Pos': 'Pos',
+    'live': 'live',
+    'offline': 'offline',
+    'Coach': 'Coach',
+    'Status': 'Status',
+    'Radius': 'Radius',
+    'Position x / y / z': 'Position x / y / z',
 
     // Page 2
     'G-Kräfte': 'G forces',
@@ -205,14 +213,220 @@
     'Suche PS5 per Broadcast …': 'Searching for the PS5 by broadcast …',
   };
 
+  // Čeština: klíčem je německý text, stejně jako u EN.
+  const CS = {
+    // Page 1
+    'VL': 'LP', 'VR': 'PP', 'HL': 'LZ', 'HR': 'PZ',
+    'Strecke': 'Trať',
+    'Karte entsteht beim Fahren': 'Mapa se kreslí za jízdy',
+    'Balance': 'Balance',
+    'unter': 'nedotáčí',
+    'über': 'přetáčí',
+    'Runde': 'Kolo',
+    'Δ Live': 'Δ živě',
+    'Letzte': 'Poslední',
+    'Beste': 'Nejlepší',
+    'Sprit': 'Palivo',
+    'Ø/Runde': 'Ø/kolo',
+    'Reicht für': 'Vystačí na',
+    'Wasser': 'Voda',
+    'Öl': 'Olej',
+    'Ladedruck': 'Plnicí tlak',
+    'U/min': 'ot/min',
+    'BLOCK': 'BLOK',
+    'SCHLUPF': 'PROKLUZ',
+    'Neutral': 'Neutrální',
+    'Untersteuern': 'Nedotáčivost',
+    'Übersteuern': 'Přetáčivost',
+    'Rd.': 'kol',
+    'Pause': 'Pauza',
+    'Pos': 'Pozice',
+    'live': 'živě',
+    'offline': 'offline',
+    'Coach': 'Kouč',
+    'Status': 'Stav',
+    'Radius': 'Poloměr',
+    'Position x / y / z': 'Poloha x / y / z',
+
+    // Page 2
+    'G-Kräfte': 'G-síly',
+    'Quer': 'Boční',
+    'Längs': 'Podélné',
+    'Vertikal': 'Svislé',
+    'Max. quer / Bremsen': 'Max. boční / brzdění',
+    'Lenkung & Balance': 'Řízení a balance',
+    'Lenkwinkel': 'Úhel natočení',
+    'Gierrate': 'Rychlost stáčení',
+    'Schwimmwinkel': 'Úhel smyku',
+    'Schräglauf vorne': 'Směrová úchylka vpředu',
+    'Schräglauf hinten': 'Směrová úchylka vzadu',
+    'Balance (+ unter / − über)': 'Balance (+ nedotáčí / − přetáčí)',
+    'Quergeschwindigkeit (+ links)': 'Boční rychlost (+ vlevo)',
+    'Lenkübersetzung (gelernt)': 'Převod řízení (naučený)',
+    'Räder': 'Kola',
+    'Temp.': 'Tepl.',
+    'Schlupf %': 'Prokluz %',
+    'Federweg': 'Zdvih pérování',
+    'Pedale & Antrieb': 'Pedály a pohon',
+    'Gas': 'Plyn',
+    'Bremse': 'Brzda',
+    'Kupplung': 'Spojka',
+    'Kraftschluss': 'Záběr',
+    'Drehzahl': 'Otáčky motoru',
+    'Drehzahl Getriebe': 'Otáčky převodovky',
+    'Gang / Empfehlung': 'Rychlost / doporučená',
+    'Energierückgewinnung': 'Rekuperace',
+    'kein Turbo': 'bez turba',
+    'Motor & Sprit': 'Motor a palivo',
+    'Wassertemperatur': 'Teplota vody',
+    'Öltemperatur': 'Teplota oleje',
+    'Öldruck': 'Tlak oleje',
+    'Verbrauch Ø/Runde': 'Spotřeba Ø/kolo',
+    '{n} Runden': '{n} kol',
+    'Fahrzeug & Getriebe': 'Auto a převodovka',
+    'Fahrzeug': 'Auto',
+    'Fahrzeug-ID': 'ID auta',
+    'Fahrzeug {code}': 'Auto {code}',
+    'unbekannt': 'neznámé',
+    'Max. Tempo (berechnet)': 'Max. rychlost (vypočtená)',
+    'Schaltblitz': 'Kontrolka řazení',
+    'Übersetzungen': 'Převody',
+    'Lage & Position': 'Poloha a pozice',
+    'Kurs': 'Směr',
+    'Nicken / Rollen': 'Klopení / náklon',
+    'Fahrzeughöhe': 'Světlá výška',
+    'Tempo': 'Rychlost',
+    'Runden': 'Kola',
+    'Runde {n}': 'Kolo {n}',
+    'Laufend': 'Aktuální',
+    'Δ Live zur Bestrunde': 'Δ živě k nejlepšímu kolu',
+    'Letzte − Beste': 'Poslední − nejlepší',
+    'Tageszeit (Spiel)': 'Denní doba (hra)',
+    'Paketformat': 'Formát paketů',
+    'Aufzeichnung': 'Záznam',
+    'erweitert (344 Bytes)': 'rozšířený (344 bajtů)',
+    'einfach (296 Bytes)': 'základní (296 bajtů)',
+    'läuft': 'běží',
+    'aus': 'vypnuto',
+    'Auf Strecke': 'Na trati',
+    'Lädt': 'Načítá',
+    'Gang drin': 'Zařazeno',
+    'Begrenzer': 'Omezovač',
+    'Handbremse': 'Ruční brzda',
+    'Licht': 'Světla',
+    'Fernlicht': 'Dálková',
+
+    // Page 3
+    'Fokus': 'Na co se zaměřit',
+    'Stand {time}': 'Stav {time}',
+    'Noch kein Feedback.': 'Zatím žádná zpětná vazba.',
+
+    // Page 4
+    'Messung': 'Měření',
+    'Messung läuft': 'Měřím',
+    'Bremse oder Gas weg beendet': 'brzda nebo puštění plynu měření ukončí',
+    'Dieser Lauf': 'Tato jízda',
+    'Bremsung': 'Brzdění',
+    'bis zum Stillstand bremsen': 'brzdi až do zastavení',
+    'Letzter Lauf': 'Poslední jízda',
+    'letzter Lauf': 'poslední jízda',
+    'Bereit': 'Připraveno',
+    'Gas geben startet die Messung': 'Plyn spustí měření',
+    'Keine Messung': 'Neměřím',
+    'Zum Messen anhalten': 'Pro měření zastav',
+    'Anhalten und Gas geben misst die Beschleunigung (zählt ab {v}). Vollbremsung ab {v} bis zum Stillstand misst den Bremsweg.':
+      'Zastav a přidej plyn – změří se zrychlení (počítá se od {v}). Plné brzdění z {v} až do zastavení změří brzdnou dráhu.',
+    'Meile': 'míle',
+    'Steigung': 'stoupání',
+    'Gefälle': 'klesání',
+    '★ Best': '★ Nejlepší',
+    'Tempo über Zeit': 'Rychlost v čase',
+    'Noch keine Beschleunigung gemessen.': 'Zatím nezměřeno žádné zrychlení.',
+    'Bestlauf': 'Nejlepší jízda',
+    'Letzter Lauf = Bestlauf': 'Poslední jízda = nejlepší',
+    'Live': 'Živě',
+    'Tippen zeigt die Werte': 'Klepnutím zobrazíš hodnoty',
+    'Schaltpunkte': 'Body řazení',
+    'Noch keine Auswertung: dafür mit Vollgas durch mehrere Gänge beschleunigen.': 'Zatím nic k vyhodnocení: zrychli na plný plyn přes několik rychlostí.',
+    'Gang': 'Rychlost',
+    'optimal': 'optimum',
+    'gefahren': 'jeto',
+    'spät': 'pozdě',
+    'bis': 'do',
+    'Leistungsband': 'Výkonové pásmo',
+    '% vom Maximum': '% maxima',
+    'Leistung': 'Výkon',
+    'Drehmoment': 'Točivý moment',
+    'Max. Leistung bei {rpm}': 'Max. výkon při {rpm}',
+    'Max. Drehmoment bei {rpm}': 'Max. moment při {rpm}',
+    'Leistungsgewicht am Rad: {v}': 'Poměr výkonu a hmotnosti na kolech: {v}',
+    'Lauf vom {date}': 'Jízda z {date}',
+    'Berechnet aus der Beschleunigung bei Vollgas, ohne Gewichtsangabe. Optimal schalten heißt: im Gang bleiben, solange er bei gleichem Tempo mehr Leistung auf die Straße bringt als der nächste Gang nach dem Schalten. „spät“ = bis zum Begrenzer ausdrehen.':
+      'Vypočteno ze zrychlení na plný plyn, hmotnost není potřeba. Řadit optimálně znamená držet rychlost, dokud při stejné rychlosti přenáší na silnici víc výkonu než další rychlost po přeřazení. „pozdě“ = vytočit až do omezovače.',
+    'Bestwerte': 'Nejlepší hodnoty',
+    'Noch keine Bestwerte für dieses Auto.': 'Pro toto auto zatím žádné nejlepší hodnoty.',
+    'Werte mit mehr als {g} % Steigung oder Gefälle zählen nicht als Bestwert.': 'Hodnoty naměřené ve sklonu nad {g} % se nepočítají jako nejlepší.',
+    'Letzte Läufe': 'Poslední jízdy',
+    'Bremsung aus {v}': 'Brzdění z {v}',
+    'gesamt': 'celkem',
+    'Noch keine Läufe.': 'Zatím žádné jízdy.',
+
+    // Start, settings, connection
+    'Telemetrie-Dashboard & Coach für Gran Turismo 7': 'Telemetrický dashboard a kouč pro Gran Turismo 7',
+    'Tippen startet das Dashboard und hält den Bildschirm wach. Wischen wechselt zwischen Fahr-Ansicht, allen Daten, dem Coach-Feedback und den Messungen (0–100, Bremswege, Schaltpunkte), langes Drücken öffnet die Einstellungen. Tipp: Über „Teilen → Zum Home-Bildschirm“ läuft es im Vollbild.':
+      'Klepnutím spustíš dashboard a obrazovka nezhasne. Přejetím přepínáš mezi jízdním pohledem, všemi daty, koučem, měřením (0–100, brzdné dráhy, body řazení) a strategií; dlouhý stisk otevře nastavení. Tip: přes „Sdílet → Přidat na plochu“ běží na celou obrazovku.',
+    'Starten': 'Spustit',
+    'Einstellungen': 'Nastavení',
+    'Reifenfenster in {u}. Unter „kalt“ blau, im Fenster grün, darüber gelb bis rot. Die Obergrenzen der Racing-Presets sind Community-Messungen, ab denen der Verschleiß überproportional steigt. Die Untergrenze ist ein Schätzwert.':
+      'Teplotní okno pneumatik v {u}. Pod „studené“ modře, v okně zeleně, nad ním žlutě až červeně. Horní meze závodních předvoleb jsou měření komunity, nad kterými opotřebení roste nepřiměřeně. Dolní mez je odhad.',
+    'Reifen': 'Pneumatiky',
+    'Eigene Werte': 'Vlastní hodnoty',
+    'Kalt unter': 'Studené pod',
+    'Optimal bis': 'Optimální do',
+    'Überhitzt ab': 'Přehřáté od',
+    'Glättung (Sekunden)': 'Vyhlazení (sekundy)',
+    'Karte spiegeln': 'Zrcadlit mapu',
+    'Helligkeit': 'Jas',
+    'Burn-in-Schutz (Pixel-Shift)': 'Ochrana proti vypálení (posun pixelů)',
+    'Sprache': 'Jazyk',
+    'Einheiten': 'Jednotky',
+    'Automatisch': 'Automaticky',
+    'Metrisch (km/h, °C)': 'Metrické (km/h, °C)',
+    'Imperial (mph, °F)': 'Imperiální (mph, °F)',
+    'automatisch': 'automaticky',
+    'PS5-IP': 'IP PS5',
+    'Dashboard-Port': 'Port dashboardu',
+    'Fertig': 'Hotovo',
+    'Standardwerte': 'Výchozí hodnoty',
+    'Server nicht erreichbar': 'Server je nedostupný',
+    'Port {p} gilt nach einem Neustart': 'port {p} platí po restartu',
+    'Daten': 'Data',
+    'Konfiguration': 'Konfigurace',
+    'PS5-IP: z. B. 192.168.0.33, leer = automatisch': 'IP PS5: např. 192.168.0.33, prázdné = automaticky',
+    'Antwort ungültig': 'Neplatná odpověď',
+    'Nicht gespeichert: {e}': 'Neuloženo: {e}',
+    'Wake Lock aktiv': 'Obrazovka nezhasne (Wake Lock)',
+    'Wachhalten per Video aktiv': 'Obrazovka nezhasne (video)',
+    'Wachhalten nicht möglich – Auto-Sperre in iOS manuell abschalten': 'Obrazovku nelze udržet zapnutou – vypni v iOS automatický zámek ručně',
+    'Keine Daten von GT7': 'Žádná data z GT7',
+    'PS5 an und GT7 gestartet? Rechner und PS5 im selben Netz? Firewall: UDP 33739 und 33740 frei? Die PS5-IP lässt sich in den Einstellungen fest eintragen (lange drücken).':
+      'Je PS5 zapnutá a GT7 spuštěné? Jsou počítač a PS5 ve stejné síti? Firewall: jsou UDP 33739 a 33740 otevřené? IP PS5 lze pevně zadat v nastavení (dlouhý stisk).',
+    'Verbunden mit PS5 {ip}': 'Připojeno k PS5 {ip}',
+    'Verbunden': 'Připojeno',
+    'Keine Verbindung zum Apexline-Server': 'Žádné spojení se serverem BOXBOXBOX',
+    'Sende an {ip} – keine Antwort': 'Posílám na {ip} – bez odpovědi',
+    'Suche PS5 (zuletzt {ip}) und per Broadcast …': 'Hledám PS5 (naposledy {ip}) a broadcastem …',
+    'Suche PS5 per Broadcast …': 'Hledám PS5 broadcastem …',
+  };
+
   let cfg = {};
   try { cfg = JSON.parse(document.getElementById('server-settings').textContent); } catch {}
-  const browserDe = (navigator.language || '').toLowerCase().startsWith('de');
-  const lang = cfg.language === 'de' || cfg.language === 'en' ? cfg.language : (browserDe ? 'de' : 'en');
+  const browser = (navigator.language || '').toLowerCase().slice(0, 2);
+  const lang = ['cs', 'de', 'en'].includes(cfg.language) ? cfg.language : (['cs', 'de'].includes(browser) ? browser : 'en');
   const imperial = cfg.units === 'imperial' || (cfg.units !== 'metric' && lang === 'en');
 
   function t(text, vars) {
-    let s = lang === 'en' ? (EN[text] ?? text) : text;
+    let s = lang === 'en' ? (EN[text] ?? text) : lang === 'cs' ? (CS[text] ?? EN[text] ?? text) : text;
     if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
     return s;
   }
@@ -238,12 +452,12 @@
 
   function translatePage() {
     document.documentElement.lang = lang;
-    if (lang === 'en') {
+    if (lang !== 'de') {
       document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.textContent.replace(/\s+/g, ' ').trim()); });
     }
     document.querySelectorAll('[data-t-ph]').forEach(el => { el.placeholder = t(el.dataset.tPh); });
     document.querySelectorAll('[data-u]').forEach(el => { el.textContent = UNIT_LABELS[el.dataset.u] ?? el.textContent; });
   }
 
-  window.I18N = { lang, imperial, t, U, locale: lang === 'de' ? 'de-DE' : 'en-US', translatePage, EN };
+  window.I18N = { lang, imperial, t, U, locale: { de: 'de-DE', cs: 'cs-CZ' }[lang] ?? 'en-US', translatePage, EN, CS };
 })();

@@ -25,7 +25,7 @@ fn shown(m: &Mark) -> bool {
 }
 
 pub fn label(key: &str) -> String {
-    let mile = tr!("Meile", "mile");
+    let mile = tr!("Meile", "mile", "míle");
     match key {
         "1/8mi" => format!("1/8 {mile}"),
         "1/4mi" => format!("1/4 {mile}"),
@@ -47,11 +47,11 @@ pub fn headline(r: &Run) -> String {
                 keys.iter().filter_map(|k| r.mark(k)).map(|m| format!("{} {} s", label(&m.key), num(m.t as f64, 2))).collect();
             parts.push(format!("max. {}", i18n::speed(r.v_max as f64)));
             let parts = parts.join(" · ");
-            tr!("Beschleunigung – {parts}", "Acceleration – {parts}")
+            tr!("Beschleunigung – {parts}", "Acceleration – {parts}", "Zrychlení – {parts}")
         }
         Kind::Brake => {
             let (v, d, t) = (i18n::speed(r.v_start as f64), i18n::dist_prec(r.dist_m as f64, 1), num(r.duration_s as f64, 2));
-            tr!("Bremsung aus {v} – {d} in {t} s", "Braking from {v} – {d} in {t} s")
+            tr!("Bremsung aus {v} – {d} in {t} s", "Braking from {v} – {d} in {t} s", "Brzdění z {v} – {d} za {t} s")
         }
     }
 }
@@ -83,46 +83,59 @@ fn details(r: &Run) -> Vec<String> {
     }
     if let Some(d) = &r.dyno {
         let (rpm, unit) = (d.peak[0], i18n::rpm_unit());
-        lines.push(tr!("Leistungsspitze bei {rpm:.0} {unit}", "Peak power at {rpm:.0} {unit}"));
+        lines.push(tr!("Leistungsspitze bei {rpm:.0} {unit}", "Peak power at {rpm:.0} {unit}", "Nejvyšší výkon při {rpm:.0} {unit}"));
         let shifts: Vec<String> = d
             .shifts
             .iter()
             .map(|s| {
                 let (g, n, rpm) = (s.gear, s.gear + 1, s.rpm);
-                let best = if s.late { tr!("spät (Begrenzer)", "late (limiter)") } else { format!("{rpm:.0}") };
+                let best = if s.late { tr!("spät (Begrenzer)", "late (limiter)", "pozdě (omezovač)") } else { format!("{rpm:.0}") };
                 match s.actual {
-                    Some(a) => tr!("{g}→{n} {best} (gefahren {a:.0})", "{g}→{n} {best} (driven {a:.0})"),
+                    Some(a) => tr!("{g}→{n} {best} (gefahren {a:.0})", "{g}→{n} {best} (driven {a:.0})", "{g}→{n} {best} (jeto {a:.0})"),
                     None => format!("{g}→{n} {best}"),
                 }
             })
             .collect();
         if !shifts.is_empty() {
             let shifts = shifts.join(" · ");
-            lines.push(tr!("Beste Schaltpunkte ({unit}): {shifts}", "Best shift points ({unit}): {shifts}"));
+            lines.push(tr!(
+                "Beste Schaltpunkte ({unit}): {shifts}",
+                "Best shift points ({unit}): {shifts}",
+                "Nejlepší body řazení ({unit}): {shifts}"
+            ));
         }
     }
     let sloped: Vec<String> =
         marks.iter().filter(|m| m.g.abs() > 2.0).map(|m| format!("{} {} %", label(&m.key), num(m.g as f64, 1))).collect();
     if !sloped.is_empty() {
         let sloped = sloped.join(" · ");
-        lines.push(tr!("Steigung/Gefälle (zählt nicht als Bestwert): {sloped}", "Slope (does not count as a best value): {sloped}"));
+        lines.push(tr!(
+            "Steigung/Gefälle (zählt nicht als Bestwert): {sloped}",
+            "Slope (does not count as a best value): {sloped}",
+            "Svah (nepočítá se jako nejlepší hodnota): {sloped}"
+        ));
     }
     lines
 }
 
 /// Reads the channels a measurement needs from a recorded lap file.
-fn samples(path: &Path) -> io::Result<Vec<Sample>> {
-    let text = fs::read_to_string(path)?;
+fn samples(path: &Path) -> io::Result<Vec<(Sample, f32)>> {
+    let text = crate::coach::lap::read_text(path)?;
     let mut lines = text.lines();
     let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
     let col = |name: &str| header.iter().position(|c| *c == name);
     let cols = ["packet_id", "flags", "speed_kmh", "rpm", "gear", "throttle", "brake", "pos_y"].map(col);
+    let yaw_col = col("angvel_y");
     // Recorded since 08.10.2026; older files have no transmission ratios
     let ratio_cols: Vec<Option<usize>> = (1..=8).map(|g| col(&format!("gear_ratio_{g}"))).collect();
     let [Some(tick), Some(flags), Some(speed), Some(rpm), Some(gear), Some(thr), Some(brk), Some(y)] = cols else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            tr!("alte Aufzeichnung ohne die nötigen Spalten", "old recording without the required columns"),
+            tr!(
+                "alte Aufzeichnung ohne die nötigen Spalten",
+                "old recording without the required columns",
+                "starý záznam bez potřebných sloupců"
+            ),
         ));
     };
     Ok(lines
@@ -140,6 +153,7 @@ fn samples(path: &Path) -> io::Result<Vec<Sample>> {
                 y: f(y)?,
                 gear_ratios: std::array::from_fn(|i| ratio_cols[i].and_then(f).unwrap_or(0.0)),
             })
+            .map(|s| (s, yaw_col.and_then(f).unwrap_or(0.0)))
         })
         .collect())
 }
@@ -159,7 +173,7 @@ struct SessionInfo {
 
 fn session_info(dir: &Path) -> Option<SessionInfo> {
     let meta: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join("session.json")).ok()?).ok()?;
-    let first_tick = lap_files(dir).iter().find_map(|f| samples(f).ok()?.first().map(|s| s.tick))?;
+    let first_tick = lap_files(dir).iter().find_map(|f| samples(f).ok()?.first().map(|s| s.0.tick))?;
     Some(SessionInfo {
         name: dir.file_name()?.to_string_lossy().into_owned(),
         car_code: meta["car_code"].as_i64()? as i32,
@@ -182,15 +196,48 @@ pub fn run(paths: &[PathBuf], store: Option<&Store>) {
         // Laps of a session are fed in order: a run may continue across the start/finish line
         let mut det = Detector::default();
         let mut runs = Vec::new();
+        // Full-throttle driving of the whole session for the shift points of every gear
+        let mut track = super::track::TrackDyno::for_import(store.map(|s| s.dir().to_path_buf()));
+        let import = match (&info, store) {
+            (Some(i), Some(_)) => !track.imported(i.car_code, &i.name),
+            _ => false,
+        };
         for f in &files {
             match samples(f) {
-                Ok(samples) => runs.extend(samples.into_iter().filter_map(|s| det.update(s))),
+                Ok(samples) => {
+                    for (s, yaw) in samples {
+                        if let (true, Some(i)) = (import, &info) {
+                            track.update(i.car_code, "", &s, yaw);
+                        }
+                        runs.extend(det.update(s));
+                    }
+                }
                 Err(e) => eprintln!("  {}: {e}", f.display()),
             }
         }
         runs.extend(det.flush());
+        if let (true, Some(i)) = (import, &info) {
+            if let Some(t) = track.finish_import(&i.name) {
+                let shifts: Vec<String> = t
+                    .dyno
+                    .shifts
+                    .iter()
+                    .map(|s| format!("{}→{} {}", s.gear, s.gear + 1, if s.late { "↑".into() } else { format!("{:.0}", s.rpm) }))
+                    .collect();
+                let n = t.points;
+                let sh = shifts.join(", ");
+                println!(
+                    "  {}",
+                    tr!(
+                        "Schaltpunkte aus der Fahrt ({n} Punkte): {sh}",
+                        "Shift points from driving ({n} points): {sh}",
+                        "Body řazení z jízdy ({n} bodů): {sh}"
+                    )
+                );
+            }
+        }
         if runs.is_empty() {
-            println!("  {}", tr!("keine Messläufe gefunden", "no measurement runs found"));
+            println!("  {}", tr!("keine Messläufe gefunden", "no measurement runs found", "nenalezeny žádné měřicí jízdy"));
         }
 
         for mut run in runs {
@@ -209,13 +256,17 @@ pub fn run(paths: &[PathBuf], store: Option<&Store>) {
                 (Some(store), Some(_)) => match store.save(&store.dedupe(run)) {
                     Ok(p) => {
                         let p = p.display();
-                        println!("            {}", tr!("gespeichert: {p}", "saved: {p}"));
+                        println!("            {}", tr!("gespeichert: {p}", "saved: {p}", "uloženo: {p}"));
                     }
-                    Err(e) => eprintln!("            {}", tr!("nicht gespeichert: {e}", "not saved: {e}")),
+                    Err(e) => eprintln!("            {}", tr!("nicht gespeichert: {e}", "not saved: {e}", "neuloženo: {e}")),
                 },
                 (Some(_), None) => eprintln!(
                     "            {}",
-                    tr!("nicht gespeichert: session.json fehlt (Auto unbekannt)", "not saved: session.json missing (car unknown)")
+                    tr!(
+                        "nicht gespeichert: session.json fehlt (Auto unbekannt)",
+                        "not saved: session.json missing (car unknown)",
+                        "neuloženo: chybí session.json (auto neznámé)"
+                    )
                 ),
                 _ => {}
             }

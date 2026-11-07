@@ -24,6 +24,8 @@ pub struct Row {
     pub flags: u32,
     pub speed_kmh: f64,
     pub rpm: f64,
+    /// Engine speed where the game's shift light ends (0 = unknown)
+    pub rpm_alert: f64,
     pub gear: f64,
     /// Raw pedal values 0–255
     pub throttle: f64,
@@ -95,9 +97,47 @@ fn field(cells: &[&str], idx: Option<usize>) -> Option<f64> {
     }
 }
 
-/// Loads a recorded lap file.
+/// A lap file may be stored compressed (`x.csv.gz`, sessions are packed when they are closed):
+/// the path with ".gz" appended.
+pub fn gz_path(path: &Path) -> std::path::PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".gz");
+    s.into()
+}
+
+fn read_gz(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(std::io::BufReader::new(fs::File::open(path)?)).read_to_string(&mut text)?;
+    Ok(text)
+}
+
+/// Text of a lap file, packed or not: `x.csv.gz` is read as well when `x.csv` is asked for.
+pub fn read_text(path: &Path) -> std::io::Result<String> {
+    if path.extension().is_some_and(|e| e == "gz") {
+        return read_gz(path);
+    }
+    match fs::read_to_string(path) {
+        Ok(t) => Ok(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && gz_path(path).is_file() => read_gz(&gz_path(path)),
+        Err(e) => Err(e),
+    }
+}
+
+/// The lap file exists, packed or not.
+pub fn exists(path: &Path) -> bool {
+    path.is_file() || gz_path(path).is_file()
+}
+
+/// Name of a lap file as the laps are known by ("010_lap06.csv", also for "010_lap06.csv.gz").
+pub fn lap_name(path: &Path) -> String {
+    let n = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    n.strip_suffix(".gz").map(str::to_string).unwrap_or(n)
+}
+
+/// Loads a recorded lap file (packed or not).
 pub fn load(path: &Path) -> std::io::Result<Vec<Row>> {
-    let text = fs::read_to_string(path)?;
+    let text = read_text(path)?;
     let mut lines = text.lines();
     let header = lines.next().unwrap_or_default();
     let cols = Columns(header.split(',').enumerate().map(|(i, c)| (c.to_string(), i)).collect());
@@ -113,6 +153,7 @@ pub fn load(path: &Path) -> std::io::Result<Vec<Row>> {
     let rps = wheels.map(|w| c(&format!("wheel_rps_{w}")));
     let radius = wheels.map(|w| c(&format!("tire_radius_{w}")));
     let (fuel, total_laps) = (c("fuel"), c("total_laps"));
+    let rpm_alert = c("rpm_alert_max");
 
     let mut rows = Vec::with_capacity(text.len() / 700);
     for line in lines {
@@ -130,6 +171,7 @@ pub fn load(path: &Path) -> std::io::Result<Vec<Row>> {
             flags: f(flags) as u32,
             speed_kmh: f(speed),
             rpm: f(rpm),
+            rpm_alert: f(rpm_alert),
             gear: f(gear),
             throttle: f(thr),
             brake: f(brk),
@@ -240,6 +282,14 @@ pub fn add_dynamics(rows: &mut [Row], ratio: f64) {
     }
 }
 
+/// A kart (tyre radius under 0.2 m; cars have 0.3 m and more). Its slip angles and balance are
+/// not meaningful: they assume a car's wheelbase.
+pub fn is_kart(rows: &[Row]) -> bool {
+    let mut r: Vec<f64> = rows.iter().map(|r| r.tire_radius[0]).filter(|v| *v > 0.0).collect();
+    r.sort_by(f64::total_cmp);
+    r.get(r.len() / 2).is_some_and(|m| *m < 0.2)
+}
+
 /// Cumulative driven distance along the file.
 pub fn with_distance(rows: &mut [Row]) {
     let mut d = 0.0;
@@ -305,9 +355,9 @@ pub fn fmt_t(ms: f64) -> String {
     format!("{}:{:06.3}", min as i64, (ms - min * 60000.0) / 1000.0)
 }
 
-/// Lap time with the decimal separator of the language (German: comma).
+/// Lap time with the decimal separator of the language (German, Czech: comma).
 pub fn t_loc(ms: f64) -> String {
-    if crate::i18n::german() {
+    if crate::i18n::decimal_comma() {
         fmt_t(ms).replace('.', ",")
     } else {
         fmt_t(ms)

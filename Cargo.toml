@@ -13,6 +13,7 @@ axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }
 directories = "6"
+flate2 = "1"
 if-addrs = "0.15"
 salsa20 = "0.10"
 serde = { version = "1", features = ["derive"] }

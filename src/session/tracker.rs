@@ -9,6 +9,7 @@
 use super::recorder::{Msg, Recorder};
 use super::track_map::Track;
 use crate::perf;
+use crate::strategy;
 use crate::telemetry::packet::{flags, Packet};
 use crate::telemetry::{cars, dynamics, Link};
 use crate::tr;
@@ -23,6 +24,12 @@ const SESSION_OFF_END: Duration = Duration::from_secs(60);
 /// Driving on this close to the known track (m) continues the session
 const RESUME_DISTANCE: f32 = 50.0;
 const FUEL_HISTORY: usize = 5;
+/// Standing still this long in a race lap counts as a pit stop
+const PIT_STILL: Duration = Duration::from_secs(5);
+/// After a stop, the tyre temperature is watched this long while driving …
+const TYRE_CHECK: Duration = Duration::from_secs(30);
+/// … and a drop of at least this much (°C, mean of the four) means new tyres
+const TYRE_DROP: f32 = 8.0;
 const LAP_HISTORY: usize = 8;
 /// Smoothing of the balance display (packets): ~0.25 s
 const BALANCE_SMOOTHING: f32 = 15.0;
@@ -121,6 +128,13 @@ pub struct Snapshot {
     pub perf: perf::Live,
     /// Connection to the PS5 (search state while there is no data)
     pub link: Link,
+    /// Race strategy (page 5), `null` without a strategy
+    pub strategy: Option<strategy::Plan>,
+    /// Track segments: result in the running lap and in the previous one (0 none, 1 purple,
+    /// 2 green, 3 red), and the time to the best per segment (ms)
+    pub seg_now: Vec<u8>,
+    pub seg_last: Vec<u8>,
+    pub seg_delta: Vec<Option<i32>>,
 }
 
 pub struct Tracker {
@@ -134,13 +148,47 @@ pub struct Tracker {
     steer_cal: dynamics::SteerCalibration,
     track: Track,
     recorder: Option<Recorder>,
+    /// Diagnostic capture of replays (packets without the "on track" flag)
+    replay: Option<super::replay::Capture>,
     session_car: Option<i32>,
     session_open: bool,
     paused_since: Option<Instant>,
+    /// Standing still on track since (long waits in the pit box are not recorded)
+    standing_since: Option<Instant>,
     off_track_since: Option<Instant>,
     last_packet: Option<Instant>,
     perf: perf::Detector,
     perf_store: Option<perf::Store>,
+    /// Power curve from all full-throttle driving (shift points for every gear)
+    track_dyno: perf::track::TrackDyno,
+    /// Handling counts of the lap being driven (setup advice)
+    handling: strategy::handling::Collector,
+    /// Active car setup (id), the car and lap it was looked up for
+    setup_id: String,
+    setup_car: i32,
+    setup_check: i16,
+    strategy: Option<strategy::Shared>,
+    /// Fuel of the previous packet (refuelling detection)
+    prev_fuel: Option<f32>,
+    /// Fuel burnt in the current lap (refuelling not counted)
+    lap_burn: f32,
+    lap_refuel: bool,
+    /// The current lap was seen from the line (not joined mid-lap): its fuel figure is complete
+    lap_full: bool,
+    /// Standing still since (pit stop detection)
+    still_since: Option<Instant>,
+    /// The car has driven in this race (standing on the grid before the start is no pit stop)
+    raced: bool,
+    /// Mean tyre temperature when the car came to a stand
+    still_temp: f32,
+    /// After a stop: were the tyres changed? (new tyres come out clearly colder)
+    tyre_check: Option<TyreCheck>,
+}
+
+struct TyreCheck {
+    before: f32,
+    moving_since: Option<Instant>,
+    coldest: f32,
 }
 
 impl Tracker {
@@ -153,16 +201,46 @@ impl Tracker {
             fuel_at_lap_start: None,
             fuel_used: Vec::new(),
             balance: None,
-            steer_cal: Default::default(),
+            steer_cal: dynamics::SteerCalibration::with_dir(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
             track: Track::default(),
             recorder,
+            replay: None,
             session_car: None,
             session_open: false,
             paused_since: None,
+            standing_since: None,
             off_track_since: None,
             last_packet: None,
             perf: perf::Detector::default(),
+            handling: Default::default(),
+            track_dyno: perf::track::TrackDyno::new(perf_store.as_ref().map(|s| s.dir().to_path_buf())),
+            setup_id: String::new(),
+            setup_car: -1,
+            setup_check: -1,
             perf_store,
+            strategy: None,
+            prev_fuel: None,
+            lap_burn: 0.0,
+            lap_refuel: false,
+            lap_full: false,
+            still_since: None,
+            raced: false,
+            still_temp: 0.0,
+            tyre_check: None,
+        }
+    }
+
+    pub fn set_replay(&mut self, s: super::replay::Shared) {
+        self.replay = Some(super::replay::Capture::new(s));
+    }
+
+    pub fn set_strategy(&mut self, s: strategy::Shared) {
+        self.strategy = Some(s);
+    }
+
+    fn with_strategy(&self, f: impl FnOnce(&mut strategy::Strategy)) {
+        if let Some(s) = &self.strategy {
+            f(&mut s.lock().unwrap_or_else(|e| e.into_inner()));
         }
     }
 
@@ -200,6 +278,7 @@ impl Tracker {
         } else if p.current_lap < self.lap || (p.current_lap == 0 && self.lap != 0) {
             // Race/time trial restarted: new lap file, map and best lap stay
             self.reset(false);
+            self.with_strategy(|s| s.reset_progress());
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));
             }
@@ -211,22 +290,45 @@ impl Tracker {
         if p.current_lap != self.lap {
             let crossed_line = self.last_tick.is_some();
             let finished = (self.lap > 0 && p.last_lap_ms > 0).then_some(p.last_lap_ms);
-            if let Some(ms) = finished {
+            // (laps of a replay are not the driver's)
+            if let Some(ms) = finished.filter(|_| on_track) {
                 self.snap.laps.push(ms);
                 if self.snap.laps.len() > LAP_HISTORY {
                     self.snap.laps.remove(0);
                 }
             }
-            if let Some(start) = self.fuel_at_lap_start {
-                let used = start - p.fuel_level;
-                // Refuelling in the pit gives negative consumption -> ignore
-                if used > 0.0 {
-                    self.fuel_used.push(used);
-                    if self.fuel_used.len() > FUEL_HISTORY {
-                        self.fuel_used.remove(0);
-                    }
+            // Only complete laps without refuelling (a lap joined midway, e.g. after a server
+            // restart, or with a pit stop would distort the average; so would the short first race
+            // lap on tracks with separate start and finish lines)
+            if self.fuel_at_lap_start.is_some() && self.lap_full && !self.lap_refuel && self.lap_burn > 0.0 && self.track.current_closed() {
+                self.fuel_used.push(self.lap_burn);
+                if self.fuel_used.len() > FUEL_HISTORY {
+                    self.fuel_used.remove(0);
                 }
             }
+            let closed = self.track.current_closed();
+            // A replay (no "on track" flag) feeds nothing: not the race, practice or handling
+            if on_track && self.lap > 0 && crossed_line && self.lap_full && closed {
+                // Practice: which track (layout) the lap was driven on, before the lap is stored
+                let pts = self.track.current_points();
+                self.with_strategy(|s| s.lap_shape(&pts));
+            }
+            let handling = self.handling.take();
+            if on_track && self.lap > 0 && crossed_line && self.lap_full && closed && !self.lap_refuel {
+                let car = p.car_code;
+                self.with_strategy(|s| s.handling_lap(car, handling));
+            }
+            if on_track && self.lap > 0 && crossed_line && self.lap_full {
+                let (lap, burn, refuel) = (self.lap, self.lap_burn, self.lap_refuel);
+                let fuel_start = self.fuel_at_lap_start;
+                self.with_strategy(|s| {
+                    s.practice.fuel_start = fuel_start;
+                    s.lap_finished(lap, burn, refuel, finished, closed)
+                });
+            }
+            self.lap_burn = 0.0;
+            self.lap_refuel = false;
+            self.lap_full = crossed_line;
             self.track.lap_started(finished, crossed_line && p.current_lap > 0);
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));
@@ -234,6 +336,55 @@ impl Tracker {
             self.lap = p.current_lap;
             self.lap_start_tick = (p.current_lap > 0).then_some(p.packet_id);
             self.fuel_at_lap_start = (p.current_lap > 0).then_some(p.fuel_level);
+        }
+
+        // Fuel: burnt per lap, and refuelling in the pit (fuel goes up)
+        let loading = p.flags & flags::LOADING != 0;
+        if let (Some(prev), true) = (self.prev_fuel, on_track && !loading && p.current_lap > 0) {
+            let diff = p.fuel_level - prev;
+            // Refuelling: GT7 adds fuel in steps of ~0.05, part of them just below 0.05, so in the
+            // pit (standing) every rise counts; on the move only clear jumps (a reset)
+            if diff > 0.05 || (diff > 0.0 && p.speed_ms < 1.0) {
+                self.lap_refuel = true;
+                let lap = p.current_lap;
+                self.with_strategy(|s| s.refuelled(lap, diff));
+            } else if diff < 0.0 && !paused {
+                self.lap_burn -= diff;
+            }
+        }
+        self.prev_fuel = Some(p.fuel_level);
+
+        // Pit stop without refuelling: standing still in a race lap for a while. A spin stops the
+        // car for a second or two, a stop for new tyres takes 15 s or more.
+        if p.current_lap <= 0 {
+            self.raced = false;
+        } else if p.speed_ms > 15.0 {
+            self.raced = true;
+        }
+        let tyre_temp = p.tire_temp.iter().sum::<f32>() / 4.0;
+        if self.raced && on_track && !paused && !loading && p.current_lap > 0 && p.speed_ms < 0.2 {
+            if self.still_since.is_none() {
+                self.still_since = Some(now);
+                self.still_temp = tyre_temp;
+            }
+            if self.still_since.is_some_and(|since| now.duration_since(since) >= PIT_STILL) {
+                let lap = p.current_lap;
+                self.lap_refuel = true; // this lap's fuel figure is not a racing lap
+                self.with_strategy(|s| s.stopped(lap));
+                self.tyre_check.get_or_insert(TyreCheck { before: self.still_temp, moving_since: None, coldest: f32::MAX });
+            }
+        } else {
+            self.still_since = None;
+        }
+        // New tyres: clearly colder than the old ones were when the car stopped (today ~12 °C)
+        if let Some(tc) = self.tyre_check.as_mut().filter(|_| p.speed_ms > 5.0 && !paused) {
+            let since = *tc.moving_since.get_or_insert(now);
+            tc.coldest = tc.coldest.min(tyre_temp);
+            if now.duration_since(since) >= TYRE_CHECK {
+                let changed = tc.before - tc.coldest >= TYRE_DROP;
+                self.tyre_check = None;
+                self.with_strategy(|s| s.tyres_detected(changed));
+            }
         }
 
         // Time spent paused must not count towards the lap time
@@ -244,9 +395,33 @@ impl Tracker {
 
         let lap_ms = self.lap_start_tick.map(|t| ((p.packet_id - t) as f64 / TICKS_PER_SEC * 1000.0) as i64);
         let dyn_ = dynamics::compute(p, self.steer_cal.ratio);
-        self.steer_cal.update(p, &dyn_);
-        if let Some(run) = self.perf.update(perf::Sample::from_packet(p)) {
-            self.perf_finished(run, p.car_code);
+        if let Some(c) = self.replay.as_mut() {
+            c.tick(p, &dyn_, now);
+        }
+        // Learning (steering ratio, handling, power curve, measurement runs) only from own driving
+        if on_track {
+            self.steer_cal.update(p, &dyn_);
+            self.handling.tick(p, &dyn_);
+        }
+        let sample = perf::Sample::from_packet(p);
+        // The active setup changes rarely: looked up once per lap (and when the car changes)
+        if self.setup_car != p.car_code || self.setup_check != self.lap {
+            self.setup_car = p.car_code;
+            self.setup_check = self.lap;
+            let mut id = String::new();
+            self.with_strategy(|s| id = s.setups.active_id(p.car_code));
+            if id != self.setup_id {
+                if let Some(r) = &self.recorder {
+                    r.send(Msg::Setup(id.clone()));
+                }
+            }
+            self.setup_id = id;
+        }
+        if on_track {
+            self.track_dyno.update(p.car_code, &self.setup_id, &sample, p.angular_velocity[1]);
+            if let Some(run) = self.perf.update(sample) {
+                self.perf_finished(run, p.car_code);
+            }
         }
         let (x, z) = (p.position[0], p.position[2]);
         let mut delta = None;
@@ -255,12 +430,23 @@ impl Tracker {
             self.track.add(x, z, lap_ms.unwrap_or(0));
             if let Some(ms) = lap_ms {
                 delta = self.track.delta(x, z, ms);
+                self.track.segment(x, z, ms);
             }
-            if let (Some(r), true) = (&self.recorder, self.session_open) {
+            // Standing more than a minute (garage, setup menu in the pit): no rows, otherwise a
+            // long wait fills a lap file with hundreds of MB (19 Oct: 92 MB of standing)
+            if p.speed_ms < 0.5 {
+                self.standing_since.get_or_insert_with(Instant::now);
+            } else {
+                self.standing_since = None;
+            }
+            let idle = self.standing_since.is_some_and(|t| t.elapsed() > Duration::from_secs(60));
+            if let (Some(r), true, false) = (&self.recorder, self.session_open, idle) {
                 r.send(Msg::Row(Recorder::row(p, &dyn_, lap_ms, delta)));
             }
         }
-        self.balance = match (dyn_.balance, self.balance) {
+        // Karts (tyre radius under 0.2 m): the balance assumes a car's wheelbase, show none
+        let kart = p.tire_radius[0] > 0.0 && p.tire_radius[0] < 0.2;
+        self.balance = match (dyn_.balance.filter(|_| !kart), self.balance) {
             (Some(b), Some(prev)) => Some(prev + (b - prev) / BALANCE_SMOOTHING),
             (b, _) => b,
         };
@@ -339,6 +525,9 @@ impl Tracker {
         s.body_height = p.body_height;
         s.road_plane_distance = p.road_plane_distance;
         s.map_version = self.track.map_version;
+        s.seg_now.clone_from(&self.track.seg_now);
+        s.seg_last.clone_from(&self.track.seg_last);
+        s.seg_delta.clone_from(&self.track.seg_delta);
 
         s.steering_deg = p.steering.to_degrees();
         s.yaw_rate_deg = dyn_.yaw_rate.to_degrees();
@@ -354,6 +543,29 @@ impl Tracker {
         s.extended = p.extended;
         s.recording = self.recorder.is_some() && self.session_open;
         s.perf.clone_from(&self.perf.live);
+        if let Some(st) = &self.strategy {
+            // Progress in the lap from the typical lap time (median of recent laps, else best)
+            let mut laps: Vec<i32> = s.laps.iter().copied().filter(|v| *v > 0).collect();
+            laps.sort_unstable();
+            let reference = laps.get(laps.len() / 2).copied().or(s.best_lap_ms).filter(|v| *v > 0);
+            let frac = match (lap_ms, reference) {
+                (Some(ms), Some(r)) => (ms as f32 / r as f32).min(0.99),
+                _ => 0.0,
+            };
+            let live = strategy::Live {
+                lap: p.current_lap,
+                total_laps: p.total_laps,
+                frac,
+                fuel: p.fuel_level,
+                capacity: p.fuel_capacity,
+                car_code: p.car_code,
+                standing: p.speed_ms < 0.3,
+                lap_start_fuel: self.fuel_at_lap_start,
+            };
+            let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
+            st.update_live(live);
+            s.strategy = Some(st.plan());
+        }
         s.perf.saved = self.perf_store.as_ref().map_or(0, perf::Store::saved);
         s
     }
@@ -363,7 +575,7 @@ impl Tracker {
         let start = chrono::Local::now() - chrono::TimeDelta::milliseconds((run.duration_s * 1000.0) as i64);
         run.stamp(car_code, &car, start);
         let h = perf::cli::headline(&run);
-        println!("{}", tr!("Messung: {h}", "Measurement: {h}"));
+        println!("{}", tr!("Messung: {h}", "Measurement: {h}", "Měření: {h}"));
         if let Some(store) = &self.perf_store {
             store.save_in_background(run);
         }
@@ -424,9 +636,9 @@ impl Tracker {
         println!(
             "{}",
             if resume {
-                tr!("Session fortgesetzt ({car})", "Session continued ({car})")
+                tr!("Session fortgesetzt ({car})", "Session continued ({car})", "Session pokračuje ({car})")
             } else {
-                tr!("Session gestartet ({car})", "Session started ({car})")
+                tr!("Session gestartet ({car})", "Session started ({car})", "Session začala ({car})")
             }
         );
     }
@@ -437,18 +649,19 @@ impl Tracker {
             r.send(Msg::End { reason });
         }
         let why = match reason {
-            "pause" => tr!("Pause oder Menü", "pause or menu"),
-            "off_track" => tr!("Strecke verlassen", "left the track"),
-            "no_data" => tr!("keine Daten mehr", "no more data"),
-            "car_change" => tr!("Autowechsel", "car changed"),
+            "pause" => tr!("Pause oder Menü", "pause or menu", "pauza nebo menu"),
+            "off_track" => tr!("Strecke verlassen", "left the track", "opuštění trati"),
+            "no_data" => tr!("keine Daten mehr", "no more data", "žádná další data"),
+            "car_change" => tr!("Autowechsel", "car changed", "změna auta"),
             other => other.to_string(),
         };
-        println!("{}", tr!("Session beendet: {why}", "Session ended: {why}"));
+        println!("{}", tr!("Session beendet: {why}", "Session ended: {why}", "Session skončila: {why}"));
     }
 
     /// Restart: `full = false` (race/time trial restarted) keeps map, best lap and steering ratio;
     /// `full = true` (new car / new track) drops everything.
     fn reset(&mut self, full: bool) {
+        self.track_dyno.save();
         let mut track = std::mem::take(&mut self.track);
         if full {
             track.reset();
@@ -456,7 +669,11 @@ impl Tracker {
             track.lap_started(None, false);
         }
         let session_car = if full { None } else { self.session_car };
-        let steer_cal = if full { Default::default() } else { std::mem::take(&mut self.steer_cal) };
+        let steer_cal = if full {
+            dynamics::SteerCalibration::with_dir(self.perf_store.as_ref().map(|s| s.dir().to_path_buf()))
+        } else {
+            std::mem::take(&mut self.steer_cal)
+        };
         let snap = Snapshot { link: std::mem::take(&mut self.snap.link), ..Default::default() };
         *self = Tracker {
             snap,
@@ -467,6 +684,8 @@ impl Tracker {
             paused_since: self.paused_since,
             off_track_since: self.off_track_since,
             last_packet: self.last_packet,
+            strategy: self.strategy.take(),
+            replay: self.replay.take(),
             ..Tracker::new(self.recorder.take(), self.perf_store.take())
         };
     }
@@ -475,6 +694,29 @@ impl Tracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_replay_capture_survives_a_reset() {
+        // 28 Oct: after a car change (and every restart of a replay at a lower lap) the capture
+        // was gone and "Waiting for a replay" stayed
+        let dir = std::env::temp_dir().join(format!("bbb-reset-{}", std::process::id()));
+        let shared = super::super::replay::shared(dir.clone());
+        let mut t = Tracker::new(None, None);
+        t.set_replay(shared.clone());
+        super::super::replay::arm(&shared, true);
+        let replay = |car: i32, lap: i16, id: i32| Packet {
+            car_code: car,
+            current_lap: lap,
+            packet_id: id,
+            speed_ms: 30.0,
+            flags: flags::IN_GEAR,
+            ..Default::default()
+        };
+        t.update(&replay(3656, 3, 1));
+        t.update(&replay(3590, 9, 2)); // other car: full reset
+        assert_eq!(super::super::replay::status(&shared).phase, "line");
+        let _ = std::fs::remove_dir_all(dir);
+    }
     use std::path::{Path, PathBuf};
 
     fn packet(car: i32, flags: u16, x: f32) -> Packet {
@@ -510,6 +752,143 @@ mod tests {
             }
         }
         now
+    }
+
+    #[test]
+    fn strategy_follows_a_race() {
+        let st = strategy::Strategy::load(None).shared();
+        st.lock().unwrap().set_race(strategy::Race {
+            name: "Test".into(),
+            track: "Barcelona".into(),
+            laps: Some(23),
+            refuel_rate: Some(3.0),
+            pit_required: true,
+            ..Default::default()
+        });
+        let mut t = Tracker::new(None, None);
+        t.set_strategy(st.clone());
+        let (mut fuel, mut id) = (100.0f32, 0i32);
+        let mut now = Instant::now();
+        // 13 laps of 120 s, 7.16 fuel per lap; in lap 12 the car refuels by 60
+        for lap in 1..=13i16 {
+            for k in 0..120 {
+                id += 60; // one second of ticks
+                if lap == 12 && (40..60).contains(&k) {
+                    fuel += 3.0; // standing in the pit: no fuel burnt
+                } else {
+                    fuel -= 7.16 / 120.0;
+                }
+                let p = Packet {
+                    car_code: 1,
+                    flags: flags::ON_TRACK,
+                    current_lap: lap,
+                    total_laps: 23,
+                    fuel_level: fuel,
+                    fuel_capacity: 100.0,
+                    speed_ms: 50.0,
+                    packet_id: id,
+                    last_lap_ms: if lap > 1 { 120_000 } else { 0 },
+                    position: [k as f32, 0.0, lap as f32],
+                    ..Default::default()
+                };
+                now += Duration::from_secs(1);
+                t.update_at(&p, now);
+            }
+        }
+        let s = st.lock().unwrap();
+        let fpl = s.fuel_per_lap().unwrap();
+        assert!((fpl - 7.16).abs() < 0.01, "fuel per lap {fpl}");
+        assert_eq!(s.saved.stops.len(), 1);
+        assert_eq!(s.saved.stops[0].lap, 12);
+        assert!((s.saved.stops[0].fuel_added - 60.0).abs() < 0.01);
+        assert!(s.saved.fuel_laps.iter().any(|l| l.lap == 12 && l.refuel));
+        let plan = t.snap.strategy.clone().unwrap();
+        assert!(plan.pit_done && plan.tyre_question);
+        // 12.99 laps driven, fuel 100 − 13 × 7.16 + 60 ≈ 66.9: 10 laps left need ~74 → one more stop
+        assert_eq!(plan.stops_needed, 1);
+        assert_eq!(plan.total_laps, Some(23));
+    }
+
+    #[test]
+    fn tyre_only_stop_is_detected_but_not_a_spin() {
+        let st = strategy::Strategy::load(None).shared();
+        st.lock().unwrap().set_race(strategy::Race { name: "Test".into(), laps: Some(10), pit_required: true, ..Default::default() });
+        let mut t = Tracker::new(None, None);
+        t.set_strategy(st.clone());
+        let mut now = Instant::now();
+        let mut id = 0;
+        let mut step = |t: &mut Tracker, lap: i16, speed: f32, secs: u32| {
+            for _ in 0..secs * 60 {
+                id += 1;
+                now += Duration::from_micros(16_667);
+                let p = Packet {
+                    car_code: 1,
+                    flags: flags::ON_TRACK,
+                    current_lap: lap,
+                    total_laps: 10,
+                    fuel_level: 70.0,
+                    fuel_capacity: 100.0,
+                    speed_ms: speed,
+                    packet_id: id,
+                    ..Default::default()
+                };
+                t.update_at(&p, now);
+            }
+        };
+        step(&mut t, 1, 0.0, 10); // standing start: lap 1 on the grid before the lights
+        step(&mut t, 4, 50.0, 3);
+        step(&mut t, 4, 0.0, 2); // spin: 2 s standing
+        step(&mut t, 4, 50.0, 3);
+        assert!(st.lock().unwrap().saved.stops.is_empty());
+        step(&mut t, 5, 50.0, 3);
+        step(&mut t, 5, 0.0, 18); // tyre change
+        step(&mut t, 5, 20.0, 3);
+        let mut s = st.lock().unwrap();
+        assert_eq!(s.saved.stops.len(), 1);
+        assert_eq!(s.saved.stops[0].lap, 5);
+        assert!(s.plan().pit_done && s.plan().tyre_question);
+    }
+
+    #[test]
+    fn tyre_change_is_seen_in_the_temperatures() {
+        for (after, changed) in [(62.0f32, true), (78.0, false)] {
+            let st = strategy::Strategy::load(None).shared();
+            st.lock().unwrap().set_race(strategy::Race {
+                name: "Test".into(),
+                laps: Some(11),
+                start_compound: Some("RS".into()),
+                ..Default::default()
+            });
+            let mut t = Tracker::new(None, None);
+            t.set_strategy(st.clone());
+            let (mut now, mut id) = (Instant::now(), 0);
+            let mut step = |t: &mut Tracker, lap: i16, speed: f32, temp: f32, secs: u32| {
+                for _ in 0..secs * 60 {
+                    id += 1;
+                    now += Duration::from_micros(16_667);
+                    let p = Packet {
+                        car_code: 1,
+                        flags: flags::ON_TRACK,
+                        current_lap: lap,
+                        total_laps: 11,
+                        fuel_level: 60.0,
+                        fuel_capacity: 100.0,
+                        speed_ms: speed,
+                        packet_id: id,
+                        tire_temp: [temp; 4],
+                        ..Default::default()
+                    };
+                    t.update_at(&p, now);
+                }
+            };
+            step(&mut t, 7, 50.0, 81.0, 5);
+            step(&mut t, 7, 0.0, 80.0, 18); // in the box
+            step(&mut t, 8, 20.0, after, 35); // pit exit and the first part of the lap
+            let mut s = st.lock().unwrap();
+            assert_eq!(s.saved.stops[0].tyres, Some(changed), "after {after} °C");
+            assert_eq!(s.saved.stints.len(), if changed { 2 } else { 0 });
+            assert!(!s.plan().tyre_question);
+        }
     }
 
     #[test]

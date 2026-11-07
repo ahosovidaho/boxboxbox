@@ -41,11 +41,12 @@ pub async fn serve(port: u16, state: AppState) -> std::io::Result<()> {
             e.kind(),
             tr!(
                 "Port {port} nicht verfügbar ({e}) – anderen Port mit --port oder in der Konfiguration wählen",
-                "Port {port} not available ({e}) – choose another port with --port or in the configuration"
+                "Port {port} not available ({e}) – choose another port with --port or in the configuration",
+                "Port {port} není volný ({e}) – zvol jiný port přes --port nebo v konfiguraci"
             ),
         )
     })?;
-    let ip = local_ip().map_or_else(|| tr!("<diese-IP>", "<this-IP>"), |ip| ip.to_string());
+    let ip = local_ip().map_or_else(|| tr!("<diese-IP>", "<this-IP>", "<tato-IP>"), |ip| ip.to_string());
     println!("Dashboard: http://{ip}:{port}");
     axum::serve(listener, app).await
 }
