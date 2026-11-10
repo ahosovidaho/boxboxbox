@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Telemetrie: pásy zatáček a „Bez pedálu“.** Za grafy je u každé zatáčky pás od brzdného
+  bodu srovnávaného kola po jeho plný plyn (vybraná zatáčka žlutě, s číslem). Nový řádek
+  „Bez pedálu“ ukazuje, kde nejsi ani na plynu, ani na brzdě – tvoje kolo i reference
+  zvlášť – a kolik metrů to je ve výřezu.
+
 - **Kouč proti referenci** (Kouč → záložka Reference): kola session proti uloženému
   referenčnímu kolu (např. RTW_Tan 1:50.099 z žebříčku časovky). Ztráta celkem a po
   zatáčkách (nejlepší kolo i medián), mapa obarvená podle ztráty a u každé zatáčky srovnání
