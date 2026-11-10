@@ -43,6 +43,9 @@ pub struct TaskLap {
     /// Time lost in the corner against the best lap of that session, s
     pub dt: f64,
     pub spin: bool,
+    /// The first flying lap of a run (cold tyres, fuller tank): shown, not judged
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub warmup: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -500,8 +503,12 @@ impl Task {
         }
         // One lap at a time, so a catch-up over several laps judges the series where it ended
         let limit = res.pace_ms().map_or(f64::MAX, |ms| ms as f64 * NORMAL);
+        // The first complete lap of every run: out of the pit or after a restart, the tyres are
+        // still cold – it says little about the corner
+        let first_of_run =
+            |l: &crate::coach::compare::LapResult| res.own_laps().filter(|x| x.run == l.run).map(|x| x.lap).min() == Some(l.lap);
         let mut msg = None;
-        for l in &res.laps {
+        for l in res.own_laps() {
             if self.status != "active" {
                 break;
             }
@@ -513,7 +520,8 @@ impl Task {
             let st = lc.stats.as_ref();
             // A lap off the pace (spin or excursion elsewhere) or a figure far off says nothing
             let sane = |v: f64| if unit(&self.metric) == "km/h" { v.abs() <= 40.0 } else { v.abs() <= 80.0 };
-            let value = if spin || l.ms as f64 > limit {
+            let warmup = first_of_run(l);
+            let value = if spin || warmup || l.ms as f64 > limit {
                 None
             } else {
                 st.and_then(|st| value(&self.metric, st)).map(|v| v - self.ref_value).filter(|v| sane(*v))
@@ -527,6 +535,7 @@ impl Task {
                 exit: st.map(|s| s.v_exit),
                 dt: lc.dt,
                 spin,
+                warmup,
             });
             if value.is_some() {
                 msg = self.judge();
@@ -631,7 +640,7 @@ impl Task {
             "target_loss": self.target_loss, "target_text": self.target_text(),
             "now": now, "now_text": now.map(|v| signed(v, u)), "now_ok": now.map(|v| self.ok(v)),
             "exit_change": exit, "valid": n, "need": need, "max": SERIES_MAX,
-            "laps": self.laps.iter().map(|l| json!({ "lap": l.lap, "run": l.run, "value": l.value, "ok": l.value.map(|v| self.ok(v)), "spin": l.spin, "dt": l.dt })).collect::<Vec<_>>(),
+            "laps": self.laps.iter().map(|l| json!({ "lap": l.lap, "run": l.run, "value": l.value, "ok": l.value.map(|v| self.ok(v)), "spin": l.spin, "warmup": l.warmup, "dt": l.dt })).collect::<Vec<_>>(),
             "verdict": verdict,
         })
     }
@@ -740,10 +749,23 @@ mod tests {
         assert_eq!(t.target_text(), "≥ −3,6 km/h");
         // New laps (the files do not exist, so their time is 0: count them by moving the start back)
         t.created_ts = -1;
-        let new = session(vec![lap("030_lap30.csv", 30, 53_900, 77.0, 120.5, 0.05), lap("031_lap31.csv", 31, 53_850, 76.9, 120.0, 0.04)]);
+        // The first lap of the run (cold tyres) is shown but not judged, even when it is off
+        let warm = lap("029_lap29.csv", 29, 54_400, 70.0, 118.0, 0.3);
+        let new = session(vec![
+            warm.clone(),
+            lap("030_lap30.csv", 30, 53_900, 77.0, 120.5, 0.05),
+            lap("031_lap31.csv", 31, 53_850, 76.9, 120.0, 0.04),
+        ]);
         assert!(t.update(&new, "s2", Path::new("/nonexistent")).is_none());
+        assert!(t.laps[0].warmup && t.laps[0].value.is_none());
+        assert_eq!(t.valid().len(), 2);
         assert_eq!(t.view()["verdict"]["tone"], "good");
-        let more = session(vec![lap("032_lap32.csv", 32, 53_800, 76.6, 119.5, 0.03)]);
+        let more = session(vec![
+            warm,
+            lap("030_lap30.csv", 30, 53_900, 77.0, 120.5, 0.05),
+            lap("031_lap31.csv", 31, 53_850, 76.9, 120.0, 0.04),
+            lap("032_lap32.csv", 32, 53_800, 76.6, 119.5, 0.03),
+        ]);
         let radio = t.update(&more, "s2", Path::new("/nonexistent")).unwrap();
         assert_eq!(t.status, "done");
         assert!(radio["text"].as_str().unwrap().contains("9"), "{radio}");
@@ -780,9 +802,10 @@ mod tests {
         }
         let mut t = start(&session(laps), "s1", "x", 1, 9, "apex").unwrap();
         t.created_ts = -1;
-        let new: Vec<LapResult> = (0..5).map(|i| lap(&format!("04{i}_lap4{i}.csv"), 40 + i, 54_000, 79.0, 115.0, 0.05)).collect();
+        let mut new = vec![lap("039_lap39.csv", 39, 54_200, 76.0, 118.0, 0.1)];
+        new.extend((0..5).map(|i| lap(&format!("04{i}_lap4{i}.csv"), 40 + i, 54_000, 79.0, 115.0, 0.05)));
         let mut s = new.clone();
-        s.truncate(3);
+        s.truncate(4);
         assert!(t.update(&session(s), "s2", Path::new("/x")).is_none(), "3 laps: exit worse, keep going");
         assert_eq!(t.view()["verdict"]["tone"], "warn");
         t.update(&session(new), "s2", Path::new("/x")).unwrap();

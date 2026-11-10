@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
 
+- **Trénink: první kolo běhu se nepočítá.** Po výjezdu z boxu nebo restartu jsou pneumatiky
+  studené – takové kolo se u úkolu ukáže jako „zahř.“, ale do vyhodnocení série nejde.
+  Kola nehodnocená kvůli tempu se teď značí „mimo“ (dřív všechno jako „smyk“).
+- Souhrn session: „Souhrn závodu“ / „Souhrn tréninku“ (místo „Souhrn závod“ / „časovka“).
+
 - **Telemetrie: pásy zatáček a „Bez pedálu“.** Za grafy je u každé zatáčky pás od brzdného
   bodu srovnávaného kola po jeho plný plyn (vybraná zatáčka žlutě, s číslem). Nový řádek
   „Bez pedálu“ ukazuje, kde nejsi ani na plynu, ani na brzdě – tvoje kolo i reference

@@ -2485,7 +2485,9 @@
     const top = Math.max(...losses, 0.1) * 1.15, H = 60;
     const goal = Math.round(a.target_loss / top * H);
     const barHtml = bars.map(l => {
-      if (l.value == null) return `<div><span style="color:#FF5A4E">smyk</span><i style="height:3px;background:#5A2420"></i></div>`;
+      // Not judged: the first lap of a run (cold tyres), a spin in the corner, or a lap off the pace
+      if (l.value == null) return l.warmup ? `<div title="První kolo po výjezdu – studené pneumatiky, nepočítá se"><span style="color:var(--dim)">zahř.</span><i style="height:3px;background:#2A2A31"></i></div>`
+        : `<div><span style="color:#FF5A4E">${l.spin ? 'smyk' : 'mimo'}</span><i style="height:3px;background:#5A2420"></i></div>`;
       const h = Math.max(3, Math.round(tLoss(a.metric, l.value) / top * H));
       return `<div><span style="color:${l.ok ? 'var(--green)' : '#FF5A4E'}">${esc(tSigned(l.value, '').trim())}</span><i style="height:${h}px;background:${l.ok ? '#1F7A45' : '#5A2420'}"></i></div>`;
     }).join('') + '<div><span>·</span><i style="height:3px;background:#1C1C22"></i></div>'.repeat(pad);

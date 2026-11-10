@@ -603,7 +603,7 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     let best = times.iter().copied().fold(f64::INFINITY, f64::min);
     let clean: Vec<f64> = times.iter().copied().filter(|t| *t < best * 1.03).collect();
     let race = metrics.values().any(|m| m.race);
-    let kind = if race { tr!("Rennen", "race", "závod") } else { tr!("Zeitfahren", "time trial", "časovka") };
+    let kind = if race { tr!("Rennen", "race", "závodu") } else { tr!("Training", "practice", "tréninku") };
     let reference = laps[times.iter().position(|t| *t == best).unwrap_or(0)];
     let (count, best_t, best_lap) =
         (laps.len(), t_loc(best), if res.multi_run() { lap_tag(res, reference) } else { reference.lap.to_string() });
