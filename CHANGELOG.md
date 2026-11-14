@@ -1,6 +1,18 @@
 # Changelog
 
-## BOXBOXBOX 0.8.0-fork1 – rozpracováno (větev phase6-kouc)
+## BOXBOXBOX 0.8.0-fork1 – rozpracováno
+
+- **Hlasový inženýr** (Nastavení → Hlasový inženýr, pro každé zařízení zvlášť): čte hlášení
+  nahlas českým hlasem zařízení – nic na serveru.
+  - Čas kola v cíli s rozdílem proti nejlepšímu („Kolo 1 30 celá 5, nejrychlejší kolo!“,
+    „o 3 desetiny pomaleji“).
+  - Závod: box (hned, přeruší ostatní), varování k palivu a gumám, plán zastávek.
+  - Kouč: rádio po vyhodnoceném kole a verdikt úkolu; úkol před jeho zatáčkou, po průjezdu
+    výsledek.
+  - Volitelně tip před každou zatáčkou (trénink).
+  - Méně naléhavé věci čekají na rovinku (plný plyn, bez brzdy), nic se neopakuje.
+  - Hlas, rychlost řeči, hlasitost, „Zkusit hlas“. Na iPhonu/iPadu se zvuk odemkne
+    tlačítkem Spustit; stránka musí zůstat na obrazovce.
 
 - **Trénink: první kolo běhu se nepočítá.** Po výjezdu z boxu nebo restartu jsou pneumatiky
   studené – takové kolo se u úkolu ukáže jako „zahř.“, ale do vyhodnocení série nejde.

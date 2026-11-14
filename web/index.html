@@ -1487,6 +1487,18 @@
     <label><span data-t>Karte spiegeln</span> <input type="checkbox" id="sMirror"></label>
     <label><span data-t>Helligkeit</span> <input type="range" id="sBright" min="0.35" max="1" step="0.05"></label>
     <label><span data-t>Burn-in-Schutz (Pixel-Shift)</span> <input type="checkbox" id="sShift"></label>
+    <h2 class="sect">Hlasový inženýr</h2>
+    <p class="phint" style="margin-top:0">Čte hlášení nahlas – do sluchátek nebo z reproduktoru zařízení. Funguje, dokud je stránka otevřená a obrazovka svítí. Nastavení platí jen pro toto zařízení.</p>
+    <label><span>Hlas zapnutý</span> <input type="checkbox" id="sVoice"></label>
+    <label><span>Časy kol</span> <input type="checkbox" id="sVoLap"></label>
+    <label><span>Závod: box, palivo, gumy</span> <input type="checkbox" id="sVoRace"></label>
+    <label><span>Kouč: rádio po kole a úkol</span> <input type="checkbox" id="sVoCoach"></label>
+    <label><span>Tip před každou zatáčkou <small>(jen trénink, hodně mluví)</small></span> <input type="checkbox" id="sVoHints"></label>
+    <label><span>Hlas</span> <select id="sVoName"></select></label>
+    <label><span>Rychlost řeči</span> <input type="range" id="sVoRate" min="0.8" max="1.5" step="0.05"></label>
+    <label><span>Hlasitost</span> <input type="range" id="sVoVol" min="0.2" max="1" step="0.05"></label>
+    <button class="big ghost" id="sVoTest" type="button">Zkusit hlas</button>
+    <div class="sinfo" id="sVoInfo"></div>
     <h2 class="sect">Server</h2>
     <label><span data-t>Sprache</span> <select id="sLang"><option value="auto" data-t>Automatisch</option><option value="cs">Čeština</option><option value="de">Deutsch</option><option value="en">English</option></select></label>
     <label><span data-t>Einheiten</span> <select id="sUnits"><option value="auto" data-t>Automatisch</option><option value="metric" data-t>Metrisch (km/h, °C)</option><option value="imperial" data-t>Imperial (mph, °F)</option></select></label>
@@ -1574,7 +1586,8 @@
     rh: { name: 'Racing Hard', cold: 65, hot: 93, over: 105 },
     custom: { name: t('Eigene Werte') },
   };
-  const DEFAULTS = { preset: 'rm', cold: 65, hot: 90, over: 102, smooth: 4, mirror: false, bright: 1, shift: true };
+  const DEFAULTS = { preset: 'rm', cold: 65, hot: 90, over: 102, smooth: 4, mirror: false, bright: 1, shift: true,
+    voice: false, voLap: true, voRace: true, voCoach: true, voHints: false, voName: '', voRate: 1.1, voVol: 1 };
   let cfg = { ...DEFAULTS };
   try {
     const saved = JSON.parse(load('settings') || '{}');
@@ -1595,12 +1608,13 @@
   const applyCfg = () => document.documentElement.style.setProperty('--brightness', cfg.bright);
   applyCfg();
 
-  const fields = { sCold: 'cold', sHot: 'hot', sOver: 'over', sSmooth: 'smooth', sBright: 'bright' };
-  const checks = { sShift: 'shift', sMirror: 'mirror' };
+  const fields = { sCold: 'cold', sHot: 'hot', sOver: 'over', sSmooth: 'smooth', sBright: 'bright', sVoRate: 'voRate', sVoVol: 'voVol' };
+  const checks = { sShift: 'shift', sMirror: 'mirror', sVoice: 'voice', sVoLap: 'voLap', sVoRace: 'voRace', sVoCoach: 'voCoach', sVoHints: 'voHints' };
   const openSettings = () => {
     for (const [id, k] of Object.entries(fields)) $(id).value = TEMPS.has(k) ? showTemp(cfg[k]) : cfg[k];
     for (const [id, k] of Object.entries(checks)) $(id).checked = cfg[k];
     $('sPreset').value = cfg.preset;
+    voiceList();
     $('sErr').hidden = true;
     $('settings').hidden = false;
     loadServerSettings();
@@ -1651,6 +1665,8 @@
     }
     for (const [id, k] of Object.entries(checks)) cfg[k] = $(id).checked;
     cfg.preset = $('sPreset').value;
+    cfg.voName = $('sVoName').value;
+    if (!cfg.voice) voiceStop();
     applyCfg(); save(); drawMap(true);
   };
   $('sBright').addEventListener('input', () => { cfg.bright = parseFloat($('sBright').value); applyCfg(); });
@@ -1808,7 +1824,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && wantAwake) keepAwake();
   });
-  $('go').onclick = () => { $('start').hidden = true; keepAwake(); };
+  $('go').onclick = () => { $('start').hidden = true; keepAwake(); voiceUnlock(); };
 
   // ---------- Burn-in protection ----------
   // Every 30 s everything moves a few pixels along an orbit, so static elements (labels,
@@ -2067,6 +2083,7 @@
     if (d.live && d.on_track && !d.paused && !d.loading) lastActive = Date.now();
     updateNolink();
     if (!d.live) return;
+    voiceTick(d);
     if (d.map_version !== mapVersion) fetchMap(d.map_version);
 
     // Tyres: smoothing always runs, so the average is right after a page change
@@ -3288,6 +3305,160 @@
     if (el.className !== cls) el.className = cls;
   }
   let tZone = null, tPass = null;
+
+  // ---------- Voice engineer ----------
+  // Speaks the calls a race engineer would give: lap times, box and fuel calls, the coach's radio
+  // after a lap, the training task before its corner. Speech synthesis of the browser (a Czech
+  // voice on iOS, macOS, Android): nothing on the server. Urgent calls (box, fuel) are spoken at
+  // once; the rest waits for a straight (full throttle, no brake) so nothing talks into a corner.
+  const VO = { q: [], said: new Map(), lastLaps: null, lapKey: null, radioSeen: null, taskLap: null, passSeen: null, hintSeen: new Set(), straight: 0, unlocked: false };
+  const synth = window.speechSynthesis;
+  function voiceVoices() {
+    if (!synth) return [];
+    const all = synth.getVoices();
+    const cs = all.filter(v => /^cs/i.test(v.lang));
+    return cs.length ? cs : all.filter(v => v.default);
+  }
+  function voiceList() {
+    const sel = $('sVoName');
+    const vs = voiceVoices();
+    sel.innerHTML = vs.length ? vs.map(v => `<option value="${esc(v.name)}">${esc(v.name)}${/^cs/i.test(v.lang) ? '' : ' (' + esc(v.lang) + ')'}</option>`).join('') : '<option value="">výchozí</option>';
+    if (cfg.voName && vs.some(v => v.name === cfg.voName)) sel.value = cfg.voName;
+    setText('sVoInfo', !synth ? 'Tento prohlížeč neumí syntézu řeči.'
+      : !vs.some(v => /^cs/i.test(v.lang)) ? 'Český hlas v zařízení nenacházím – na iPhonu ho přidáš v Nastavení → Zpřístupnění → Předčítání → Hlasy → Čeština.'
+      : 'Hlášení se čtou česky. Na iPhonu/iPadu musí stránka zůstat na obrazovce.');
+  }
+  if (synth) synth.addEventListener('voiceschanged', () => { if (!$('settings').hidden) voiceList(); });
+  // Written text → what sounds right
+  function speakable(text) {
+    return String(text)
+      .replace(/\bT(\d+)\b/g, 'zatáčka $1')
+      .replace(/(\d),(\d)/g, '$1 celá $2')
+      .replace(/(\d)\s*L\b/g, '$1 litru').replace(/(\d)\s*l\b/g, '$1 litru')
+      .replace(/km\/h/g, 'kilometrů za hodinu').replace(/\/\s*kolo/g, 'na kolo')
+      .replace(/(\d)\s*s\b/g, '$1 sekundy').replace(/(\d)\s*m\b/g, '$1 metrů').replace(/%/g, ' procent')
+      .replace(/[–—]/g, ', ').replace(/[„“"()]/g, '').replace(/≈|~/g, 'asi ').replace(/·/g, ', ').replace(/\+/g, 'plus ').replace(/−/g, 'minus ')
+      .replace(/\s+/g, ' ').replace(/\s+([,.!?])/g, '$1').replace(/,\s*,/g, ',').trim();
+  }
+  function voiceSpeak(text) {
+    if (!synth) return;
+    const u = new SpeechSynthesisUtterance(speakable(text));
+    const v = voiceVoices().find(x => x.name === cfg.voName) || voiceVoices()[0];
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'cs-CZ';
+    u.rate = cfg.voRate || 1.1;
+    u.volume = cfg.voVol == null ? 1 : cfg.voVol;
+    synth.speak(u);
+  }
+  // iOS speaks only after a tap: the start button (and the test button) unlock it
+  function voiceUnlock() {
+    if (!synth || VO.unlocked) return;
+    VO.unlocked = true;
+    const u = new SpeechSynthesisUtterance(cfg.voice ? 'Rádio připraveno.' : ' ');
+    u.lang = 'cs-CZ'; u.volume = cfg.voice ? (cfg.voVol || 1) : 0;
+    const v = voiceVoices()[0]; if (v) u.voice = v;
+    synth.speak(u);
+  }
+  function voiceStop() { VO.q = []; if (synth) synth.cancel(); }
+  $('sVoTest').onclick = () => {
+    VO.unlocked = true;
+    cfg.voRate = parseFloat($('sVoRate').value) || 1.1; cfg.voVol = parseFloat($('sVoVol').value) || 1; cfg.voName = $('sVoName').value;
+    if (synth) synth.cancel();
+    voiceSpeak('Kolo 1:30,3 – o 2 desetiny rychleji. T8: plný plyn o 23 m dřív. Box na konci tohoto kola.');
+  };
+  // prio 0 = now (box, fuel), 1 = soon (warnings, lap time), 2 = on a straight (coach, tips)
+  function say(text, prio, key, cooldownS) {
+    if (!cfg.voice || !synth || !text) return;
+    const k = key || text, now = Date.now();
+    if (VO.said.has(k) && now - VO.said.get(k) < (cooldownS ?? 600) * 1000) return;
+    VO.said.set(k, now);
+    if (prio === 0) { synth.cancel(); VO.q = VO.q.filter(m => m.prio === 0); voiceSpeak(text); return; }
+    VO.q.push({ text, prio, at: now });
+  }
+  // Seconds → spoken lap time "1:30,3"; the gap in tenths
+  // "1:30,3" is read as a clock time: say it as a race engineer would, "1 30 celá 3"
+  function lapWords(ms) {
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 100) / 10, whole = Math.floor(s), tenth = Math.round((s - whole) * 10);
+    return `${m} ${whole < 10 ? 'nula ' + whole : whole} celá ${tenth}`;
+  }
+  function gapWords(ms) {
+    const a = Math.abs(ms) / 1000;
+    if (a < 0.05) return 'stejně jako nejlepší';
+    const amount = a < 1 ? `${Math.round(a * 10)} ${Math.round(a * 10) === 1 ? 'desetinu' : Math.round(a * 10) < 5 ? 'desetiny' : 'desetin'}` : `${nf(a, 1)} sekundy`;
+    return `o ${amount} ${ms > 0 ? 'pomaleji' : 'rychleji'}`;
+  }
+  function voiceTick(d) {
+    if (!cfg.voice || !synth) return;
+    const driving = d.on_track !== false && !d.paused && !d.loading;
+    // A straight: full throttle, no brake, for a second (or not driving at all)
+    VO.straight = driving && d.throttle >= 95 && d.brake < 2 ? VO.straight + 1 : 0;
+    // Lap time at the line
+    const laps = d.laps || [];
+    if (VO.lastLaps == null) VO.lastLaps = laps.length;
+    if (laps.length > VO.lastLaps && cfg.voLap && driving) {
+      const ms = laps[laps.length - 1], prev = laps.slice(0, -1).filter(x => x > 0);
+      const best = prev.length ? Math.min(...prev) : null;
+      const gap = best == null ? '' : ms < best ? ' – nejrychlejší kolo!' : ' – ' + gapWords(ms - best);
+      say(`Kolo ${lapWords(ms)}${gap}`, 1, 'lap' + laps.length + ':' + ms, 5);
+    }
+    VO.lastLaps = laps.length;
+    const practice = appMode === 'practice';
+    // Race: box, fuel and tyre calls (not the instructions about the app)
+    const st = d.strategy;
+    if (cfg.voRace && st && !practice && driving) {
+      for (const c of st.calls || []) {
+        if (c.level === 'box') say(c.text, 0, 'box|' + c.text + '|' + d.lap, 3600);
+        else if (c.level === 'warn' && !/^Zastávka\?|^Vyber|^Nastav/.test(c.text)) say(c.text, 1, 'warn|' + c.text + '|' + d.lap, 3600);
+        else if (/^(Box v kole|Palivo|Gumy na limitu|Spotřeba se)/.test(c.text)) say(c.text, 2, 'info|' + c.text, 900);
+      }
+    }
+    // The coach's radio after a lap (and the verdict of a training task)
+    if (cfg.voCoach && coachData && coachData.radio) {
+      const sig = coachData.session + '|' + coachData.radio.map(r => r.text).join('|');
+      if (VO.radioSeen != null && sig !== VO.radioSeen) coachData.radio.slice(0, 2).forEach(r => say(r.text, 2, 'radio|' + r.text, 1200));
+      VO.radioSeen = sig;
+    }
+    if (!driving || !d.pos) { voiceFlush(d, driving); return; }
+    const x = d.pos[0], z = d.pos[2];
+    const dist = (a, b) => Math.hypot(a - x, b - z);
+    // Training task: before its corner, once a lap; after the pass, how it went
+    const task = cfg.voCoach && trainData && trainData.active && trainData.active.status === 'active' ? trainData.active : null;
+    if (task) {
+      const tc = coachCorners.find(c => c.n === task.n);
+      const bx = tc && (tc.bx != null ? dist(tc.bx, tc.bz) : dist(tc.x, tc.z) - 120);
+      if (tc && bx < 300 && bx > 120 && VO.taskLap !== d.lap) { VO.taskLap = d.lap; say(`T${task.n}: ${task.short}`, 1, 'task|' + d.lap, 30); }
+      if (tPass && tPass.n === task.n && VO.passSeen !== tPass.until) {
+        VO.passSeen = tPass.until;
+        say(`Průjezd ${tSigned(tPass.v, 'km/h')}${tPass.ok ? ', splněno' : ', ještě ne'}`, 1, 'pass|' + tPass.until, 5);
+      }
+    }
+    // A tip before every corner (practice only, off by default)
+    if (cfg.voHints && practice && coachCorners.length > 1) {
+      for (const c of coachCorners) {
+        if (task && c.n === task.n) continue;
+        const dd = c.bx != null ? dist(c.bx, c.bz) : dist(c.x, c.z) - 120;
+        const key = d.lap + '|' + c.n;
+        if (dd < 220 && dd > 90 && !VO.hintSeen.has(key)) {
+          VO.hintSeen.add(key);
+          const h = cornerHint(c);
+          if (h.cls === 'bad' && c.dt != null && c.dt > 0.08) say(`T${c.n}: ${h.text}`, 1, 'hint|' + key, 30);
+        }
+      }
+      if (VO.hintSeen.size > 400) VO.hintSeen.clear();
+    }
+    voiceFlush(d, driving);
+  }
+  // One message at a time; the coach's notes wait for a straight (at most 25 s, then dropped)
+  function voiceFlush(d, driving) {
+    if (synth.speaking || synth.pending || !VO.q.length) return;
+    const now = Date.now();
+    VO.q = VO.q.filter(m => m.prio < 2 || now - m.at < 25000);
+    VO.q.sort((a, b) => a.prio - b.prio || a.at - b.at);
+    const m = VO.q[0];
+    if (!m) return;
+    if (m.prio >= 2 && driving && VO.straight < 30) return;
+    VO.q.shift();
+    voiceSpeak(m.text);
+  }
 
   function renderRace(d, tireVals) {
     const st = d.strategy;
