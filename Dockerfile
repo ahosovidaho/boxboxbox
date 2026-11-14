@@ -11,7 +11,13 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 COPY src ./src
 COPY web ./web
 COPY data ./data
-RUN cargo build --release --locked
+# COPY keeps the files' old times: without the touch cargo may take the placeholder above as up to
+# date and ship an empty program (it starts, prints nothing, exits 0 – the container restarts for
+# ever). The check fails the build instead of shipping that.
+RUN rm -rf target/release/.fingerprint/boxboxbox-* \
+    && find src web data -type f -exec touch {} + \
+    && cargo build --release --locked \
+    && test "$(stat -c %s target/release/boxboxbox)" -gt 2000000
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 1000 --home-dir /data boxbox \
