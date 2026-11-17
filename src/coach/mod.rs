@@ -16,4 +16,5 @@ pub mod start;
 pub mod stint;
 pub mod trailbrake;
 pub mod training;
+pub mod voice;
 pub mod worker;
