@@ -328,6 +328,7 @@ mod tests {
                 fuel_per_lap: Some(2.3),
                 max_age: 7,
                 life: None,
+                ..Default::default()
             }],
             fuel_per_lap: Some(2.3),
             ..Default::default()
@@ -383,6 +384,7 @@ mod tests {
                 fuel_per_lap: None,
                 max_age: 5,
                 life: None,
+                ..Default::default()
             }],
             ..Default::default()
         };
