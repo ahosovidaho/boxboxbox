@@ -2,6 +2,19 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Opotřebení gum podle času na kolo, bez vlivu paliva.** Kolo se zpomaluje se stářím gum a
+  zrychluje, jak ubývá paliva – z plné nádrže se to v tréninku skoro vyruší a opotřebení vycházelo
+  nulové (Yas Marina RS: 0,01 s/kolo, v závodě ve skutečnosti 0,64).
+  - Závod odliší palivo od gum (stinty začínají s různým množstvím paliva): změří vliv paliva
+    (s/litr) a opotřebení každé směsi; uloží se pro auto a trať a použije v dalších plánech
+    i během téhož závodu.
+  - Trénink: opotřebení v rámci každého výjezdu s odečteným palivem (ze závodu, jinak 0,04 s/l),
+    zrychlení mezi tréninky se už nepočítá jako „gumy nedegradují“.
+  - Směs, na které jsi ještě nezávodil: odhad z té závodní podle výdrže (RM 13 kol vs RS 9 →
+    0,64 × 9/13 = 0,44 s/kolo); u tempa i opotřebení je vidět, odkud číslo je.
+- **Ztráta zastávkou** se měří proti kolům kolem zastávky, ne proti mediánu celého závodu
+  (Yas: 14,0 s → ~16,5 s).
+
 - **Strategie: smysluplná alternativa a vysvětlení.** Alternativa je teď plán s jiným počtem
   zastávek (typicky o zastávku méně na tvrdších gumách), ne doporučení s krátkým stintem na
   pomalejší směsi. Pod ní „Proč“: kolik stojí/ušetří zastávky, tankování, tempo gum a opotřebení,

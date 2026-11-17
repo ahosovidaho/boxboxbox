@@ -3228,10 +3228,13 @@
   }
 
   // "Z tréninku (Mitsubishi …): SS 8 kol (vydrží 8) · SM 10 kol · spotřeba 6,50"
+  // Time lost per lap of tyre age and where the figure comes from
+  const WEAR_SRC = { race: 'změřeno v závodě', race_life: 'odhad ze závodu podle výdrže', practice: 'z tréninku', manual: 'zadáno' };
+  const wearFrom = c => c.deg == null ? '' : `, ztrácí ${nf(c.deg, 2)} s/kolo stáří${WEAR_SRC[c.deg_source] ? ` (${WEAR_SRC[c.deg_source]})` : ''}`;
   function practiceFrom(u) {
     const car = lastData && lastData.car_code === u.car && lastData.car_name ? lastData.car_name : `auto ${u.car}`;
     const parts = u.compounds.filter(c => c.laps > 0 || c.life)
-      .map(c => c.laps ? `${c.compound} ${c.laps} ${kol(c.laps)}${c.life ? ` (vydrží ${c.life})` : ''}${c.stale ? ` – naposledy ${dayCz(c.last)}, tempo nejspíš lepší, než ukazuje` : ''}` : `${c.compound} bez kol – tempo neznámé${c.life ? ` (vydrží ${c.life})` : ''}`);
+      .map(c => c.laps ? `${c.compound} ${c.laps} ${kol(c.laps)}${c.life ? ` (vydrží ${c.life})` : ''}${wearFrom(c)}${c.stale ? ` – naposledy ${dayCz(c.last)}, tempo nejspíš lepší, než ukazuje` : ''}` : `${c.compound} bez kol – tempo neznámé${c.life ? ` (vydrží ${c.life})` : ''}`);
     if (u.fuel_per_lap != null) parts.push(`spotřeba ${nf(u.fuel_per_lap, 2)}`);
     return `Z tréninku (${car}): ${parts.join(' · ')}.`;
   }
