@@ -156,7 +156,7 @@ fn practice_json(st: &strategy::Strategy, track: Option<String>, car: Option<i32
     let track = track.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| p.track.clone());
     let car = car.or_else(|| st.practice_car(&track));
     let setup = car.map(|c| st.setups.active_id(c)).unwrap_or_default();
-    let summary = car.map(|c| st.practice.summary(c, &setup, &track, p.wear_mult, p.fuel_mult));
+    let summary = car.map(|c| st.practice.summary(c, &setup, &track, p.wear_mult, p.fuel_mult, st.fuel_s(c, &track)));
     let setup_name = car.and_then(|c| st.setups.name_of(c, &setup));
     // The last laps of this car on this track
     let key = strategy::practice::track_key(&track);

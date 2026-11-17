@@ -11,6 +11,7 @@
 //! Saved in `strategy.json` in the data folder, so a restart keeps the race and the calibration.
 
 pub mod courses;
+pub mod degr;
 pub mod handling;
 pub mod planner;
 pub mod practice;
@@ -121,6 +122,9 @@ pub struct FuelLap {
     /// Lap time from GT7, ms
     #[serde(default)]
     pub ms: Option<i32>,
+    /// Fuel at the start of the lap, litres
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fuel: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -264,6 +268,9 @@ pub struct PracticeCompound {
     pub life: Option<u32>,
     pub pace: Option<f32>,
     pub deg: Option<f32>,
+    /// Where the wear comes from: "race" (measured in a race), "race_life" (from a compound raced
+    /// on, scaled by tyre life), "practice", "manual"
+    pub deg_source: &'static str,
     /// Day of the last practice lap on it
     pub last: Option<String>,
     /// Pace is old: the driver got this much faster since (see [`practice::CompoundStats::stale`])
@@ -448,12 +455,57 @@ impl Strategy {
             return;
         }
         self.saved.fuel_laps.retain(|l| l.lap != lap);
-        self.saved.fuel_laps.push(FuelLap { lap, used, refuel, ms: ms.filter(|m| *m > 0) });
+        let fuel = self.practice.fuel_start;
+        self.saved.fuel_laps.push(FuelLap { lap, used, refuel, ms: ms.filter(|m| *m > 0), fuel });
         if self.saved.fuel_laps.len() > 200 {
             self.saved.fuel_laps.remove(0);
         }
         self.measure_pit_loss(lap);
+        self.measure_wear();
         self.save();
+    }
+
+    /// Fuel effect and tyre wear from the race so far: once stints start with different fuel
+    /// loads the two can be told apart (see [`degr::race_fit`]). Stored per car, track and
+    /// compound; practice and the next races on the track use it.
+    fn measure_wear(&mut self) {
+        let Some(race) = self.saved.race.clone() else { return };
+        let car = self.live.car_code;
+        if car <= 0 || race.no_wear {
+            return;
+        }
+        let stints = effective_stints(&self.saved);
+        // The lap with the stop out; the lap after it only when slow (pit exit after the line),
+        // which the outlier filter of the fit takes care of
+        let near_stop = |l: i16| self.saved.stops.iter().any(|s| l == s.lap);
+        // (compound, obs)
+        let mut laps: Vec<(String, degr::Obs)> = Vec::new();
+        for f in &self.saved.fuel_laps {
+            let (Some(ms), Some(fuel)) = (f.ms, f.fuel) else { continue };
+            if f.lap < 2 || f.refuel || near_stop(f.lap) {
+                continue;
+            }
+            let at = (f.lap - 1) as f32;
+            let Some((run, st)) = stints.iter().enumerate().rev().find(|(_, s)| s.start <= at + 0.01) else { continue };
+            let Some(compound) = st.compound.clone() else { continue };
+            laps.push((compound, degr::Obs { run, age: at - st.start, fuel, secs: ms as f32 / 1000.0 }));
+        }
+        let all: Vec<degr::Obs> = laps.iter().map(|(_, o)| *o).collect();
+        let Some((_, fuel_s)) = degr::race_fit(&all) else { return };
+        self.saved.calibration.insert(fuel_s_key(car, &race.track), fuel_s);
+        let mut names: Vec<&String> = laps.iter().map(|(c, _)| c).collect();
+        names.sort();
+        names.dedup();
+        let wear = race.tyre_wear.unwrap_or(1.0);
+        let mut found = Vec::new();
+        for c in names {
+            let mine: Vec<degr::Obs> = laps.iter().filter(|(n, _)| n == c).map(|(_, o)| *o).collect();
+            // Per compound with the race's fuel effect: one stint is enough then
+            if let Some(d) = degr::run_fit(&mine, fuel_s) {
+                found.push((race_deg_key(car, &race.track, c, wear), d));
+            }
+        }
+        self.saved.calibration.extend(found);
     }
 
     /// After the out-lap: (in-lap + out-lap) − 2 × typical lap − refuelling time = pit loss of the
@@ -465,8 +517,10 @@ impl Strategy {
         let ms = |l: i16| self.saved.fuel_laps.iter().find(|f| f.lap == l).and_then(|f| f.ms);
         let (Some(inlap), Some(outlap)) = (ms(stop.lap), ms(stop.lap + 1)) else { return };
         let near_stop = |l: i16| self.saved.stops.iter().any(|s| l == s.lap || l == s.lap + 1);
+        // Typical lap around this stop (the pace changes over a race: fuel, tyres, rubber)
+        let near = |f: &&FuelLap| (f.lap - stop.lap).abs() <= 5;
         let mut clean: Vec<i32> =
-            self.saved.fuel_laps.iter().filter(|f| f.lap > 1 && !f.refuel && !near_stop(f.lap)).filter_map(|f| f.ms).collect();
+            self.saved.fuel_laps.iter().filter(|f| f.lap > 1 && !f.refuel && !near_stop(f.lap)).filter(near).filter_map(|f| f.ms).collect();
         if clean.len() < 3 {
             return;
         }
@@ -795,7 +849,7 @@ impl Strategy {
         let setup = car.map(|c| self.setups.active_id(c)).unwrap_or_default();
         let wear = race.tyre_wear.unwrap_or(1.0);
         let fuel = race.fuel_mult.unwrap_or(1.0);
-        let summary = car.map(|c| self.practice.summary(c, &setup, &race.track, wear, fuel));
+        let summary = car.map(|c| self.practice.summary(c, &setup, &race.track, wear, fuel, self.fuel_s(c, &race.track)));
         let key = practice::track_key(&race.track);
         let laps: Vec<&practice::PracticeLap> = self
             .practice
@@ -822,6 +876,11 @@ impl Strategy {
 
     /// Car the practice figures are taken for: the car driven now if it has practice laps on the
     /// track, else the car with the most laps there.
+    /// Lap time per litre of fuel for this car on this track (measured in a race, else default)
+    pub fn fuel_s(&self, car: i32, track: &str) -> f32 {
+        fuel_s_of(&self.saved.calibration, car, track)
+    }
+
     pub fn practice_car(&self, track: &str) -> Option<i32> {
         let key = practice::track_key(track);
         let has = |c: i32| self.practice.saved.laps.iter().any(|l| l.car == c && practice::track_key(&l.track) == key);
@@ -843,7 +902,8 @@ impl Strategy {
             self.practice.saved.life.values().sum::<u32>(),
             self.practice.saved.laps.iter().filter(|l| l.counted).count()
         ) + &format!(
-            "|{:?}|{}|{}",
+            "|{:?}|{:?}|{}|{}",
+            self.saved.calibration.iter().filter(|(k, _)| k.starts_with("deg|") || k.starts_with("fuelk|")).collect::<Vec<_>>(),
             self.practice.saved.compound,
             self.practice.saved.track,
             car.map(|c| self.setups.active_id(c)).unwrap_or_default()
@@ -854,7 +914,7 @@ impl Strategy {
             }
         }
         let setup = car.map(|c| self.setups.active_id(c)).unwrap_or_default();
-        let mut result = fill_from_practice(&self.practice, race, car, &setup);
+        let mut result = fill_from_practice(&self.practice, &self.saved.calibration, race, car, &setup);
         // No starting compound set: the tyres last marked in practice on this track
         if result.0.start_compound.is_none() && practice::track_key(&self.practice.saved.track) == practice::track_key(&race.track) {
             result.0.start_compound.clone_from(&self.practice.saved.compound);
@@ -959,22 +1019,70 @@ impl Strategy {
 }
 
 /// See [`Strategy::race_with_practice`]. What the driver entered for the race wins.
-fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i32>, setup: &str) -> (Race, Option<PracticeUse>) {
+/// Calibration key of the fuel effect (s per litre) measured in a race with this car on this track
+fn fuel_s_key(car: i32, track: &str) -> String {
+    format!("fuelk|{car}|{}", practice::track_key(track))
+}
+
+/// Calibration key of the tyre wear (s per lap of tyre age) measured in a race
+fn race_deg_key(car: i32, track: &str, compound: &str, wear_mult: f32) -> String {
+    format!("deg|{car}|{}|{}|{wear_mult}", practice::track_key(track), compound.to_uppercase())
+}
+
+fn fuel_s_of(calibration: &BTreeMap<String, f32>, car: i32, track: &str) -> f32 {
+    calibration.get(&fuel_s_key(car, track)).copied().unwrap_or(degr::DEFAULT_FUEL_S)
+}
+
+fn fill_from_practice(
+    practice: &practice::Practice,
+    calibration: &BTreeMap<String, f32>,
+    race: &Race,
+    car: Option<i32>,
+    setup: &str,
+) -> (Race, Option<PracticeUse>) {
     let mut r = race.clone();
     let Some(car) = car else { return (r, None) };
     if race.track.trim().is_empty() {
         return (r, None);
     }
-    let s = practice.summary(car, setup, &race.track, race.tyre_wear.unwrap_or(1.0), race.fuel_mult.unwrap_or(1.0));
+    let s = practice.summary(
+        car,
+        setup,
+        &race.track,
+        race.tyre_wear.unwrap_or(1.0),
+        race.fuel_mult.unwrap_or(1.0),
+        fuel_s_of(calibration, car, &race.track),
+    );
     if s.compounds.is_empty() && s.fuel_per_lap.is_none() {
         return (r, None);
     }
+    let wear = race.tyre_wear.unwrap_or(1.0);
+    let raced = |c: &str| calibration.get(&race_deg_key(car, &race.track, c, wear)).copied();
     for c in &s.compounds {
         let spec = r.tyres.entry(c.compound.clone()).or_default();
         spec.life = spec.life.or(c.life);
         spec.pace = spec.pace.or(c.pace);
+    }
+    // A compound raced on: its wear in the race. One not raced on: scaled from a raced one by how
+    // long each lasts (time lost follows wear) – practice laps are not driven as hard and show a
+    // fraction of the race wear, mixing the two would favour the compound never raced.
+    let reference = s.compounds.iter().find_map(|c| Some((raced(&c.compound)?, r.tyres.get(&c.compound)?.life?)));
+    let mut sources: BTreeMap<String, &'static str> = BTreeMap::new();
+    for c in &s.compounds {
+        let life = r.tyres.get(&c.compound).and_then(|t| t.life);
+        let (deg, source) = match (raced(&c.compound), reference, life) {
+            (Some(d), ..) => (Some(d), "race"),
+            (None, Some((d, ref_life)), Some(l)) if l > 0 => (Some(d * ref_life as f32 / l as f32), "race_life"),
+            _ => (c.deg, if c.deg.is_some() { "practice" } else { "" }),
+        };
+        sources.insert(c.compound.clone(), source);
         if race.deg.is_none() {
-            spec.deg = spec.deg.or(c.deg);
+            let spec = r.tyres.entry(c.compound.clone()).or_default();
+            if spec.deg.is_none() {
+                spec.deg = deg;
+            } else {
+                sources.insert(c.compound.clone(), "manual");
+            }
         }
     }
     r.fuel_per_lap = r.fuel_per_lap.or(s.fuel_per_lap);
@@ -988,7 +1096,8 @@ fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i3
                 laps: c.laps,
                 life: c.life,
                 pace: c.pace,
-                deg: c.deg,
+                deg: r.tyres.get(&c.compound).and_then(|t| t.deg).or(c.deg),
+                deg_source: sources.get(&c.compound).copied().unwrap_or(""),
                 last: c.last.clone(),
                 stale: c.stale,
             })
@@ -1876,8 +1985,62 @@ mod tests {
         // What was entered for the race wins over practice
         let mut manual = race.clone();
         manual.tyres.insert("SS".into(), TyreSpec { life: Some(20), ..Default::default() });
-        let (filled, _) = fill_from_practice(&s.practice, &manual, Some(3475), "");
+        let (filled, _) = fill_from_practice(&s.practice, &BTreeMap::new(), &manual, Some(3475), "");
         assert_eq!(filled.tyres["SS"].life, Some(20));
-        assert!((filled.tyres["SS"].deg.unwrap() - 0.30).abs() < 0.01);
+        assert!((filled.tyres["SS"].deg.unwrap() - (0.30 + 0.04 * 6.5)).abs() < 0.01, "{:?}", filled.tyres["SS"]);
+    }
+
+    #[test]
+    fn race_measures_fuel_effect_and_wear() {
+        // The Yas Marina race of 17 Nov: four stints on RS, starting with different fuel
+        let mut s = Strategy::load(None);
+        s.saved.race = Some(Race {
+            track: "Yas Marina Circuit".into(),
+            laps: Some(30),
+            tyre_wear: Some(7.0),
+            refuel_rate: Some(3.0),
+            ..Default::default()
+        });
+        s.live.car_code = 3562;
+        s.saved.stints = [0.0, 9.0, 19.0, 26.0].iter().map(|&start| Stint { start, compound: Some("RS".into()), wear: vec![] }).collect();
+        s.saved.stops =
+            [(9, 42.5), (19, 47.8), (26, 35.3)].iter().map(|&(lap, fuel_added)| Stop { lap, fuel_added, tyres: Some(true) }).collect();
+        let laps: [(i16, i32, f32); 26] = [
+            (2, 90765, 92.5),
+            (3, 90937, 84.5),
+            (4, 92302, 76.7),
+            (5, 91954, 69.4),
+            (6, 92709, 61.9),
+            (7, 95267, 54.6),
+            (8, 94477, 47.3),
+            (11, 91200, 67.8),
+            (12, 90902, 60.2),
+            (13, 92146, 52.6),
+            (14, 91401, 45.0),
+            (15, 100506, 37.5),
+            (16, 91744, 30.4),
+            (17, 92497, 23.1),
+            (18, 92975, 15.7),
+            (21, 89935, 42.3),
+            (22, 90687, 34.8),
+            (23, 90472, 27.3),
+            (24, 92024, 19.8),
+            (25, 101321, 12.2),
+            (27, 88516, 33.5),
+            (28, 89342, 25.9),
+            (29, 89572, 18.3),
+            (30, 89123, 10.8),
+            (10, 90222, 75.5),
+            (20, 90110, 49.7),
+        ];
+        for (lap, ms, fuel) in laps {
+            s.practice.fuel_start = Some(fuel);
+            s.lap_finished(lap, 7.5, false, Some(ms), true);
+        }
+        let k = s.saved.calibration["fuelk|3562|yasmarinacircuit"];
+        assert!((k - 0.0325).abs() < 0.005, "{k}");
+        let deg = s.saved.calibration["deg|3562|yasmarinacircuit|RS|7"];
+        // Laps 15 and 25 (mistakes) are left out by the fit
+        assert!((0.5..0.9).contains(&deg), "{deg}");
     }
 }

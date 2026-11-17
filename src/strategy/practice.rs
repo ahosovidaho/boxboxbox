@@ -238,18 +238,22 @@ fn median(v: &mut [f32]) -> Option<f32> {
     Some(if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
 }
 
-/// Least squares t = base + deg·age.
-fn fit(points: &[(f32, f32)]) -> Option<(f32, f32)> {
-    let n = points.len() as f32;
-    let (sx, sy) = points.iter().fold((0.0, 0.0), |(a, b), (x, y)| (a + x, b + y));
-    let (mx, my) = (sx / n, sy / n);
-    let sxx: f32 = points.iter().map(|(x, _)| (x - mx).powi(2)).sum();
-    if sxx <= 0.0 {
-        return None;
-    }
-    let sxy: f32 = points.iter().map(|(x, y)| (x - mx) * (y - my)).sum();
-    let deg = sxy / sxx;
-    Some((my - deg * mx, deg))
+/// Laps for the wear fit: a new run (set of tyres) whenever the tyre age does not go up. Laps
+/// without the fuel at their start get the run's typical load (the fuel effect then cancels).
+fn runs(laps: &[&&&PracticeLap]) -> Vec<super::degr::Obs> {
+    let mut run = 0;
+    let mut prev: Option<u32> = None;
+    laps.iter()
+        .map(|l| {
+            if prev.is_some_and(|a| l.age <= a) {
+                run += 1;
+            }
+            prev = Some(l.age);
+            // Fuel at the start of the lap: recorded, else roughly a full tank minus what was burnt
+            let fuel = l.fuel_start.unwrap_or(100.0 - l.fuel * l.age as f32);
+            super::degr::Obs { run, age: l.age as f32, fuel, secs: l.ms as f32 / 1000.0 }
+        })
+        .collect()
 }
 
 pub struct Practice {
@@ -580,7 +584,7 @@ impl Practice {
     }
 
     /// Figures for a car on a track at the given multipliers.
-    pub fn summary(&self, car: i32, setup: &str, track: &str, wear_mult: f32, fuel_mult: f32) -> Summary {
+    pub fn summary(&self, car: i32, setup: &str, track: &str, wear_mult: f32, fuel_mult: f32, fuel_s: f32) -> Summary {
         let key = track_key(track);
         let laps: Vec<&PracticeLap> = self
             .saved
@@ -610,15 +614,21 @@ impl Practice {
                     all.iter().filter(|l| (l.ms as f32 / 1000.0) <= typical + OUTLIER_S.max(typical * OUTLIER_SHARE)).collect();
                 let points: Vec<(f32, f32)> = ok.iter().map(|l| (l.age as f32, l.ms as f32 / 1000.0)).collect();
                 let (min_age, max_age) = ok.iter().fold((u32::MAX, 0), |(lo, hi), l| (lo.min(l.age), hi.max(l.age)));
-                let fitted = (points.len() >= FIT_LAPS && max_age.saturating_sub(min_age) >= FIT_SPAN).then(|| fit(&points)).flatten();
                 let mean_age = points.iter().map(|p| p.0).sum::<f32>() / points.len().max(1) as f32;
-                let (base, deg) = match fitted {
-                    Some((b, d)) if d >= 0.0 => (Some(b), Some(d)),
-                    // Getting faster on older tyres (warming up, learning the track): no wear seen
-                    Some(_) => (Some(typical), Some(0.0)),
+                let mean_t = points.iter().map(|p| p.1).sum::<f32>() / points.len().max(1) as f32;
+                // Wear within each run (one set of tyres), the lighter tank taken out
+                // (see [`super::degr`]); a plain line over all laps hides the wear completely
+                let obs = runs(&ok);
+                let deg = (points.len() >= FIT_LAPS && max_age.saturating_sub(min_age) >= FIT_SPAN)
+                    .then(|| super::degr::run_fit(&obs, fuel_s))
+                    .flatten();
+                // Time on new tyres with half a tank (50 l): compounds compared at the same load
+                let mean_fuel = obs.iter().map(|o| o.fuel).sum::<f32>() / obs.len().max(1) as f32;
+                let base = match deg {
+                    Some(d) => Some(mean_t - fuel_s * (mean_fuel - 50.0) - d * mean_age),
                     // Too few laps for a slope: typical time back to new tyres at the default rate
-                    None if !points.is_empty() => (Some(typical - super::DEFAULT_DEG * mean_age), None),
-                    None => (None, None),
+                    None if !points.is_empty() => Some(typical - super::DEFAULT_DEG * mean_age),
+                    None => None,
                 };
                 let mut fuel: Vec<f32> = ok.iter().map(|l| l.fuel).filter(|f| *f > 0.0).collect();
                 CompoundStats {
@@ -847,17 +857,19 @@ mod tests {
         stint(&mut p, "SM", 10, 161.0, 0.12, 6.9);
         // A spin: way off, ignored
         p.lap_done(3475, "", 6.9, false, Some(175_000), true);
-        let s = p.summary(3475, "", "nurburgring gp", 6.0, 3.0);
+        let s = p.summary(3475, "", "nurburgring gp", 6.0, 3.0, crate::strategy::degr::DEFAULT_FUEL_S);
         let ss = s.compounds.iter().find(|c| c.compound == "SS").unwrap();
         let sm = s.compounds.iter().find(|c| c.compound == "SM").unwrap();
         assert_eq!(s.compounds[0].compound, "SS"); // soft first
-        assert!((ss.deg.unwrap() - 0.30).abs() < 0.01, "{ss:?}");
-        assert!((sm.deg.unwrap() - 0.12).abs() < 0.01, "{sm:?}");
+                                                   // Lap times as given (0.30 and 0.12 per lap) while the tank empties by 6.9 l a lap: the
+                                                   // tyres lose that plus the 0.04 s × 6.9 l the lighter car gains
+        assert!((ss.deg.unwrap() - (0.30 + 0.04 * 6.9)).abs() < 0.01, "{ss:?}");
+        assert!((sm.deg.unwrap() - (0.12 + 0.04 * 6.9)).abs() < 0.01, "{sm:?}");
         assert!(ss.pace.unwrap().abs() < 0.01 && (sm.pace.unwrap() - 1.0).abs() < 0.02, "{s:?}");
         assert!((s.fuel_per_lap.unwrap() - 6.9).abs() < 1e-4);
         assert_eq!(sm.laps, 10);
         // Other multipliers: nothing
-        assert!(p.summary(3475, "", "Nürburgring GP", 1.0, 1.0).compounds.is_empty());
+        assert!(p.summary(3475, "", "Nürburgring GP", 1.0, 1.0, crate::strategy::degr::DEFAULT_FUEL_S).compounds.is_empty());
     }
 
     #[test]
@@ -870,7 +882,7 @@ mod tests {
         for (i, l) in p.saved.laps.iter_mut().enumerate() {
             l.at = if i < 16 { format!("2026-11-01 20:{i:02}") } else { format!("2026-11-16 20:{i:02}") };
         }
-        let s = p.summary(3475, "", "Nürburgring GP", 6.0, 3.0);
+        let s = p.summary(3475, "", "Nürburgring GP", 6.0, 3.0, crate::strategy::degr::DEFAULT_FUEL_S);
         let sm = s.compounds.iter().find(|c| c.compound == "SM").unwrap();
         assert_eq!(sm.last.as_deref(), Some("2026-11-01"));
         assert!((sm.stale.unwrap() - 2.0).abs() < 0.01, "{sm:?}");
@@ -896,7 +908,7 @@ mod tests {
         p.saved.counting = true;
         p.lap_done(2, "", 7.0, false, Some(99_000), true);
         assert_eq!(p.saved.laps.last().unwrap().age, 0);
-        let s = p.summary(1, "", "Nürburgring GP", 6.0, 3.0);
+        let s = p.summary(1, "", "Nürburgring GP", 6.0, 3.0, crate::strategy::degr::DEFAULT_FUEL_S);
         assert_eq!(s.compounds[0].laps, 1);
         assert_eq!(s.compounds[0].deg, None); // not enough laps
     }
@@ -927,10 +939,10 @@ mod tests {
     fn life_is_kept_per_car_track_compound_and_wear() {
         let mut p = practice();
         p.set_life(7, "Nürburgring GP", "ss", 6.0, Some(9));
-        let s = p.summary(7, "", "NURBURGRING GP", 6.0, 3.0);
+        let s = p.summary(7, "", "NURBURGRING GP", 6.0, 3.0, crate::strategy::degr::DEFAULT_FUEL_S);
         assert_eq!(s.compounds.len(), 1);
         assert_eq!((s.compounds[0].compound.as_str(), s.compounds[0].life), ("SS", Some(9)));
-        assert!(p.summary(7, "", "Nürburgring GP", 1.0, 3.0).compounds.is_empty());
+        assert!(p.summary(7, "", "Nürburgring GP", 1.0, 3.0, crate::strategy::degr::DEFAULT_FUEL_S).compounds.is_empty());
     }
 
     #[test]
