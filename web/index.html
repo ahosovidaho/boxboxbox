@@ -2560,7 +2560,7 @@
     const pick = voPrefs.mode === 'pick', auto = autoCorners(), task = trainData && trainData.active;
     const on = n => pick ? voPrefs.corners.includes(n) : auto.includes(n);
     el.innerHTML = `<div class="lhead"><h2 style="margin:0">Hlasový kouč</h2><span class="seg" id="vcMode"><button data-vm="auto" class="${pick ? '' : 'on'}">3 největší rezervy</button><button data-vm="pick" class="${pick ? 'on' : ''}">Jen vybrané</button></span></div>`
-      + `<p class="muted" style="font-size:13px;margin:8px 0 10px">${pick ? 'Hlásí jen zatáčky, které tu vybereš' : 'Hlásí 3 zatáčky, kde typicky ztrácíš nejvíc – ťuknutím vybereš vlastní'}${task ? ` · T${task.n} (úkol) vždy` : ''}. Povel zazní asi 6 s před brzděním, po průjezdu řekne, jak to dopadlo.</p>`
+      + `<p class="muted" style="font-size:13px;margin:8px 0 10px">${pick ? 'Hlásí jen zatáčky, které tu vybereš' : 'Hlásí 3 zatáčky, kde typicky ztrácíš nejvíc – ťuknutím vybereš vlastní'}${task ? ` · T${task.n} (úkol) vždy` : ''}. Povel zazní asi 6 s před brzděním, dvě vybrané zatáčky těsně za sebou spojí do jednoho; po průjezdu řekne, jak to dopadlo.</p>`
       + `<div class="vchips">` + corners.map(c => {
         const loss = c.loss ?? c.dt;
         return `<button class="vchip${on(c.n) ? ' on' : ''}${task && task.n === c.n ? ' task' : ''}" data-vc="${c.n}"><b>T${c.n}</b><small>${loss != null ? (loss >= 0.005 ? '+' + nf(loss, 2) : '±0') : '–'}</small></button>`;
@@ -3428,8 +3428,9 @@
     if (VO.said.has(k) && now - VO.said.get(k) < (cooldownS ?? 600) * 1000) return;
     VO.said.set(k, now);
     if (prio <= 1) {
+      VO.q = VO.q.filter(m => m.prio !== 2);   // feedback on an earlier corner would now be confusing
       if (synth.speaking && (voNow == null || voNow > prio)) synth.cancel();
-      if (!synth.speaking || prio === 0) { VO.q = VO.q.filter(m => m.prio === 0); voiceSpeak(text, prio); return; }
+      if (!synth.speaking || prio === 0) { voiceSpeak(text, prio); return; }
     }
     VO.q.push({ text, prio, at: now, expire: expireMs ? now + expireMs : null });
   }
@@ -3458,7 +3459,7 @@
     const valid = prev.filter(ok);
     if (ms > 1.15 * typical || !valid.length) return `Kolo ${lapWords(ms)}.`;
     const best = Math.min(...valid);
-    return `Kolo ${lapWords(ms)}, ${ms < best ? 'nejrychlejší kolo!' : gapWords(ms - best)}.`;
+    return `Kolo ${lapWords(ms)}, ${ms < best ? 'nejrychlejší kolo!' : gapWords(ms - best) + '.'}`;
   }
   // ---- Where the car is along the lap: the coach's best lap as the line, metres from the start
   // line. Searched forward from the last place, so a corner across the infield never counts.
@@ -3533,8 +3534,10 @@
   const cornerName = n => NAMES[n] || `Zatáčka ${n}`;
   const GEAR4 = ['', 'jedničku', 'dvojku', 'trojku', 'čtyřku', 'pětku', 'šestku', 'sedmičku', 'osmičku'];
   const r5 = v => Math.max(5, Math.round(Math.abs(v) / 5) * 5);
-  function cornerCall(c, task) {
-    const name = cornerName(c.n);
+  // Differences to the best lap: the typical ones (median of the normal laps), else the last lap's
+  const typical = c => ({ ...c, db: c.tdb ?? c.db, dv: c.tdv ?? c.dv, dfull: c.tdfull ?? c.dfull, dg: c.tdg ?? c.dg });
+  function cornerCall(c0, task) {
+    const c = typical(c0), name = cornerName(c.n);
     let metric = null;
     if (task && task.n === c.n) metric = { apex: 'apex', exit: 'apex', brake: 'brake', release: 'brake', throttle: 'full' }[task.metric] || 'apex';
     else {
@@ -3550,12 +3553,18 @@
       : metric === 'apex' ? `${name}: víc rychlosti do vrcholu${c.dv != null && c.dv < -2 ? ', plus ' + Math.round(-c.dv) : ''}.`
       : metric === 'full' ? `${name}: dřív na plyn${c.dfull != null && c.dfull >= 10 ? ', o ' + r5(c.dfull) + ' metrů' : ''}.`
       : metric === 'gear' ? (c.dg > 0 ? `${name}: podřaď na ${GEAR4[c.rg] || c.rg + '.'}.` : `${name}: drž ${GEAR4[c.rg] || c.rg + '. stupeň'}.`)
-      : voPrefs.mode === 'pick' ? `${name}: drž to.` : null;
-    return text ? { text, metric } : null;
+      : null;
+    // No single figure explains the loss: the coach's tip for the corner, measured where it points
+    if (!text && c.tip) {
+      const tip = c.tip.replace(/\s*\(.*?\)/g, '').replace(/\.$/, '');
+      return { text: `${name}: ${tip.charAt(0).toLowerCase() + tip.slice(1)}.`, metric: /plyn/i.test(tip) ? 'full' : /brzd/i.test(tip) ? 'brake' : 'apex' };
+    }
+    if (!text) return voPrefs.mode === 'pick' ? { text: `${name}: drž to.`, metric: null } : null;
+    return { text, metric };
   }
   // ---- After the corner: how the pass went, against the best lap and against the last lap
   function cornerFeedback(m) {
-    const name = cornerName(m.c.n), c = m.c;
+    const name = cornerName(m.c.n), c = typical(m.c);
     const better = (now, before, tol) => before == null ? '' : Math.abs(now) < Math.abs(before) - tol ? ', lepší' : Math.abs(now) > Math.abs(before) + tol ? ', hůř' : '';
     if (m.metric === 'brake') {
       if (m.brake == null) return null;
@@ -3589,12 +3598,15 @@
     const m = VO.meas;
     if (m) {
       const rel = tpMod(sNow - m.sb + TP.total / 2) - TP.total / 2;       // metres past the best lap's braking point
-      if (rel < -450 || rel > m.fRel + 300) VO.meas = null;
+      if (rel < -900 || rel > m.fRel + 300) VO.meas = null;   // 6 s at 300 km/h is 500 m
       else {
         if (m.brake == null && d.brake > 10 && rel > -150 && rel < m.aRel) m.brake = rel;
         if (rel > -20 && rel < m.aRel + 60 && d.speed_kmh < m.vmin) { m.vmin = d.speed_kmh; m.gear = d.gear; }
         if (m.full == null && rel > m.aRel && d.throttle >= 95) m.full = rel - m.fRel;
-        if (rel > m.fRel + 35) {
+        // Said as soon as the measured point is behind (the next call may follow close behind)
+        const done = m.metric === 'brake' ? rel > m.aRel + 20 : m.metric === 'apex' || m.metric === 'gear' ? rel > m.aRel + 60
+          : m.full != null || rel > m.fRel + 120;
+        if (done) {
           VO.meas = null;
           const t = cornerFeedback(m);
           if (t) say(t, 2, 'fb|' + m.key, 60, 6000);
@@ -3605,7 +3617,7 @@
     const set = voiceCornerSet();
     let next = null, ahead = Infinity;
     for (const o of TP.cs) {
-      if (!set.has(o.c.n)) continue;
+      if (!set.has(o.c.n) || VO.called.has(d.lap + '|' + o.c.n)) continue;
       const a = tpMod(o.sb - sNow);
       if (a < ahead) { ahead = a; next = o; }
     }
@@ -3616,6 +3628,13 @@
       VO.called.add(key);
       if (VO.called.size > 300) VO.called.clear();
       const call = cornerCall(next.c, task);
+      // A chosen corner right behind this one (a chicane, an S): one call for both, said now
+      const then = TP.cs.find(o => o !== next && set.has(o.c.n) && !VO.called.has(d.lap + '|' + o.c.n) && tpMod(o.sb - next.sa) < 250);
+      if (call && then) {
+        const c2 = cornerCall(then.c, task);
+        VO.called.add(d.lap + '|' + then.c.n);
+        if (c2) call.text = call.text.replace(/\.$/, '') + '. Pak ' + c2.text.charAt(0).toLowerCase() + c2.text.slice(1);
+      }
       if (call) {
         say(call.text, 1, 'call|' + key, 30);
         if (call.metric) VO.meas = { ...next, key, metric: call.metric, brake: null, vmin: 1e9, gear: null, full: null };
@@ -3663,7 +3682,8 @@
     const m = VO.q[0];
     if (!m) return;
     const secs = m.text.length / 13 / (cfg.voRate || 1.1);
-    if (driving && m.prio >= 2 && VO.nextCallIn < secs + 0.5) return;
+    // (with a margin: the car speeds up on the straight, the call comes sooner than estimated)
+    if (driving && m.prio >= 2 && VO.nextCallIn < secs * 1.3 + 1) return;
     if (m.prio >= 4 && driving && VO.straight < 30) return;
     VO.q.shift();
     voiceSpeak(m.text, m.prio);

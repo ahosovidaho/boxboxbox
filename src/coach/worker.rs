@@ -378,6 +378,31 @@ fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::L
                 dts.sort_by(f64::total_cmp);
                 o["loss"] = json!(r(dts[dts.len() / 2], 2));
             }
+            // Typical differences to the best lap (median of the normal laps): what the voice
+            // coach calls before the corner, steadier than the last lap alone
+            if let Some(rf) = &c.reference {
+                let stats: Vec<&super::compare::CornerStats> =
+                    normal.iter().filter_map(|l| l.corners.iter().find(|x| x.n == c.n)).filter_map(|x| x.stats.as_ref()).collect();
+                let median = |mut v: Vec<f64>| {
+                    v.sort_by(f64::total_cmp);
+                    (!v.is_empty()).then(|| v[v.len() / 2])
+                };
+                if let Some(v) = rf.brake_at.and_then(|b| median(stats.iter().filter_map(|s| s.brake_at.map(|a| a - b)).collect())) {
+                    o["tdb"] = json!(r(v, 0));
+                }
+                if let Some(v) = median(stats.iter().map(|s| s.v_min - rf.v_min).collect()) {
+                    o["tdv"] = json!(r(v, 0));
+                }
+                if let Some(v) = rf.full_at.and_then(|b| median(stats.iter().filter_map(|s| s.full_at.map(|a| a - b)).collect())) {
+                    o["tdfull"] = json!(r(v, 0));
+                }
+                if let Some(v) = rf
+                    .gear_min
+                    .and_then(|b| median(stats.iter().filter_map(|s| s.gear_min.map(|a| (a as i64 - b as i64) as f64)).collect()))
+                {
+                    o["tdg"] = json!(v as i64);
+                }
+            }
             if let Some(l) = lap.and_then(|l| l.corners.iter().find(|x| x.n == c.n)) {
                 o["dt"] = json!(r(l.dt, 2));
                 o["lap"] = json!(lap.map(|l| l.lap));
