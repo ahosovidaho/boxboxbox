@@ -396,9 +396,7 @@ fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::L
                 if let Some(v) = rf.full_at.and_then(|b| median(stats.iter().filter_map(|s| s.full_at.map(|a| a - b)).collect())) {
                     o["tdfull"] = json!(r(v, 0));
                 }
-                if let Some(v) = rf
-                    .gear_min
-                    .and_then(|b| median(stats.iter().filter_map(|s| s.gear_min.map(|a| (a as i64 - b as i64) as f64)).collect()))
+                if let Some(v) = rf.gear_min.and_then(|b| median(stats.iter().filter_map(|s| s.gear_min.map(|a| (a - b) as f64)).collect()))
                 {
                     o["tdg"] = json!(v as i64);
                 }
