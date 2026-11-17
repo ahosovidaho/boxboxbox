@@ -726,6 +726,7 @@ mod tests {
                 s: 1344,
                 reference: Some(st(80.0, 120.0)),
                 brake_pos: None,
+                full_pos: None,
             }],
             laps,
             track: Some("Willow Springs International Raceway".into()),

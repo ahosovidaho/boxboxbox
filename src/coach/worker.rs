@@ -190,6 +190,7 @@ impl Coach {
                 self.write_feed(session, Some(&item), feedback::focus_for(&res, lap), Some(corners_json(&res, Some(lap))))?;
                 self.write_radio(feedback::radio(&res))?;
                 self.write_key("map", map.clone())?;
+                self.write_key("track", json!(res.track))?;
                 let (n, title) = (lap.lap, item["title"].as_str().unwrap_or_default());
                 log(tr!("Runde {n} ausgewertet: {title}", "lap {n} analysed: {title}", "kolo {n} vyhodnoceno: {title}"));
             }
@@ -228,6 +229,7 @@ impl Coach {
                 corners,
             )?;
             self.write_key("map", map.clone())?;
+            self.write_key("track", json!(res.track))?;
             state.summarized_laps = state.laps.len();
             let s = session.display();
             log(tr!("Zusammenfassung geschrieben: {s}", "summary written: {s}", "souhrn zapsán: {s}"));
@@ -359,6 +361,46 @@ fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::L
                 o["bx"] = json!(b[0]);
                 o["bz"] = json!(b[1]);
             }
+            // The best lap's figures (the voice coach measures the pass against them)
+            if let Some(f) = c.full_pos {
+                o["fx"] = json!(f[0]);
+                o["fz"] = json!(f[1]);
+            }
+            if let Some(rf) = &c.reference {
+                o["rv"] = json!(r(rf.v_min, 0));
+                if let Some(g) = rf.gear_min {
+                    o["rg"] = json!(g);
+                }
+            }
+            // What the corner usually costs: median of the normal laps
+            let mut dts: Vec<f64> = normal.iter().filter_map(|l| l.corners.iter().find(|x| x.n == c.n)).map(|x| x.dt).collect();
+            if !dts.is_empty() {
+                dts.sort_by(f64::total_cmp);
+                o["loss"] = json!(r(dts[dts.len() / 2], 2));
+            }
+            // Typical differences to the best lap (median of the normal laps): what the voice
+            // coach calls before the corner, steadier than the last lap alone
+            if let Some(rf) = &c.reference {
+                let stats: Vec<&super::compare::CornerStats> =
+                    normal.iter().filter_map(|l| l.corners.iter().find(|x| x.n == c.n)).filter_map(|x| x.stats.as_ref()).collect();
+                let median = |mut v: Vec<f64>| {
+                    v.sort_by(f64::total_cmp);
+                    (!v.is_empty()).then(|| v[v.len() / 2])
+                };
+                if let Some(v) = rf.brake_at.and_then(|b| median(stats.iter().filter_map(|s| s.brake_at.map(|a| a - b)).collect())) {
+                    o["tdb"] = json!(r(v, 0));
+                }
+                if let Some(v) = median(stats.iter().map(|s| s.v_min - rf.v_min).collect()) {
+                    o["tdv"] = json!(r(v, 0));
+                }
+                if let Some(v) = rf.full_at.and_then(|b| median(stats.iter().filter_map(|s| s.full_at.map(|a| a - b)).collect())) {
+                    o["tdfull"] = json!(r(v, 0));
+                }
+                if let Some(v) = rf.gear_min.and_then(|b| median(stats.iter().filter_map(|s| s.gear_min.map(|a| (a - b) as f64)).collect()))
+                {
+                    o["tdg"] = json!(v as i64);
+                }
+            }
             if let Some(l) = lap.and_then(|l| l.corners.iter().find(|x| x.n == c.n)) {
                 o["dt"] = json!(r(l.dt, 2));
                 o["lap"] = json!(lap.map(|l| l.lap));
@@ -369,6 +411,9 @@ fn corners_json(res: &super::compare::Comparison, lap: Option<&super::compare::L
                     o["dv"] = json!(r(st.v_min - rf.v_min, 0));
                     if let (Some(a), Some(b)) = (st.full_at, rf.full_at) {
                         o["dfull"] = json!(r(a - b, 0));
+                    }
+                    if let (Some(a), Some(b)) = (st.gear_min, rf.gear_min) {
+                        o["dg"] = json!(a - b);
                     }
                 }
             }

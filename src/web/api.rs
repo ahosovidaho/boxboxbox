@@ -21,6 +21,7 @@
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
 //! | GET/POST | `/api/references` | external reference laps from GT7 replays: capture state, captured laps, references; `{"action": "arm"/"stop"/"save"/"remove", …}` |
 //! | GET  | `/api/coach/reference?session=&ref=` | the laps of a session (default: the coach's) against a reference lap of the library (default: the best on its track, the same car first): time lost per corner, figures, what to work on |
+//! | GET/POST | `/api/voice?track=` | which corners the voice coach calls on a track: `{mode: "auto" or "pick", corners}` |
 //! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
 //! | POST | `/api/training` | `{"action": "start", "n", "metric"}` / `{"action": "cancel"}` / `{"action": "again"}` |
 //! | GET/POST | `/api/tracks` | track catalogue (GT7 layouts), the stored layouts with their catalogue layout, the lap waiting for its track; `{"action": "answer", "course"}` / `{"action": "dismiss"}` / `{"action": "set_course", "track", "course"}` |
@@ -82,6 +83,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/briefing", get(briefing))
         .route("/api/training", get(training_state).post(training_action))
         .route("/api/coach/reference", get(coach_reference))
+        .route("/api/voice", get(voice_state).post(voice_set))
         .route("/api/references", get(references_state).post(references_action))
         .route("/api/tracks", get(tracks_state).post(tracks_action))
         .route("/api/storage", get(storage_state))
@@ -647,6 +649,34 @@ fn vsref_json(s: &AppState, q: &VsRefQuery) -> Result<serde_json::Value, String>
         "corners": corners,
         "candidates": cands,
     }))
+}
+
+#[derive(Deserialize)]
+struct VoiceQuery {
+    track: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct VoiceBody {
+    track: String,
+    #[serde(flatten)]
+    prefs: crate::coach::voice::Prefs,
+}
+
+async fn voice_state(State(s): State<AppState>, Query(q): Query<VoiceQuery>) -> impl IntoResponse {
+    let track = q.track.unwrap_or_default();
+    let p = crate::coach::voice::get(&crate::coach::voice::path(&s.settings.data.root), &track);
+    Json(json!({ "track": track, "mode": p.mode, "corners": p.corners }))
+}
+
+async fn voice_set(State(s): State<AppState>, Json(b): Json<VoiceBody>) -> impl IntoResponse {
+    if b.track.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Chybí trať." }))).into_response();
+    }
+    match crate::coach::voice::set(&crate::coach::voice::path(&s.settings.data.root), &b.track, b.prefs) {
+        Ok(p) => Json(json!({ "track": b.track, "mode": p.mode, "corners": p.corners })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
 }
 
 async fn coach_reference(State(s): State<AppState>, Query(q): Query<VsRefQuery>) -> impl IntoResponse {

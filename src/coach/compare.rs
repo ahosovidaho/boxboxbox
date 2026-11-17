@@ -88,6 +88,9 @@ pub struct CornerInfo {
     /// Where the reference lap starts braking for this corner (x, z)
     #[serde(default)]
     pub brake_pos: Option<[f64; 2]>,
+    /// Where the reference lap is back on full throttle after it (x, z)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_pos: Option<[f64; 2]>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -451,9 +454,11 @@ impl Comparer {
         };
         for c in &corners {
             let stats = corner_stats(&reference, s_of(&reference, c.from), s_of(&reference, c.to), c.s);
-            let brake_pos = stats.as_ref().and_then(|st| st.brake_at).and_then(|b| {
-                reference.iter().find(|r| r.s.is_some_and(|s| s >= b)).map(|r| [lap::round_to(r.pos_x, 1), lap::round_to(r.pos_z, 1)])
-            });
+            let at = |m: f64| {
+                reference.iter().find(|r| r.s.is_some_and(|s| s >= m)).map(|r| [lap::round_to(r.pos_x, 1), lap::round_to(r.pos_z, 1)])
+            };
+            let brake_pos = stats.as_ref().and_then(|st| st.brake_at).and_then(at);
+            let full_pos = stats.as_ref().and_then(|st| st.full_at).and_then(at);
             result.corners.push(CornerInfo {
                 n: c.n,
                 dir: c.dir.clone(),
@@ -462,6 +467,7 @@ impl Comparer {
                 s: lap::round_i(c.s),
                 reference: stats,
                 brake_pos,
+                full_pos,
             });
         }
         for (path, ms) in &laps {
@@ -545,9 +551,11 @@ impl Comparer {
         };
         for c in &corners {
             let stats = corner_stats(&reference, s_of(&reference, c.from), s_of(&reference, c.to), c.s);
-            let brake_pos = stats.as_ref().and_then(|st| st.brake_at).and_then(|b| {
-                reference.iter().find(|r| r.s.is_some_and(|s| s >= b)).map(|r| [lap::round_to(r.pos_x, 1), lap::round_to(r.pos_z, 1)])
-            });
+            let at = |m: f64| {
+                reference.iter().find(|r| r.s.is_some_and(|s| s >= m)).map(|r| [lap::round_to(r.pos_x, 1), lap::round_to(r.pos_z, 1)])
+            };
+            let brake_pos = stats.as_ref().and_then(|st| st.brake_at).and_then(at);
+            let full_pos = stats.as_ref().and_then(|st| st.full_at).and_then(at);
             result.corners.push(CornerInfo {
                 n: c.n,
                 dir: c.dir.clone(),
@@ -556,6 +564,7 @@ impl Comparer {
                 s: lap::round_i(c.s),
                 reference: stats,
                 brake_pos,
+                full_pos,
             });
         }
         // The reference itself, as a lap (training needs its figures as the target)

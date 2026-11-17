@@ -2,6 +2,16 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Hlasový kouč k zatáčkám, přepracováno.** Poloha se měří po trati (podél nejlepšího kola),
+  ne vzdušnou čarou – na Yas Marině už nehlásí trojku, když vjíždíš do čtyřky.
+  - Povel zazní ~6 s před brzdným bodem (nejpozději 2 s), krátce a po závodnicku:
+    „Čtyřka: brzdi o 15 metrů později.“ Opožděné hlášení se zahodí, místo aby zaznělo pozdě.
+  - Po průjezdu zpětná vazba: „Čtyřka: brzdný bod sedí.“ / „vrcholem plus 4, lepší“.
+  - Které zatáčky: automaticky 3 s největší ztrátou, nebo vlastní výběr pro každou trať
+    (Kouč → Trénink → karta Hlasový kouč, i v detailu zatáčky). Zatáčka úkolu vždy.
+  - Čas kola se porovnává jen s platnými koly; výjezd z boxu a pomalá kola se nehodnotí.
+  - Priority: box > povel k zatáčce > zpětná vazba > čas kola > rádio kouče.
+
 - **Hlasový inženýr** (Nastavení → Hlasový inženýr, pro každé zařízení zvlášť): čte hlášení
   nahlas českým hlasem zařízení – nic na serveru.
   - Čas kola v cíli s rozdílem proti nejlepšímu („Kolo 1 30 celá 5, nejrychlejší kolo!“,
