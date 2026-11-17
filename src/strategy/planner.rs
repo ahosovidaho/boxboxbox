@@ -10,9 +10,11 @@
 //!   costs deg·(0 + 1 + … + n−1)). A compound with a shorter life wears faster: its rate is scaled
 //!   by (average life of the entered compounds / its life). A rate measured in practice replaces it.
 //!
-//! The best plan is the recommendation; the alternative is the best plan with other tyres or a
-//! different number of stops. The search is small: 27 laps and 3 stops
-//! are about 2 600 splits × 27 tyre choices.
+//! The best plan is the recommendation. The alternative is the best plan with a different
+//! number of stops – the real strategic choice (one stop less on harder tyres, one more on
+//! softer); only when there is none, the best plan with other tyres. Each option carries what its
+//! cost is made of ([`Parts`]), so the difference to the recommendation can be explained. The
+//! search is small: 27 laps and 3 stops are about 2 600 splits × 27 tyre choices.
 
 use serde::Serialize;
 
@@ -84,6 +86,19 @@ pub struct Stint {
     pub laps: u32,
 }
 
+/// What the cost of a plan is made of, s
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Parts {
+    /// Pit lane and standing (pit loss × stops)
+    pub stops: f32,
+    /// Refuelling
+    pub refuel: f32,
+    /// Pace of the compounds (s per lap × laps)
+    pub pace: f32,
+    /// Tyre degradation
+    pub wear: f32,
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Option_ {
     pub stints: Vec<Stint>,
@@ -94,6 +109,7 @@ pub struct Option_ {
     pub delta: f32,
     /// A limit had to be broken (tyre life): no plan fits the entered limits
     pub over_limit: bool,
+    pub parts: Parts,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
@@ -129,6 +145,7 @@ fn deg_cost(deg: f32, age: u32, laps: u32) -> f32 {
 
 struct Eval {
     cost: f32,
+    parts: Parts,
     over: f32,
     stops: Vec<PlannedStop>,
 }
@@ -137,6 +154,7 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
     let fpl = inp.fuel_per_lap;
     let mut fuel = inp.fuel;
     let mut cost = 0.0;
+    let mut parts = Parts::default();
     let mut over = 0.0;
     let mut lap = inp.first_lap - 1; // last lap done
     let mut stops = Vec::new();
@@ -152,7 +170,10 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
                 return None;
             }
             fuel += add;
-            cost += inp.pit_loss + if inp.refuel_rate > 0.0 { add / inp.refuel_rate } else { 0.0 };
+            let refuel = if inp.refuel_rate > 0.0 { add / inp.refuel_rate } else { 0.0 };
+            cost += inp.pit_loss + refuel;
+            parts.stops += inp.pit_loss;
+            parts.refuel += refuel;
             stops.push(PlannedStop { lap, compound: t.name.clone(), fuel: add });
         } else {
             let need = (n as f32 + if i == last { inp.reserve } else { 0.05 }) * fpl;
@@ -163,7 +184,10 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
         if let Some(life) = t.life {
             over += (age + n).saturating_sub(life) as f32;
         }
-        cost += t.pace * n as f32 + deg_cost(t.deg.unwrap_or(inp.deg * t.wear_factor), age, n);
+        let (pace, wear) = (t.pace * n as f32, deg_cost(t.deg.unwrap_or(inp.deg * t.wear_factor), age, n));
+        cost += pace + wear;
+        parts.pace += pace;
+        parts.wear += wear;
         // Tiny preference for keeping the same compound when everything else is equal
         if i > 0 && tyres[i - 1].name != t.name {
             cost += 0.001;
@@ -171,7 +195,7 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
         fuel -= n as f32 * fpl;
         lap += n as i16;
     }
-    Some(Eval { cost, over, stops })
+    Some(Eval { cost, parts, over, stops })
 }
 
 pub fn plan(inp: &Input) -> Options {
@@ -227,6 +251,7 @@ pub fn plan(inp: &Input) -> Options {
                         cost: e.cost,
                         delta: 0.0,
                         over_limit: e.over > 0.0,
+                        parts: e.parts,
                     };
                     found.push((k, e.cost, e.over, opt));
                 }
@@ -249,10 +274,13 @@ pub fn plan(inp: &Input) -> Options {
         t.sort();
         t
     };
-    // A real alternative: other tyres or another number of stops (not just a lap earlier or later)
-    let alt_i = (0..found.len())
-        .filter(|&i| found[i].0 != best_stops || tyres_of(&found[i].3) != tyres_of(&best))
-        .min_by(|&a, &b| key(&found[a]).partial_cmp(&key(&found[b])).unwrap());
+    // A real alternative: another number of stops (not just a lap earlier or later). Other tyres
+    // with the same stops only when there is no such plan – mostly that is the recommendation
+    // with a short stint on slower tyres, a worse plan rather than a choice.
+    let cheapest = |f: &dyn Fn(usize) -> bool| {
+        (0..found.len()).filter(|&i| f(i)).min_by(|&a, &b| key(&found[a]).partial_cmp(&key(&found[b])).unwrap())
+    };
+    let alt_i = cheapest(&|i| found[i].0 != best_stops).or_else(|| cheapest(&|i| tyres_of(&found[i].3) != tyres_of(&best)));
     let alternative = alt_i.map(|i| {
         let mut o = found[i].3.clone();
         o.delta = o.cost - best.cost;
@@ -355,6 +383,29 @@ mod tests {
         inp.compounds = tyres(Some(3), Some(3), Some(3));
         let best = plan(&inp).best.unwrap();
         assert!(best.over_limit);
+    }
+
+    #[test]
+    fn abu_dhabi_alternative_saves_a_stop() {
+        // 30 laps, RS mandatory, RS lasts 9 laps, RM 13 but 2.75 s slower: 3 stops on RS is
+        // best; the alternative is one stop less with RM, not the same stops with a short RM stint
+        let mut c = vec![Compound::new("RS", Some(9), 0.08), Compound::new("RM", Some(13), 2.83)];
+        c[0].deg = Some(0.01);
+        c[1].deg = Some(0.0);
+        let inp = Input { laps: 30, fuel_per_lap: 6.96, pit_loss: 19.7, current: None, compounds: c, ..race(30, 6.96) };
+        let o = plan(&inp);
+        let best = o.best.unwrap();
+        assert_eq!(best.stops.len(), 3, "{best:?}");
+        assert!(best.stints.iter().all(|s| s.compound == "RS"));
+        let alt = o.alternative.unwrap();
+        assert_eq!(alt.stops.len(), 2, "{alt:?}");
+        // One long stint on RM (12–13 laps, where in the race does not matter much), the rest on RS
+        let rm: Vec<u32> = alt.stints.iter().filter(|s| s.compound == "RM").map(|s| s.laps).collect();
+        assert!(rm.len() == 1 && rm[0] >= 12, "{alt:?}");
+        // +15.7 s: RM costs 13 × 2.75 = 35.75 s, the stop saved gives back 19.7 s
+        assert!(alt.delta > 10.0 && alt.delta < 20.0, "{alt:?}");
+        assert!((alt.parts.stops - best.parts.stops + 19.7).abs() < 0.01);
+        assert!((alt.parts.pace - best.parts.pace - rm[0] as f32 * 2.75).abs() < 0.01);
     }
 
     #[test]

@@ -3132,7 +3132,7 @@
 
 
   // Plans: "RM 11 → RS 10 → RS 6", stops with laps and fuel
-  function planHtml(o, tag, cls) {
+  function planHtml(o, tag, cls, why = '') {
     if (!o) return '';
     const stints = o.stints.map(s => `${s.compound} ${s.laps}`).join(' → ');
     const stops = o.stops.length
@@ -3143,11 +3143,39 @@
     const over = o.over_limit ? '<div class="over">Nevejde se do zadané životnosti gum – nejmenší překročení.</div>' : '';
     // Stint bar: one segment per stint (width = laps), the stops in between
     const bar = `<div class="pbar">${o.stints.map((x, k) => `${k ? '<i></i>' : ''}<span style="flex:${Math.max(1, x.laps)}">${esc(x.compound)} · ${x.laps}</span>`).join('')}</div>`;
-    return `<div class="planbox ${cls}"><span class="tag">${tag}</span><b>${stints}</b>${bar}<div class="muted">${n} ${word}: box ${stops}${delta}</div>${over}</div>`;
+    return `<div class="planbox ${cls}"><span class="tag">${tag}</span><b>${stints}</b>${bar}<div class="muted">${n} ${word}: box ${stops}${delta}</div>${why}${over}</div>`;
   }
-  function plansHtml(opts) {
+  // Why the alternative is slower: what its cost is made of against the recommendation, and for
+  // a plan on another compound how close that compound's pace would have to be to win
+  function whyHtml(alt, best, pu) {
+    if (!alt || !best || !alt.parts || !best.parts) return '';
+    const sgn = v => (v > 0 ? '+' : '−') + nf(Math.abs(v), 1) + ' s';
+    const d = k => alt.parts[k] - best.parts[k];
+    const ds = alt.stops.length - best.stops.length;
+    const bits = [];
+    if (ds) bits.push(`${ds < 0 ? 'o ' + -ds + ' zastávku méně' : 'o ' + ds + ' zastávku víc'} ${sgn(d('stops'))}`);
+    if (Math.abs(d('refuel')) >= 0.5) bits.push(`tankování ${sgn(d('refuel'))}`);
+    if (Math.abs(d('pace')) >= 0.5) bits.push(`tempo gum ${sgn(d('pace'))}`);
+    if (Math.abs(d('wear')) >= 0.5) bits.push(`opotřebení ${sgn(d('wear'))}`);
+    if (!bits.length) return '';
+    // Laps on a compound the recommendation does not use (or uses less)
+    const laps = (o, c) => o.stints.filter(x => x.compound === c).reduce((a, x) => a + x.laps, 0);
+    const names = [...new Set(alt.stints.map(x => x.compound))];
+    const other = names.map(c => [c, laps(alt, c) - laps(best, c)]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])[0];
+    let tip = '';
+    if (other && d('pace') > 0.5 && alt.delta > 0.05) {
+      const [c, n] = other, gap = d('pace') / n, need = gap - alt.delta / n;
+      const vs = [...new Set(best.stints.map(x => x.compound))].filter(x => x !== c).join('/');
+      tip = need > 0.05 ? ` Vyplatí se, když bude ${c} pomalejší než ${vs || 'teď'} nejvýš o ${nf(need, 1)} s/kolo (počítám ${nf(gap, 1)}).` : '';
+      const st = pu && pu.compounds && pu.compounds.find(x => x.compound === c && x.stale);
+      if (st) tip += ` Tempo ${c} je ze starších tréninků (naposledy ${dayCz(st.last)}) – od té doby jsi rychlejší o ${nf(st.stale, 1)} s/kolo, takže ${c} bude nejspíš blíž. Zajeď na ${c} pár kol.`;
+    }
+    return `<div class="muted" style="font-size:13px;margin-top:4px">Proč: ${bits.join(' · ')}.${tip}</div>`;
+  }
+  const dayCz = d => d ? `${+d.slice(8, 10)}. ${+d.slice(5, 7)}.` : '?';
+  function plansHtml(opts, pu) {
     if (!opts || !opts.best) return '';
-    return planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa', '');
+    return planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa', '', whyHtml(opts.alternative, opts.best, pu));
   }
 
   // Page 1: laps to the suggested pit stop, readable at a glance
@@ -3203,7 +3231,7 @@
   function practiceFrom(u) {
     const car = lastData && lastData.car_code === u.car && lastData.car_name ? lastData.car_name : `auto ${u.car}`;
     const parts = u.compounds.filter(c => c.laps > 0 || c.life)
-      .map(c => c.laps ? `${c.compound} ${c.laps} ${kol(c.laps)}${c.life ? ` (vydrží ${c.life})` : ''}` : `${c.compound} bez kol – tempo neznámé${c.life ? ` (vydrží ${c.life})` : ''}`);
+      .map(c => c.laps ? `${c.compound} ${c.laps} ${kol(c.laps)}${c.life ? ` (vydrží ${c.life})` : ''}${c.stale ? ` – naposledy ${dayCz(c.last)}, tempo nejspíš lepší, než ukazuje` : ''}` : `${c.compound} bez kol – tempo neznámé${c.life ? ` (vydrží ${c.life})` : ''}`);
     if (u.fuel_per_lap != null) parts.push(`spotřeba ${nf(u.fuel_per_lap, 2)}`);
     return `Z tréninku (${car}): ${parts.join(' · ')}.`;
   }
@@ -3908,7 +3936,7 @@
       + (prep && prep.items ? `<div class="card bk"><h2>Zbývá připravit <span class="mono" style="float:right;color:#F2C230;letter-spacing:0">${open.length}</span></h2>${open.map(i => `<div class="prepi"><b>${esc(i.label)}</b> <span>– ${esc(i.todo || i.detail)}</span></div>`).join('') || '<div>Všechno připraveno.</div>'}</div>` : '')
       + '</div>';
     // Strategy, fuel, tyres, start
-    html += `<div class="card bk"><h2>Strategie</h2>${plansHtml(b.options) || '<div class="muted">Chybí data pro plán – zadej v závodě kola a pravidla.</div>'}
+    html += `<div class="card bk"><h2>Strategie</h2>${plansHtml(b.options, p.practice_use) || '<div class="muted">Chybí data pro plán – zadej v závodě kola a pravidla.</div>'}
       <div class="row" style="margin-top:8px"><span>Palivo/kolo <em>${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) : '–'}</em></span><span>Ztráta v boxech <em>${nf(p.pit_loss || 0, 1)} s</em></span></div></div>`;
     let fuel = '';
     if (r.no_fuel) fuel = '<div class="muted">Závod bez spotřeby paliva.</div>';
@@ -4969,7 +4997,7 @@
     setText('stToLimit', st.wear_laps_left == null ? '–' : `${nf(st.wear_laps_left)} kola (limit ${st.wear_limit} %)`);
     setText('stWearEnd', st.wear_at_finish == null ? '–' : nf(st.wear_at_finish, 0) + ' %');
     // Plan
-    const ph = plansHtml(st.options) || '<span class="muted">Plán se spočítá, až bude známá spotřeba a počet kol.</span>';
+    const ph = plansHtml(st.options, st.practice_use) || '<span class="muted">Plán se spočítá, až bude známá spotřeba a počet kol.</span>';
     if ($('stPlan').innerHTML !== ph) $('stPlan').innerHTML = ph;
     setText('stFrom', st.practice_use ? practiceFrom(st.practice_use) : '');
     // Practice mode
@@ -5132,7 +5160,7 @@
       });
       $('rFpl').placeholder = r.fuel_source === 'practice' && r.fuel_per_lap != null ? nf(r.fuel_per_lap, 2) : '';
       $('rPitLoss').placeholder = nf(r.pit_loss, 1);
-      $('rPreview').innerHTML = plansHtml(r.options)
+      $('rPreview').innerHTML = plansHtml(r.options, r.practice_use)
         || `<div class="planbox"><span class="muted">${r.total_laps ? 'Doplň odhad spotřeby na kolo – pak spočítám strategii.' : 'Doplň počet kol.'}</span></div>`;
     } catch { $('rPreview').innerHTML = ''; }
   }

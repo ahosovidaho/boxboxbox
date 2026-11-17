@@ -38,6 +38,11 @@ const FIT_LAPS: usize = 4;
 /// A break this long between laps (minutes) means a new session on new tyres
 const NEW_SESSION_MIN: i64 = 15;
 const FIT_SPAN: u32 = 3;
+/// Practice laps the fuel per lap is taken from (the latest)
+const FUEL_RECENT: usize = 15;
+/// Laps before and after needed to call a compound's pace old, and the improvement that counts
+const STALE_LAPS: usize = 5;
+const STALE_S: f32 = 0.5;
 const MAX_LAPS: usize = 3000;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -178,6 +183,11 @@ pub struct CompoundStats {
     pub max_age: u32,
     /// Entered by the driver
     pub life: Option<u32>,
+    /// Day of the last lap, "2026-11-01"
+    pub last: Option<String>,
+    /// The pace is old: the fastest compound got this much faster (median lap, s) since the
+    /// last lap on this one – the driver improved, so this compound's gap is overstated
+    pub stale: Option<f32>,
 }
 
 /// Practice figures for a car on a track with given multipliers.
@@ -622,12 +632,36 @@ impl Practice {
                     fuel_per_lap: median(&mut fuel),
                     max_age: if ok.is_empty() { 0 } else { max_age + 1 },
                     life: self.saved.life.get(&life_key(car, track, c, wear_mult)).copied(),
+                    last: None,
+                    stale: None,
                 }
             })
             .collect();
         let fastest = compounds.iter().filter_map(|c| c.base).fold(f32::MAX, f32::min);
         for c in &mut compounds {
             c.pace = c.base.map(|b| b - fastest);
+        }
+        // A compound driven only in older sessions: how much faster the driver got since then
+        // on the most driven compound (median lap before and after its last lap)
+        let last_at = |c: &str| laps.iter().filter(|l| l.compound == c).map(|l| l.at.as_str()).max().map(str::to_string);
+        if let Some(fast) = compounds.iter().max_by_key(|c| c.laps).map(|c| c.compound.clone()) {
+            for c in compounds.iter_mut().filter(|c| c.compound != fast && c.pace.is_some()) {
+                let Some(last) = last_at(&c.compound) else { continue };
+                let split = |after: bool| {
+                    laps.iter()
+                        .filter(|l| l.compound == fast && (l.at.as_str() > last.as_str()) == after)
+                        .map(|l| l.ms as f32 / 1000.0)
+                        .collect::<Vec<_>>()
+                };
+                let (mut before, mut after) = (split(false), split(true));
+                if before.len() >= STALE_LAPS && after.len() >= STALE_LAPS {
+                    let d = median(&mut before).unwrap_or(0.0) - median(&mut after).unwrap_or(0.0);
+                    c.stale = (d >= STALE_S).then_some(d);
+                }
+            }
+        }
+        for c in &mut compounds {
+            c.last = last_at(&c.compound).map(|a| a.chars().take(10).collect());
         }
         // Compounds with only a life entered (not driven yet) still show up
         let prefix = format!("{car}|{key}|");
@@ -641,7 +675,11 @@ impl Practice {
             }
         }
         compounds.sort_by_key(|c| order(&c.compound));
-        let mut fuel: Vec<f32> = laps.iter().map(|l| l.fuel).filter(|f| *f > 0.0).collect();
+        // Fuel: the latest laps – the consumption rises as the driver gets faster and fuller on
+        // the throttle, an average over weeks of practice is too low for the race
+        let mut recent: Vec<&&PracticeLap> = laps.iter().filter(|l| l.fuel > 0.0).collect();
+        recent.sort_by(|a, b| a.at.cmp(&b.at));
+        let mut fuel: Vec<f32> = recent[recent.len().saturating_sub(FUEL_RECENT)..].iter().map(|l| l.fuel).collect();
         Summary { car, track: track.to_string(), wear_mult, fuel_mult, compounds, fuel_per_lap: median(&mut fuel) }
     }
 }
@@ -820,6 +858,25 @@ mod tests {
         assert_eq!(sm.laps, 10);
         // Other multipliers: nothing
         assert!(p.summary(3475, "", "Nürburgring GP", 1.0, 1.0).compounds.is_empty());
+    }
+
+    #[test]
+    fn old_compound_pace_is_flagged_and_fuel_comes_from_the_latest_laps() {
+        let mut p = practice();
+        // 1 Nov: SS and SM; 16 Nov: SS only, 2 s faster and burning more fuel (flat out)
+        stint(&mut p, "SS", 6, 160.0, 0.0, 6.9);
+        stint(&mut p, "SM", 10, 161.5, 0.0, 6.9);
+        stint(&mut p, "SS", 8, 158.0, 0.0, 7.8);
+        for (i, l) in p.saved.laps.iter_mut().enumerate() {
+            l.at = if i < 16 { format!("2026-11-01 20:{i:02}") } else { format!("2026-11-16 20:{i:02}") };
+        }
+        let s = p.summary(3475, "", "Nürburgring GP", 6.0, 3.0);
+        let sm = s.compounds.iter().find(|c| c.compound == "SM").unwrap();
+        assert_eq!(sm.last.as_deref(), Some("2026-11-01"));
+        assert!((sm.stale.unwrap() - 2.0).abs() < 0.01, "{sm:?}");
+        assert_eq!(s.compounds.iter().find(|c| c.compound == "SS").unwrap().stale, None);
+        // The latest 15 laps: 8 at 7.8 and 7 at 6.9 → 7.8 (the median over all 24 laps: 6.9)
+        assert!((s.fuel_per_lap.unwrap() - 7.8).abs() < 1e-4, "{s:?}");
     }
 
     #[test]

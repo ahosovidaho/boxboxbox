@@ -2,6 +2,15 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Strategie: smysluplná alternativa a vysvětlení.** Alternativa je teď plán s jiným počtem
+  zastávek (typicky o zastávku méně na tvrdších gumách), ne doporučení s krátkým stintem na
+  pomalejší směsi. Pod ní „Proč“: kolik stojí/ušetří zastávky, tankování, tempo gum a opotřebení,
+  a jak blízko by musela být pomalejší směs, aby se vyplatila.
+  - Spotřeba z tréninku se bere z posledních 15 kol (ne z průměru za týdny) – s rostoucím tempem
+    roste i spotřeba; na Yas Marině 7,75 místo 6,96 l/kolo.
+  - Varování u směsi se starými daty: „Tempo RM je ze starších tréninků (naposledy 1. 11.) – od té
+    doby jsi rychlejší o 2,5 s/kolo“.
+
 - **Hlasový kouč k zatáčkám, přepracováno.** Poloha se měří po trati (podél nejlepšího kola),
   ne vzdušnou čarou – na Yas Marině už nehlásí trojku, když vjíždíš do čtyřky.
   - Povel zazní ~6 s před brzdným bodem (nejpozději 2 s), krátce a po závodnicku:

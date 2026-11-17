@@ -264,6 +264,10 @@ pub struct PracticeCompound {
     pub life: Option<u32>,
     pub pace: Option<f32>,
     pub deg: Option<f32>,
+    /// Day of the last practice lap on it
+    pub last: Option<String>,
+    /// Pace is old: the driver got this much faster since (see [`practice::CompoundStats::stale`])
+    pub stale: Option<f32>,
 }
 
 /// Practice mode as shown on the dashboard.
@@ -979,7 +983,15 @@ fn fill_from_practice(practice: &practice::Practice, race: &Race, car: Option<i3
         compounds: s
             .compounds
             .iter()
-            .map(|c| PracticeCompound { compound: c.compound.clone(), laps: c.laps, life: c.life, pace: c.pace, deg: c.deg })
+            .map(|c| PracticeCompound {
+                compound: c.compound.clone(),
+                laps: c.laps,
+                life: c.life,
+                pace: c.pace,
+                deg: c.deg,
+                last: c.last.clone(),
+                stale: c.stale,
+            })
             .collect(),
         fuel_per_lap: s.fuel_per_lap.filter(|_| race.fuel_per_lap.is_none()),
     };
