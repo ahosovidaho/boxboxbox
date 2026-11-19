@@ -74,6 +74,9 @@ pub struct Race {
     /// strategy, only the rules (mandatory stop, mandatory compound)
     pub no_wear: bool,
     pub no_fuel: bool,
+    /// Date of the race from the championship calendar ("2026-11-23T20:00:00…")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]

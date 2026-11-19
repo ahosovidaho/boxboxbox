@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Trať: jediné místo, kde se volí závod.** Výběr z kalendáře šampionátu (jen závod a jeho
+  pravidla), pod tím přehled: kola, opotřebení, palivo, tankování, povinná zastávka a směs,
+  datum; okruh (délka, zatáčky), tvoje tempo, rekordy a poznámky. Strategie, palivo a gumy
+  odsud zmizely (jsou na Strategii), rozbor zatáček je v Kouči.
+
 - **Nová navigace.** Přepínač TRÉNINK | ZÁVOD ukazuje oba režimy (trénink modře, závod
   červeně, barevná linka nahoře). Trénink: Jízda · Trať · Kouč · Telemetrie · Měření ·
   Strategie · Setup · Data. Závod: Strategie (brífink před startem) · Jízda · Rekap · Data.

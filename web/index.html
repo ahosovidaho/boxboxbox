@@ -1434,7 +1434,7 @@
   <div id="p10head">
     <b>Trať</b>
     <select id="bkTrack" aria-label="Trať"></select>
-    <span id="bkTabs"><button data-v="brief" class="on">Briefing</button><button data-v="book">Zápisník</button></span>
+    <span class="seg"><button class="on" type="button" id="bkRace">Vybrat závod</button></span>
     <span id="bkState"></span>
     <span class="grow"></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
@@ -1556,6 +1556,7 @@
     <label><span>Startovní směs</span> <select id="rStart">
       <option value="">nevím</option><option value="RS">RS – závodní měkké</option><option value="RM">RM – závodní střední</option><option value="RH">RH – závodní tvrdé</option>
       <option value="SS">SS – sportovní měkké</option><option value="SM">SM – sportovní střední</option><option value="SH">SH – sportovní tvrdé</option><option value="CS">CS – komfortní měkké</option><option value="CM">CM – komfortní střední</option><option value="CH">CH – komfortní tvrdé</option></select></label>
+    <div id="rStrat">
     <h2 class="sect">Gumy a zastávky</h2>
     <table class="tyretab">
       <thead><tr><th>Směs</th><th>Kol na sadě</th><th>Tempo s/kolo (− rychlejší)</th><th>Ztráta s/kolo stáří</th></tr></thead>
@@ -1569,6 +1570,7 @@
     <label><span>Odhad spotřeby / kolo (než změřím)</span> <input type="number" id="rFpl" inputmode="decimal" step="0.01"></label>
     <label><span>Rezerva paliva v cíli (kola)</span> <input type="number" id="rReserve" inputmode="decimal" step="0.1"></label>
     <label><span>Limit opotřebení gum %</span> <input type="number" id="rLimit" inputmode="numeric"></label>
+    </div>
     <div class="serr" id="rErr" hidden></div>
     <button class="big" id="rSave">Uložit závod</button>
     <button class="big ghost" id="rCancel">Zavřít</button>
@@ -1712,7 +1714,7 @@
   // Race: lift-and-coast plan (see loadLift)
   let liftPlan = null, liftKey = '', liftAt = 0;
   // Track page: briefing or notebook, chosen track ('' = race / practice track)
-  let bkView = 'brief', bkTrack = '', bkBusy = false;
+  let bkTrack = '', bkBusy = false;
   // Data page: last state from the server, sort of the session table
   let dsData = null, dsSort = 'date', dsBusy = false;
   // Sessions ticked for a bulk action
@@ -4000,24 +4002,69 @@
   // ---------- Track page (10): briefing before the race, notebook of the track ----------
   const dayOf = iso => iso ? iso.slice(8, 10).replace(/^0/, '') + '. ' + iso.slice(5, 7).replace(/^0/, '') + '.' : '';
   const zItem = (z, html, cls = '') => `<div class="item ${cls}"><b class="z">${z}</b>${html}</div>`;
+  // Trať: the race ahead (from the championship calendar) and the track – rules, layout, own
+  // pace and notes. Strategy, fuel and tyres are on Strategie, corners on Kouč.
   async function loadTrackPage() {
     if (bkBusy) return;
     bkBusy = true;
-    setText('bkState', 'počítám…');
-    $$('#bkTabs button').forEach(b => b.classList.toggle('on', b.dataset.v === bkView));
+    setText('bkState', 'načítám…');
     try {
-      if (bkView === 'brief') {
-        const b = await (await fetch('api/briefing', { cache: 'no-store' })).json();
-        renderBriefing(b);
-        fillTracks(b.book ? b.book.tracks : [], b.track);
-      } else {
-        const n = await (await fetch('api/notebook' + (bkTrack ? '?track=' + encodeURIComponent(bkTrack) : ''), { cache: 'no-store' })).json();
-        renderNotebook(n);
-        fillTracks(n.tracks, n.track);
-      }
+      await loadRace();
+      const race = stRace && stRace.name ? stRace : null;
+      const track = bkTrack || (race && race.track) || '';
+      const n = await (await fetch('api/notebook' + (track ? '?track=' + encodeURIComponent(track) : ''), { cache: 'no-store' })).json();
+      renderTrack(race && (!bkTrack || bkTrack === race.track) ? race : null, n);
+      fillTracks(n.tracks, n.track);
       setText('bkState', '');
     } catch { setText('bkState', 'nepodařilo se načíst'); }
     bkBusy = false;
+  }
+  const mapLen = pts => { let l = 0; for (let i = 1; i < (pts || []).length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; };
+  function renderTrack(r, n) {
+    const body = $('p10body');
+    const fact = (k, v) => v == null || v === '' ? '' : `<div><span class="lbl">${k}</span><span class="big" style="font-size:22px">${v}</span></div>`;
+    let html = '';
+    if (r) {
+      const d = r.date ? new Date(r.date) : null;
+      const when = d && !isNaN(d) ? d.toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'numeric' }) + ' ' + d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }) : '';
+      html += `<div class="card wide bk bkhero2"><div class="bkrace">
+        <div class="bkname"><span class="skew"></span>${esc(r.name)}</div>
+        <div>${esc(r.track)}${when ? ' · ' + esc(when) : ''}</div></div>
+        <div class="bkkpis">
+          ${fact('Kol', r.laps ?? '–')}
+          ${fact('Opotřebení', r.no_wear ? 'žádné' : r.tyre_wear != null ? '×' + nf(r.tyre_wear, 1) : '–')}
+          ${fact('Palivo', r.no_fuel ? 'žádné' : r.fuel_mult != null ? '×' + nf(r.fuel_mult, 1) : '–')}
+          ${r.no_fuel ? '' : fact('Tankování', r.refuel_rate != null ? nf(r.refuel_rate, 1) + ' l/s' : '–')}
+          ${fact('Zastávka', r.pit_required ? 'povinná' : 'ne')}
+          ${fact('Povinná směs', r.mandatory || '–')}
+        </div>
+        <div style="margin-top:10px"><span class="seg"><button class="on" type="button" data-race-edit="1">Upravit pravidla</button></span></div></div>`;
+    } else {
+      html += `<div class="card wide bk"><h2>${n.track ? esc(n.track) : 'Trať'}</h2><div class="muted">${n.track ? 'Trénink bez vybraného závodu.' : 'Vyber závod z kalendáře šampionátu, nebo trať v seznamu nahoře.'}</div></div>`;
+    }
+    if (n.track) {
+      const len = mapLen(n.map);
+      const svg = trackSvg(n.map, n.corners, {});
+      html += `<div class="card bk"><h2>Okruh${len ? ` <span class="mono" style="float:right;font-size:13px;color:var(--label);letter-spacing:0">${nf(len / 1000, 2)} km · ${(n.corners || []).length} zatáček</span>` : ''}</h2>${svg || '<div class="muted">Mapa se nakreslí po prvním kole.</div>'}</div>`;
+      if (n.best) html += `<div class="card bk"><h2>Tvoje tempo</h2><div class="bkhero">
+        <span><span class="lbl">Nejlepší</span><br><span class="big">${fmtLap(n.best.ms)}</span></span>
+        <span><span class="lbl">Ideální</span><br><span class="big">${fmtLap(n.ideal_ms)}</span></span>
+        <span><span class="lbl">Typické</span><br><span class="big">${fmtLap(n.typical_ms)}</span></span></div>
+        <div class="muted">Ideální = nejlepší zatáčky poskládané; typické = medián normálních kol. Rozbor po zatáčkách je v Kouči.</div></div>`;
+      html += `<div class="card bk"><h2>Rekordy · ${n.sessions || 0} ${(n.sessions || 0) === 1 ? 'jízda' : (n.sessions || 0) > 1 && n.sessions < 5 ? 'jízdy' : 'jízd'}</h2>` + ((n.records || []).length ? `<table class="bktab"><tr><th>Auto</th><th>Nejlepší</th><th>Kdy</th><th>Kol</th></tr>`
+        + n.records.map(x => `<tr><td>${esc(x.name || x.car)}${x.car === n.car ? ' ●' : ''}</td><td>${fmtLap(x.best_ms)}</td><td>${dayOf(x.best_started)}</td><td>${x.laps}</td></tr>`).join('') + '</table>'
+        : '<div class="muted">Na téhle trati ještě nemáš nahrané kolo.</div>') + '</div>';
+      html += `<div class="card wide bk"><h2>Poznámky k trati</h2><textarea id="bkNote" placeholder="Brzdné body, nájezdy do boxů, na co si dát pozor…">${esc((n.note && n.note.text) || '')}</textarea>
+        <div class="row" style="margin-top:6px"><button class="stbtn small" id="bkNoteSave">Uložit poznámky</button><span id="bkNoteState" class="muted">${n.note && n.note.updated ? 'uloženo ' + esc(n.note.updated) : ''}</span></div></div>`;
+    }
+    body.innerHTML = html;
+    if ($('bkNoteSave')) $('bkNoteSave').onclick = async () => {
+      setText('bkNoteState', 'ukládám…');
+      try {
+        const res = await fetch('api/notebook/note', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ track: n.track, text: $('bkNote').value }) });
+        setText('bkNoteState', res.ok ? 'uloženo' : 'nepodařilo se uložit');
+      } catch { setText('bkNoteState', 'nepodařilo se uložit'); }
+    };
   }
   function fillTracks(list, cur) {
     const all = (list || []).slice();
@@ -4142,52 +4189,9 @@
     if (n.note && n.note.text) html += `<div class="card wide bk"><h2>Tvoje poznámky k trati</h2><div style="white-space:pre-wrap">${esc(n.note.text)}</div></div>`;
     body.innerHTML = html;
   }
-  function renderNotebook(n) {
-    const body = $('p10body');
-    if (!n.track) { body.innerHTML = '<div class="card wide bk"><h2>Zápisník</h2>Zatím nevím, na které trati jezdíš – v tréninku zadej trať, nebo vyber závod.</div>'; return; }
-    let html = `<div class="card wide bk"><h2>Rekordy · ${esc(n.track)} · ${n.sessions || 0} sessions</h2>`
-      + ((n.records || []).length ? `<table class="bktab"><tr><th>Auto</th><th>Nejlepší</th><th>Kdy</th><th>Sessions</th><th>Kol</th></tr>`
-        + n.records.map(r => `<tr><td>${esc(r.name || r.car)}${r.car === n.car ? ' ●' : ''}</td><td>${fmtLap(r.best_ms)}</td><td>${dayOf(r.best_started)}</td><td>${r.sessions}</td><td>${r.laps}</td></tr>`).join('') + '</table>'
-        : '<div class="muted">Na téhle trati ještě nemám nahrané kolo (trať se pozná podle tvaru – musí být uložená z tréninku).</div>')
-      + '</div>';
-    if (n.best) {
-      html += `<div class="card bk"><h2>Tempo (● auto)</h2><div class="bkhero">
-        <span><span class="lbl">Nejlepší</span><br><span class="big">${fmtLap(n.best.ms)}</span></span>
-        <span><span class="lbl">Ideální</span><br><span class="big">${fmtLap(n.ideal_ms)}</span></span>
-        <span><span class="lbl">Typické</span><br><span class="big">${fmtLap(n.typical_ms)}</span></span></div>
-        <div class="muted">Z nejrychlejší session (${dayOf(n.best.started)}). Ideální = nejlepší zatáčky poskládané; typické = medián normálních kol.</div></div>`;
-      html += bkMap(n, bkMarks(n));
-      html += `<div class="card bk"><h2>Kde je čas</h2><div class="tiplist">${itemsReserves(n.reserves)}</div></div>`;
-      html += `<div class="card bk"><h2>Pozor</h2><div class="tiplist">${itemsRisk(n.risk, 3)}</div></div>`;
-      html += `<div class="card bk"><h2>Gumy a dlouhé stinty</h2>${itemsTyres(n)}${(n.kart ? [] : n.runs || []).slice(1).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('')}</div>`;
-      html += `<div class="card bk"><h2>Starty</h2>${startHtml(n.starts)}${(n.starts || []).length > 1 ? `<div class="muted" style="margin-top:6px">Startů v datech: ${n.starts.length}</div>` : ''}</div>`;
-      const ex = n.experiment;
-      if (ex) {
-        const nm = x => esc(x.name || x.id);
-        const list = ex.corners.map(c => `<span style="color:${c.d < 0 ? 'var(--green)' : 'var(--red)'}">T${c.n} ${tsg(c.d, 2)}</span>`).join(' · ');
-        html += `<div class="card bk"><h2>Pokus se setupem (${dayOf(ex.started)})</h2><div><b>${nm(ex.from)}</b> (${ex.from.laps} kol) → <b>${nm(ex.to)}</b> (${ex.to.laps} kol): kolo <b>${tsg(ex.lap, 2)} s</b></div>`
-          + `<div class="item">${list || 'v zatáčkách bez rozdílu nad 0,03 s'}</div><div class="muted">Průměr normálních kol; palivo a gumy neopraveno – férové porovnání je v Nastavení auta.</div></div>`;
-      }
-      const su = n.setups || [];
-      html += `<div class="card bk"><h2>Setupy na téhle trati</h2>${su.length ? `<table class="bktab"><tr><th>Setup</th><th>Kol</th><th>Nejlepší</th></tr>`
-        + su.map(x => `<tr><td>${esc(x.name || (x.id ? x.id : 'bez karty'))}</td><td>${x.laps}</td><td>${fmtLap(x.best_ms)}</td></tr>`).join('') + '</table>' : '<div class="muted">–</div>'}</div>`;
-    }
-    html += `<div class="card wide bk"><h2>Poznámky</h2><textarea id="bkNote" placeholder="Co fungovalo, brzdné body, nastavení, na co si dát pozor…">${esc((n.note && n.note.text) || '')}</textarea>
-      <div class="row" style="margin-top:6px"><button class="stbtn small" id="bkNoteSave">Uložit poznámky</button><span id="bkNoteState" class="muted">${n.note && n.note.updated ? 'uloženo ' + esc(n.note.updated) : ''}</span></div></div>`;
-    body.innerHTML = html;
-    $('bkNoteSave').onclick = async () => {
-      setText('bkNoteState', 'ukládám…');
-      try {
-        const r = await fetch('api/notebook/note', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ track: n.track, text: $('bkNote').value }) });
-        setText('bkNoteState', r.ok ? 'uloženo' : 'nepodařilo se uložit');
-      } catch { setText('bkNoteState', 'nepodařilo se uložit'); }
-    };
-  }
-  $('bkTabs').addEventListener('click', e => {
-    const v = e.target.closest('button') && e.target.closest('button').dataset.v;
-    if (v && v !== bkView) { bkView = v; loadTrackPage(); }
-  });
-  $('bkTrack').addEventListener('change', e => { bkTrack = e.target.value; bkView = 'book'; loadTrackPage(); });
+  $('bkRace').addEventListener('click', () => openRaceSheet(true));
+  $('p10body').addEventListener('click', e => { if (e.target.closest('[data-race-edit]')) openRaceSheet(true); });
+  $('bkTrack').addEventListener('change', e => { bkTrack = e.target.value; loadTrackPage(); });
 
   // ---------- Data page (11): what takes how much, packing, clean-up, bin ----------
   const gb = b => !b ? '0' : b >= 1e9 ? nf(b / 1e9, 1) + ' GB' : b >= 1e6 ? Math.round(b / 1e6) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' kB';
@@ -5258,8 +5262,11 @@
     renderTyreRows();
     $('rFpl').value = r.fuel_per_lap ?? ''; $('rReserve').value = r.reserve_laps ?? 0.3; $('rLimit').value = r.wear_limit ?? 70;
     $('raceSheet').dataset.id = r.id || '';
+    $('raceSheet').dataset.date = r.date || '';
   }
-  async function openRaceSheet() {
+  // From the Trať page only the race and its rules; the strategy figures are on Strategie
+  async function openRaceSheet(rules = false) {
+    $('rStrat').hidden = rules;
     await loadRace();
     fillRaceForm(stRace || {});
     $('rErr').hidden = true;
@@ -5311,7 +5318,7 @@
       refuel_rate: numIn($('rRefuel').value), pit_required: $('rPit').checked, mandatory: $('rMand').value || null,
       start_compound: $('rStart').value || null, tyres: readTyres(), deg: numIn($('rDeg').value), pit_loss: numIn($('rPitLoss').value),
       fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), wear_limit: numIn($('rLimit').value),
-      no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked,
+      no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked, date: $('raceSheet').dataset.date || null,
     };
   }
   function syncNoWearFuel() {
@@ -5354,6 +5361,7 @@
       stRace = saved.race; $('raceSheet').hidden = true; prKey = ''; loadPrep();
       // In practice a newly chosen race also sets the practice track and multipliers
       if (appMode === 'practice' && (changed || !prData || !prData.state || !prData.state.track)) await practiceForRace();
+      if (page === 10) { bkTrack = ''; loadTrackPage(); }
     }
   };
 
