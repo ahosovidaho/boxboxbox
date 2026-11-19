@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Měření: jen skutečné rozjezdy.** Rozjezd, kdy auto vezla hra (vypuštění z boxu – rychlost
+  roste dřív, než šlápneš na plyn) nebo jel na omezovači v boxové uličce (rychlost několik
+  sekund na jedné hodnotě a motor pod omezovačem), se nepočítá – ani zpětně v uložených
+  (ze 110 jízd vypadla jediná: 296 GT3 17. 11. 23:21, „0–100 za 5,2 s“). Nejlepší jízda
+  v grafu je se stejnou kartou setupu jako poslední; u čar datum a trať, pod grafem vysvětlivka.
+
 - **Setup: auto a pohon, kouč podle nich.** Karta Auto (i u BoP): pohon FF / FR / MR / RR / 4WD,
   nebo zjistit z jízdy – poháněná náprava se pozná z prokluzu kol na plném plynu (na Yas
   F3500: zadní kola +5 %, přední 0). Rady k jízdě z chování auta (nedotáčivost, přetáčivost,

@@ -45,6 +45,9 @@ const DROP_KMH: f32 = 3.0;
 const DROP_S: f32 = 1.5;
 const DROP_HARD_KMH: f32 = 15.0;
 const MAX_ACCEL_S: f32 = 180.0;
+/// Pit limiter: the speed within this band (km/h) for this long (s) at half throttle or more
+const PIT_FLAT_KMH: f32 = 1.5;
+const PIT_FLAT_S: f32 = 2.0;
 /// Acceleration runs are kept from this top speed on (pit exits, restarts after a spin don't count).
 const ACCEL_MIN_KMH: f32 = 100.0;
 /// Braking runs start at this speed or above (so pit stops don't count).
@@ -135,6 +138,11 @@ pub struct Run {
     /// Session folder for runs imported from recordings
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Setup card (id) and track of the moment, when known
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<String>,
     /// Packet counter at the start (only needed while stamping)
     #[serde(skip)]
     pub start_tick: i32,
@@ -506,9 +514,48 @@ impl Detector {
     }
 }
 
+/// A pit-lane exit: the speed held flat on the pit limiter for a while with the throttle down
+/// and the engine well below its limiter. GT7 does not say when the pit limiter is on; a launch
+/// never keeps one speed for seconds – unless the driver sits on the rev limiter without shifting
+/// (that is not the pit limiter). Points: (time s, km/h, throttle 0–1, rpm).
+pub fn pit_limited(pts: &[(f32, f32, f32, f32)]) -> bool {
+    let max_rpm = pts.iter().map(|p| p.3).fold(0.0, f32::max);
+    let mut i = 0;
+    for j in 0..pts.len() {
+        // Window [i, j] of at most PIT_FLAT_S
+        while pts[j].0 - pts[i].0 > PIT_FLAT_S {
+            i += 1;
+        }
+        let w = &pts[i..=j];
+        if pts[j].0 - pts[i].0 < PIT_FLAT_S - 0.1 || w.iter().any(|p| p.1 < 25.0 || p.1 > ACCEL_MIN_KMH || p.2 < 0.5) {
+            continue;
+        }
+        let (lo, hi) = w.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p.1), hi.max(p.1)));
+        if hi - lo < PIT_FLAT_KMH && w.iter().all(|p| p.3 < max_rpm * 0.9) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Moving before the driver pressed the throttle: the game drove the car (released from the pit
+/// box, a restart, an auto-drive), not a launch.
+pub fn auto_driven(pts: &[(f32, f32, f32, f32)]) -> bool {
+    pts.iter().find(|p| p.2 >= 0.1).is_some_and(|p| p.1 > 10.0)
+}
+
+/// Not a launch the driver made: game-driven start or the pit limiter (see above). Points:
+/// (time s, km/h, throttle 0–1, rpm).
+pub fn not_a_launch(pts: &[(f32, f32, f32, f32)]) -> bool {
+    auto_driven(pts) || pit_limited(pts)
+}
+
 fn finish_accel(a: Attempt) -> Option<Run> {
     let launched = a.pts.iter().take_while(|p| p.t <= LAUNCH_WINDOW_S).any(|p| p.thr >= LAUNCH_THROTTLE);
     if a.v_max < ACCEL_MIN_KMH || !launched {
+        return None;
+    }
+    if not_a_launch(&a.pts.iter().map(|p| (p.t, p.v, p.thr as f32 / 255.0, p.rpm)).collect::<Vec<_>>()) {
         return None;
     }
     let dyno = dyno::compute(&a.pts, a.gear_ratios);
@@ -574,12 +621,57 @@ fn build(a: Attempt, dyno: Option<Dyno>) -> Run {
         trace,
         dyno,
         source: None,
+        setup: None,
+        track: None,
         start_tick: a.start_tick,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn game_driven_starts_and_pit_limiter_are_not_launches() {
+        // Released from the pit box: 20 km/h before the throttle, then the driver accelerates
+        let pit_box: Vec<(f32, f32, f32, f32)> = (0..200)
+            .map(|i| {
+                let t = i as f32 * 0.05;
+                (t, if t < 1.0 { 20.0 * t.min(0.2) / 0.2 } else { 20.0 + 15.0 * (t - 1.0) }, if t < 1.0 { 0.0 } else { 1.0 }, 6000.0)
+            })
+            .collect();
+        assert!(not_a_launch(&pit_box));
+        // Pit limiter: 60 km/h held for 3 s at full throttle
+        let limiter: Vec<(f32, f32, f32, f32)> = (0..300)
+            .map(|i| {
+                let t = i as f32 * 0.05;
+                (
+                    t,
+                    if t < 2.0 {
+                        30.0 * t
+                    } else if t < 5.0 {
+                        60.0
+                    } else {
+                        60.0 + 20.0 * (t - 5.0)
+                    },
+                    1.0,
+                    if (2.0..5.0).contains(&t) { 5000.0 } else { 7500.0 },
+                )
+            })
+            .collect();
+        assert!(not_a_launch(&limiter));
+        // Held on the rev limiter without shifting (a kart in 2nd): the driver's own launch
+        let revs: Vec<(f32, f32, f32, f32)> =
+            limiter.iter().map(|p| (p.0, p.1, p.2, if (2.0..5.0).contains(&p.0) { 7400.0 } else { p.3 })).collect();
+        assert!(!not_a_launch(&revs));
+        // A real launch: throttle from standstill, speed keeps rising (gear shifts cost a little)
+        let launch: Vec<(f32, f32, f32, f32)> = (0..300)
+            .map(|i| {
+                let t = i as f32 * 0.05;
+                (t, 25.0 * t - if (t % 2.5) < 0.3 { 1.0 } else { 0.0 }, 1.0, 7000.0)
+            })
+            .collect();
+        assert!(!not_a_launch(&launch));
+    }
+
     use super::*;
 
     const ON: u16 = flags::ON_TRACK;
