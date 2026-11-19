@@ -728,8 +728,17 @@
   #topnav[hidden] { display: none; }
   #topnav .brand { font: italic 800 18px "Saira Condensed", sans-serif; letter-spacing: .02em; color: #E6E6EA; white-space: nowrap; }
   #topnav .brand i { color: #E10600; font-style: inherit; }
-  #topnav .modechip { font: 700 12px "Saira Condensed", sans-serif; letter-spacing: .12em; padding: 6px 10px; border-radius: 8px; border: 0; background: #2A2A31; color: #fff; }
-  #topnav .modechip.race { background: #E10600; }
+  /* Mode switch: both modes, the active one lit – practice blue, race red */
+  .modechip { display: inline-flex; gap: 2px; padding: 2px !important; }
+  .modechip span { padding: 1px 6px; border-radius: 5px; color: #6E6E78; }
+  .modechip span.on { background: #1F6FEB; color: #fff; }
+  .modechip.race span.on { background: #E10600; }
+  #topnav .modechip { font: 700 12px "Saira Condensed", sans-serif; letter-spacing: .12em; border-radius: 9px; border: 1px solid #2C2C33; background: #141418; color: #fff; }
+  #topnav .modechip span { padding: 5px 9px; border-radius: 7px; }
+  /* A thin line in the colour of the mode at the top of every page */
+  #topnav { border-top: 3px solid #1F6FEB; }
+  body.m-race #topnav { border-top-color: #E10600; }
+  .backlink { background: none; border: 1px solid #2C2C33; border-radius: 8px; color: #C8C8D0; padding: 4px 10px; font: 600 13px -apple-system, system-ui, sans-serif; }
   #navtabs { display: flex; align-items: stretch; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 50px; }
   #navtabs::-webkit-scrollbar { display: none; }
   #navtabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 0 10px; color: #8A8A94; white-space: nowrap;
@@ -741,7 +750,7 @@
   .rd .dots, :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) > .conn { display: none; }
   /* Page head: big condensed title */
   :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) { height: auto; min-height: 40px; font-size: 13px; color: var(--dim); }
-  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) > b:first-child { font: italic 800 30px/1 var(--disp); text-transform: uppercase; letter-spacing: .01em; color: var(--text); margin-right: 4px; }
+  :is(#p2head, #p3head, #p4head, #p5head, #p7head, #p8head, #p9head, #p10head, #p11head, #p12head) > b:first-of-type { font: italic 800 30px/1 var(--disp); text-transform: uppercase; letter-spacing: .01em; color: var(--text); margin-right: 4px; }
   /* Panels, section titles, labels, numbers */
   .rd .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
   :is(#p2, #p3, #p4, #p5, #p7, #p8, #p9, #p10, #p11) .card h2 { font: 700 15px var(--disp); letter-spacing: .12em; text-transform: uppercase; color: var(--text); margin-bottom: 10px; }
@@ -1005,7 +1014,8 @@
 <!-- ======================= Page 2: all data ======================= -->
 <section class="page rd" id="p2" hidden>
   <div id="p2head">
-    <b>Živá data</b>
+    <button class="backlink" type="button" data-back="11">← Data</button>
+    <b>Diagnostika · živá data</b>
     <span id="carname2">–</span>
     <span class="coachpill" hidden>COACH ●</span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
@@ -1153,6 +1163,7 @@
   <div id="p3prog" hidden><div class="card" id="tProg"></div></div>
   <div id="p3ref" hidden>
     <div id="vLeft">
+      <div class="card"><div class="lhead"><span><b style="font-size:15px">Referenční kola</b><br><span class="muted" style="font-size:13px">Z přehrávání v GT7 (online žebříček) nebo nejlepší kolo z tvého záznamu.</span></span><span class="seg"><button class="on" type="button" data-goto="12">Nahrát / spravovat</button></span></div></div>
       <div class="card" id="vHead"><span class="muted">Načítám…</span></div>
       <div class="card" id="vList" hidden></div>
     </div>
@@ -1448,8 +1459,9 @@
 <!-- ======================= Reference laps from GT7 replays ======================= -->
 <section class="page rd" id="p12" hidden>
   <div id="p12head">
+    <button class="backlink" type="button" data-back="3">← Kouč</button>
     <b>Reference</b>
-    <span>kola jiných jezdců z přehrávání v GT7 (žebříček online časovky)</span>
+    <span>kola jiných jezdců z přehrávání v GT7 nebo tvá kola ze záznamu</span>
     <span class="grow"></span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
@@ -1706,28 +1718,36 @@
   // Sessions ticked for a bulk action
   const dsSel = new Set();
   // Pages in groups: driving | analysis | preparation | system (the nav bar shows the names)
-  const ORDER = { practice: [1, 3, 9, 4, 12, 10, 5, 8, 2, 11], race: [6, 5, 10, 7, 2, 11] };
-  const PAGE_NAME = { 1: 'Jízda', 6: 'Jízda', 3: 'Kouč', 9: 'Telemetrie', 4: 'Měření', 12: 'Reference', 10: 'Trať', 5: 'Strategie', 8: 'Setup', 7: 'Rekap', 2: 'Živá data', 11: 'Data' };
-  const PAGE_GROUP = { 1: 0, 6: 0, 3: 1, 9: 1, 4: 1, 12: 1, 10: 2, 5: 2, 8: 2, 7: 2, 2: 3, 11: 3 };
+  // Practice: drive, the track and the coach, analysis, preparation, data. Race: the strategy
+  // briefing first, then driving and the recap.
+  const ORDER = { practice: [1, 10, 3, 9, 4, 5, 8, 11], race: [5, 6, 7, 11] };
+  // Pages opened from another one (no tab of their own): page → the tab that stays lit
+  const SUB = { practice: { 12: 3, 2: 11 }, race: { 10: 5, 12: 5, 2: 11 } };
+  const PAGE_NAME = { 1: 'Jízda', 6: 'Jízda', 3: 'Kouč', 9: 'Telemetrie', 4: 'Měření', 12: 'Reference', 10: 'Trať', 5: 'Strategie', 8: 'Setup', 7: 'Rekap', 2: 'Diagnostika', 11: 'Data' };
+  const PAGE_GROUP = { 1: 0, 6: 0, 10: 1, 3: 1, 9: 2, 4: 2, 5: 3, 8: 3, 7: 2, 2: 4, 11: 4 };
+  const allowed = (m, n) => ORDER[m].includes(n) || SUB[m][n] != null;
   const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   let appMode = load('mode') === 'practice' ? 'practice' : 'race';
   let page = ORDER[appMode][0];
   { const p = +load('page'); if (ORDER[appMode].includes(p)) page = p; }
+  document.body.classList.toggle('m-race', appMode === 'race');
   function updateDots() {
     const html = ORDER[appMode].map(p => `<i class="${p === page ? 'on' : ''}" data-page="${p}" title="${PAGE_NAME[p]}"></i>`).join('')
-      + `<button class="modechip ${appMode}">${appMode === 'race' ? 'ZÁVOD' : 'TRÉNINK'}</button>`;
+      + `<button class="modechip ${appMode}">${modeChip()}</button>`;
     $$('.dots').forEach(el => { if (el.innerHTML !== html) el.innerHTML = html; });
     // Top navigation on every page but the driving dashboards
     const nav = $('topnav');
     nav.hidden = page === 1 || page === 6;
     const chip = nav.querySelector('.modechip');
     chip.className = 'modechip ' + appMode;
-    chip.textContent = appMode === 'race' ? 'ZÁVOD' : 'TRÉNINK';
+    if (chip.innerHTML !== modeChip()) chip.innerHTML = modeChip();
+    chip.title = appMode === 'race' ? 'Přepnout na trénink' : 'Přepnout na závod';
+    const lit = SUB[appMode][page] ?? page;
     let prev = null;
     const tabs = ORDER[appMode].map(p => {
       const sep = prev != null && PAGE_GROUP[p] !== prev ? '<span class="sep"></span>' : '';
       prev = PAGE_GROUP[p];
-      return `${sep}<button type="button" data-page="${p}" class="${p === page ? 'on' : ''}">${PAGE_NAME[p]}</button>`;
+      return `${sep}<button type="button" data-page="${p}" class="${p === lit ? 'on' : ''}">${PAGE_NAME[p]}</button>`;
     }).join('');
     if ($('navtabs').innerHTML !== tabs) {
       $('navtabs').innerHTML = tabs;
@@ -1735,10 +1755,13 @@
       if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
   }
+  // Both modes on the switch, the active one lit
+  const modeChip = () => `<span class="${appMode === 'practice' ? 'on' : ''}">TRÉNINK</span><span class="${appMode === 'race' ? 'on' : ''}">ZÁVOD</span>`;
   function setMode(m) {
     if (m === appMode) return;
     appMode = m;
     store('mode', m);
+    document.body.classList.toggle('m-race', m === 'race');
     showPage(ORDER[m][0]);
   }
   $('navtabs').addEventListener('click', e => { const b = e.target.closest('button[data-page]'); if (b) showPage(+b.dataset.page); });
@@ -1748,10 +1771,12 @@
   document.addEventListener('keydown', e => {
     if (e.altKey || e.ctrlKey || e.metaKey || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     if (e.target.closest('input, select, textarea, [contenteditable]') || !$('start').hidden) return;
-    const o = ORDER[appMode], i = o.indexOf(page);
+    const o = ORDER[appMode], i = o.indexOf(SUB[appMode][page] ?? page);
     showPage(o[Math.max(0, Math.min(o.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)))]);
   });
   $('navGear').addEventListener('click', () => openSettings());
+  document.addEventListener('click', e => { const b = e.target.closest('[data-back]'); if (b) showPage(appMode === 'race' && +b.dataset.back === 3 ? 5 : +b.dataset.back); });
+  document.addEventListener('click', e => { const b = e.target.closest('[data-goto]'); if (b) showPage(+b.dataset.goto); });
   // The chip next to the page dots switches the mode
   document.addEventListener('click', async e => {
     if (!e.target.closest('.modechip')) return;
@@ -1761,7 +1786,7 @@
     setMode(next);
   });
   function showPage(n) {
-    if (!ORDER[appMode].includes(n)) n = ORDER[appMode][0];
+    if (!allowed(appMode, n)) n = ORDER[appMode][0];
     page = n;
     for (const i of ALL_PAGES) $('p' + i).hidden = n !== i;
     store('page', n);
@@ -1803,7 +1828,7 @@
     // Mouse: at least 120 px, and not when the drag selected text (copying a figure)
     const selected = press.mouse && String(window.getSelection ? window.getSelection() : '').trim().length > 0;
     if (!press.chart && !selected && Math.abs(dx) > (press.mouse ? 120 : 60) && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      const o = ORDER[appMode], i = o.indexOf(page);
+      const o = ORDER[appMode], i = o.indexOf(SUB[appMode][page] ?? page);
       showPage(o[Math.max(0, Math.min(o.length - 1, i + (dx < 0 ? 1 : -1)))]);
     }
     press = null;
@@ -2724,6 +2749,8 @@
     // Task buttons go on to the coach page's handler; everything else stays here
     if (e.target.closest('[data-start]')) return;
     e.stopPropagation();
+    const go = e.target.closest('[data-goto]');
+    if (go) { showPage(+go.dataset.goto); return; }
     const vs = e.target.closest('[data-vs]');
     if (vs) { const [session, ref] = vs.dataset.vs.split('|'); vsSel = null; loadVsRef({ session, ref }); return; }
     if (e.target.closest('[data-vn-close]')) { vsSel = null; renderVsRef(); return; }
@@ -2784,7 +2811,14 @@
         + `<td class="t">${fmtLap(r.official_ms)}</td><td><small>${nf(r.k * 100, 1)} % rychlosti</small></td>`
         + `<td><button data-ref="open" data-id="${esc(r.id)}">Porovnat v Telemetrii</button><button class="danger" data-ref="remove" data-id="${esc(r.id)}">Smazat</button></td></tr>`).join('') + '</tbody></table>'
       : '<p class="muted" style="font-size:14px">Zatím žádná. Nahraj první kolo z přehrávání.</p>') + '</div>';
-    const html = capture + (pend || '') + (refErr && !pend ? `<div class="card wide rferr">${esc(refErr)}</div>` : '') + list;
+    const own = (d.own || []);
+    const ownCard = `<div class="card"><h2>Ze záznamu jízdy</h2><p class="muted" style="font-size:13px;margin:0 0 10px">Nejlepší kolo z tvé session (třeba z tréninkového závodu) jako reference – pro hlasového kouče i porovnání.</p>`
+      + (own.length ? `<label class="muted" style="font-size:13px">Session<select id="ownSel" style="display:block;width:100%;margin:4px 0 8px">`
+        + own.map(o => `<option value="${esc(o.session)}">${esc(tTime(o.started))} · ${esc(o.track)} · ${esc(o.car || o.car_code)} · ${fmtLap(o.best_ms)} (${o.laps} kol)</option>`).join('') + `</select></label>`
+        + `<label class="muted" style="font-size:13px">Jezdec<input id="ownDriver" placeholder="Já" autocomplete="off" style="display:block;width:100%;margin:4px 0 10px"></label>`
+        + `<button class="pri" data-ref="own">Uložit nejlepší kolo jako referenci</button>`
+        : '<p class="muted" style="font-size:14px">Zatím žádná session s celým kolem na známé trati.</p>') + '</div>';
+    const html = capture + ownCard + (pend || '') + (refErr && !pend ? `<div class="card wide rferr">${esc(refErr)}</div>` : '') + list;
     const body = $('p12body');
     // Keep what is typed while the state refreshes
     const typed = {};
@@ -2800,6 +2834,7 @@
     if (!b) return;
     const a = b.dataset.ref;
     if (a === 'arm' || a === 'stop') return refAction({ action: a });
+    if (a === 'own') { b.disabled = true; await refAction({ action: 'own', id: $('ownSel').value, driver: $('ownDriver').value }); b.disabled = false; return; }
     if (a === 'save' || a === 'discard') {
       const f = b.closest('.rfform'), id = f.dataset.pend;
       if (a === 'discard') return refAction({ action: 'remove', id });
@@ -4238,7 +4273,8 @@
           + `<button data-a="${r.pinned ? 'unpin' : 'pin'}" data-s="${esc(r.session)}">${r.pinned ? 'Odepnout' : '📌'}</button>`
           + `${r.pinned ? '' : `<button class="del" data-a="remove" data-s="${esc(r.session)}">Smazat</button>`}`}</td></tr>`).join('')
       + '</table></div>';
-    $('p11body').innerHTML = html + '<div class="wide" id="tkWrap"></div>';
+    $('p11body').innerHTML = html + '<div class="wide" id="tkWrap"></div>'
+      + '<div class="card wide"><h2>Diagnostika</h2><p class="muted" style="font-size:13px;margin:0 0 10px">Živá data z GT7: spojení, pakety, nahrávání. Hodí se, když se nepřipojí PS5.</p><button data-goto="2">Otevřít živá data</button></div>';
     renderTracks();
     if ($('dsRun')) $('dsRun').onclick = () => dsAction({ action: 'run_plan' }, `Provést doporučený úklid (${d.plan.length} kroků, uvolní ~${gb(d.plan_frees)})? Mazané soubory půjdou do koše.`);
     if ($('dsEmpty')) $('dsEmpty').onclick = () => dsAction({ action: 'empty_trash' }, `Vysypat koš (${gb(t.trash)})? Tohle už nejde vrátit.`);

@@ -429,7 +429,16 @@ fn references_json(s: &AppState) -> serde_json::Value {
             v
         })
         .collect();
+    // Own sessions whose best lap can become a reference (newest first)
+    let mut own: Vec<&crate::coach::library::SessionInfo> = all.iter().filter(|i| i.best_ms.is_some() && i.track.is_some()).collect();
+    own.sort_by(|a, b| b.started.cmp(&a.started));
+    let own: Vec<serde_json::Value> = own
+        .iter()
+        .take(20)
+        .map(|i| json!({ "session": i.session, "car": i.car, "car_code": i.car_code, "track": i.track, "best_ms": i.best_ms, "laps": i.laps, "started": i.started }))
+        .collect();
     json!({
+        "own": own,
         "capture": crate::session::replay::status(&s.replay),
         "pending": crate::coach::reference::pending(&root),
         "references": refs,
@@ -476,6 +485,17 @@ async fn references_action(State(s): State<AppState>, Json(b): Json<ReferenceBod
                     (None, None) => None,
                 };
                 reference::save(&root, &b.id, &b.driver, ms, track.as_deref(), &|_: &[[f32; 2]]| None)?;
+            }
+            // The best lap of one of the own sessions (`id` = session folder)
+            "own" => {
+                let (track_of, layouts) = track_matcher(&s.strategy);
+                let all = crate::coach::library::index(&s.settings.data.recordings, &mut comparer(), &track_of, layouts);
+                let i = all.iter().find(|i| i.session == b.id).ok_or("Session nenalezena.")?;
+                let (Some(file), Some(ms), Some(track)) = (&i.best_file, i.best_ms, &i.track) else {
+                    return Err("V session není celé kolo na známé trati.".into());
+                };
+                let lap = s.settings.data.recordings.join(&i.session).join(file);
+                reference::from_lap(&root, &lap, &b.driver, ms, i.car_code, &i.car, track, &i.started)?;
             }
             "remove" => reference::remove(&root, &b.id)?,
             _ => return Err("unknown action".into()),
