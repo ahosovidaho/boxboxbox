@@ -232,7 +232,9 @@
   #p4body .card h2 { display: flex; justify-content: space-between; gap: 8px; }
   #p4body .card h2 span { color: var(--dim); font-weight: 500; letter-spacing: .04em; text-transform: none; }
   #p4body .card h2 b { font-weight: inherit; }
-  #shiftTable tr:first-child td { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--label); }
+  #shiftTable tr:first-child td { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--label); white-space: normal; }
+  #shiftTable td + td { padding-left: 8px; }
+  #p8body select[data-k] { width: 100%; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
   #shiftTable .warn { color: var(--orange); }
   #perfLive { container-type: inline-size; }
   #perfLive .row { align-items: center; }
@@ -629,6 +631,12 @@
   #p5body { flex: 1; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; min-height: 0;
     display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); grid-auto-rows: max-content; align-content: start; padding-bottom: 8px; }
   #p5body .card { min-height: auto; }
+  .toemark { font-size: 11px; color: var(--label); margin-top: 2px; text-align: right; }
+  .gearspd { font: 13px "JetBrains Mono", ui-monospace, monospace; color: var(--label); white-space: nowrap; padding-left: 8px; }
+  .gearspd small { display: block; font-size: 11px; opacity: .8; }
+  .stbrief .basis { grid-column: 1 / -1; }
+  .stbrief .basis .cols { columns: 340px; column-gap: 24px; }
+  .stbrief .basis .datarow { break-inside: avoid; }
   /* Strategy briefing: the whole width, plans side by side */
   .stbrief { grid-column: 1 / -1; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
   .stbrief:empty { display: none; }
@@ -1218,6 +1226,7 @@
 
     <div class="card"><h2 data-t>Schaltpunkte</h2>
       <table class="ptable" id="shiftTable"></table>
+      <div class="muted" id="shiftSrc" style="font-size:12px;margin-top:6px"></div>
       <div class="pempty" id="dynoEmpty" data-t>Noch keine Auswertung: dafür mit Vollgas durch mehrere Gänge beschleunigen.</div>
       <div id="dynoBox">
         <h2 style="margin-top:12px"><b data-t>Leistungsband</b> <span data-t>% vom Maximum</span></h2>
@@ -3178,7 +3187,7 @@
     if (!dy) { setHtml('shiftTable', ''); return; }
     const shifts = dy.shifts || [];
     setHtml('shiftTable', !shifts.length ? '' :
-      `<tr><td>${esc(t('Gang'))}</td><td class="v">${esc(t('optimal'))}</td><td class="x"></td><td class="w">${esc(t('gefahren'))}</td><td class="w">Modré LED</td></tr>` +
+      `<tr><td>Řazení</td><td class="v">${esc(t('optimal'))}</td><td class="x"></td><td class="w">${esc(t('gefahren'))}</td><td class="w" title="Kdy se rozsvítí modrá LED (ot/min)">LED</td></tr>` +
       shifts.map(s => {
         const best = s.late ? `${esc(t('spät'))}` : `${Math.round(s.rpm)}`;
         const at = s.late ? `${esc(t('bis'))} ${Math.round(dy.max_rpm)}` : speedText(s.kmh);
@@ -3189,7 +3198,8 @@
         }
         const led = ledRpm(dy, s, P.car_code === perfLiveCar && lastData ? lastData.rpm_alert_max : 0);
         return `<tr><td>${s.gear} → ${s.gear + 1}</td><td class="v">${best}</td><td class="x">${at}</td><td class="w">${drove}</td><td class="w">${led ? Math.round(led) : '–'}</td></tr>`;
-      }).join('') + `<tr><td colspan="5" class="x" style="text-transform:none;letter-spacing:0;font-size:12px">Zdroj: ${dy === td ? 'jízdy (plný plyn v tréninku a závodech)' : 'rozjezdy z místa'}. Modrá LED se rozsvítí o tvou reakci (0,15 s) dřív, ať přeřadíš přesně v optimu.</td></tr>`);
+      }).join(''));
+    setText('shiftSrc', shifts.length ? `Zdroj: ${dy === td ? 'jízdy na plný plyn v tréninku a závodech' : 'rozjezdy z místa'}. Modrá LED se rozsvítí o tvou reakci (0,15 s) dřív, ať přeřadíš přesně v optimu.` : '');
     const pmax = Math.max(...dy.curve.map(c => c[1]));
     const tq = dy.curve.map(([r, w]) => [r, w / r]);
     const tmax = Math.max(...tq.map(c => c[1]));
@@ -4842,7 +4852,7 @@
   // ---------- Car setup (practice) ----------
   // Fields of the GT7 settings sheet. [key, label, unit, front/rear pair?]; values are kept as typed.
   const SETUP_FIELDS = [
-    ['Pneumatiky', [['tyre', 'Směs', '', true, 'text']]],
+    ['Pneumatiky', [['tyre', 'Směs', '', true, 'tyre']]],
     ['Podvozek', [['ride', 'Světlá výška', 'mm', true], ['freq', 'Vlastní frekvence', 'Hz', true], ['arb', 'Stabilizátor', '1–10', true],
       ['damp_c', 'Tlumiče – komprese', '%', true], ['damp_e', 'Tlumiče – roztažení', '%', true], ['camber', 'Odklon', '°', true], ['toe', 'Sbíhavost', '°', true]]],
     ['Aerodynamika', [['downforce', 'Přítlak', '', true]]],
@@ -4876,6 +4886,31 @@
       renderSetupInfo();
     } catch {}
   }
+  // Toe: + = toe-in ("A" seen from above, the wheels point together), − = toe-out ("V")
+  const toeMark = x => { const n = parseFloat(String(x ?? '').replace(',', '.')); return isNaN(n) || n === 0 ? '' : n > 0 ? 'A · sbíhavost' : 'V · rozbíhavost'; };
+  // Speed on the limiter in each gear for the ratios entered: the engine speed per km/h measured
+  // with this car (Měření) scales with gear × final ratio, so new ratios are worked out before
+  // driving them. After an upshift the revs drop to limiter × next / this ratio.
+  function gearSpeeds(v) {
+    const P = perf && perf.car_code === suCar ? perf : null;
+    const td = P && P.track_dyno && P.track_dyno.dyno;
+    const dy = td && (td.ratios || []).length ? td : P && P.dyno;
+    const num = k => { const n = parseFloat(String(v[k] ?? '').replace(',', '.')); return isNaN(n) || n <= 0 ? null : n; };
+    const fin = num('final');
+    if (!dy || !(dy.ratios || []).length || !fin || !dy.max_rpm) return {};
+    // rpm per km/h = k × gear ratio × final ratio; k from the measured gears (the active card)
+    const ks = dy.ratios.map(([g, rpk]) => num('gear_' + g) ? rpk / (num('gear_' + g) * fin) : null).filter(x => x);
+    if (!ks.length) return {};
+    const k = ks.reduce((a, b) => a + b) / ks.length, lim = dy.max_rpm, out = {};
+    for (let g = 1; g <= 8; g++) {
+      const r = num('gear_' + g);
+      if (!r) continue;
+      const kmh = lim / (k * r * fin), next = num('gear_' + (g + 1));
+      out['gear_' + g] = `≈ ${Math.round(kmh)} km/h` + (next ? `<small>→ ${Math.round(lim * next / r)} ot.</small>` : '');
+    }
+    out.note = `Vpravo rychlost na omezovači (${Math.round(lim)} ot.) pro zadané poměry, pod ní otáčky po přeřazení na další stupeň. Spočítáno z tvých jízd s tímhle autem – po změně poměrů nebo stálého převodu se přepočítá hned.`;
+    return out;
+  }
   function renderSetupForm() {
     setText('suCar', (lastData && lastData.car_name) || `auto ${suCar}`);
     $('suPick').innerHTML = '<option value="">– bez setupu –</option>'
@@ -4883,7 +4918,12 @@
     $('suPick').value = suEdit.id || (suDirty ? '' : suActive);
     $('suName').value = suEdit.name || '';
     const v = suEdit.values || {};
-    const inp = (k, type) => `<input ${type === 'text' ? 'type="text" class="wide"' : 'type="text" inputmode="decimal"'} data-k="${k}" value="${esc(v[k] ?? '')}" autocomplete="off">`;
+    const TYRES = [['', '–'], ['RS', 'RS – závodní měkké'], ['RM', 'RM – závodní střední'], ['RH', 'RH – závodní tvrdé'], ['IM', 'IM – přechodné'], ['W', 'W – do deště'],
+      ['SS', 'SS – sportovní měkké'], ['SM', 'SM – sportovní střední'], ['SH', 'SH – sportovní tvrdé'], ['CS', 'CS – komfortní měkké'], ['CM', 'CM – komfortní střední'], ['CH', 'CH – komfortní tvrdé']];
+    const inp = (k, type) => type === 'tyre'
+      ? `<select data-k="${k}" title="Směs pneumatik">${TYRES.map(([c, n]) => `<option value="${c}" title="${esc(n)}" ${(v[k] || '').toUpperCase() === c ? 'selected' : ''}>${esc(c || '–')}</option>`).join('')}</select>`
+      : `<input ${type === 'text' ? 'type="text" class="wide"' : 'type="text" inputmode="decimal"'} data-k="${k}" value="${esc(v[k] ?? '')}" autocomplete="off">`;
+    const gearSpeed = gearSpeeds(v);
     $('suBop').checked = !!suEdit.bop;
     // The car and its drive layout (for the coach's driving advice) – BoP cars too
     const det = suInfoData && suInfoData.advice && suInfoData.advice.drive_detected;
@@ -4893,10 +4933,16 @@
       + `<div class="pnote">Kouč podle pohonu upraví rady k jízdě (výjezd, trakce, ubrání plynu). Z jízdy poznám poháněnou nápravu; polohu motoru (MR, RR) vyber.</div></div>`;
     $('suForm').innerHTML = autoCard + (suEdit.bop ? `<div class="card"><h2>BoP</h2><div class="pnote" style="margin:0">Nastavení je v závodě zamčené (Balance of Performance). Kola a body řazení se ukládají k této kartě, doporučení jsou jen pro jízdu.</div></div>` : SETUP_FIELDS.map(([title, fields]) => {
       const pair = fields.some(f => f[3]);
-      const rows = fields.map(([k, label, unit, fr, type]) => fr
-        ? `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td>${inp(k + '_f', type)}</td><td>${inp(k + '_r', type)}</td></tr>`
-        : `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td colspan="2">${inp(k, type)}</td></tr>`).join('');
-      return `<div class="card"><h2>${title}</h2><table class="sutab">${pair ? '<tr><th></th><th>Předek</th><th>Zadek</th></tr>' : ''}${rows}</table></div>`;
+      const rows = fields.map(([k, label, unit, fr, type]) => {
+        if (k === 'toe') return `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td>${inp(k + '_f', type)}<div class="toemark" data-toe="toe_f">${toeMark(v.toe_f)}</div></td><td>${inp(k + '_r', type)}<div class="toemark" data-toe="toe_r">${toeMark(v.toe_r)}</div></td></tr>`;
+        if (fr) return `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td>${inp(k + '_f', type)}</td><td>${inp(k + '_r', type)}</td></tr>`;
+        if (/^gear_\d$/.test(k)) return `<tr><td>${label}</td><td>${inp(k, type)}</td><td class="gearspd" data-gs="${k}">${gearSpeed[k] || ''}</td></tr>`;
+        return `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td colspan="2">${inp(k, type)}</td></tr>`;
+      }).join('');
+      const note = title === 'Pneumatiky' ? `<div class="pnote">R = závodní, S = sportovní, C = komfortní; S/M/H = měkké/střední/tvrdé. IM = přechodné, W = do deště.</div>`
+        : title === 'Podvozek' ? `<div class="pnote"><b>Sbíhavost</b> při pohledu shora: <b>+ = „A“</b> – přední hrany kol k sobě (sbíhavost): auto klidnější a stabilnější, do zatáčky se natáčí pomaleji. <b>− = „V“</b> – přední hrany od sebe (rozbíhavost): ostřejší vjezd, ale neklidné na rovince. Obvykle vpředu 0 až −0,1 (V), vzadu +0,1 až +0,3 (A) kvůli stabilitě na výjezdu.</div>`
+        : title === 'Převodovka' ? `<div class="pnote">${gearSpeed.note || 'Vpravo bude rychlost v každém stupni na omezovači – spočítám ji, až s touto kartou odjedeš pár kol na plný plyn.'}</div>` : '';
+      return `<div class="card"><h2>${title}</h2><table class="sutab">${pair ? '<tr><th></th><th>Předek</th><th>Zadek</th></tr>' : ''}${rows}</table>${note}</div>`;
     }).join('')) + `<div class="card"><h2>Poznámka</h2><textarea id="suNote" placeholder="např. trať, počasí, jak se auto chovalo">${esc(suEdit.note || '')}</textarea>
       <div class="pnote">Aktivní setup se přiřazuje tréninkovým kolům a bodům řazení z jízdy – po změně převodovky nebo přítlaku ulož nový setup (Duplikovat), ať se data nemíchají.</div></div>`;
     suMarkDirty(suDirty);
@@ -4910,14 +4956,14 @@
     try {
       const r = await (await fetch('api/setups?car=' + car, { cache: 'no-store' })).json();
       const a = r.advice || {};
-      const items = (a.advice || []).filter(x => x.driving).slice(0, 3);
+      const items = (a.advice || []).filter(x => x.driving || x.setup).slice(0, 4);
       const drive = a.drive ? DRIVE_NAME[a.drive] || a.drive : '';
       if (!items.length && !drive) { el.hidden = true; return; }
       el.hidden = false;
-      el.innerHTML = `<h2>Styl jízdy s tímhle autem${drive ? ` <span style="letter-spacing:0;text-transform:none;float:right" class="muted">${esc(drive)}</span>` : ''}</h2>`
-        + (items.length ? items.map(x => `<div class="vtip"><b>${esc(x.finding)}</b>${esc(x.driving)}</div>`).join('')
+      el.innerHTML = `<h2>Jízda a nastavení auta${drive ? ` <span style="letter-spacing:0;text-transform:none;float:right" class="muted">${esc(drive)}</span>` : ''}</h2>`
+        + (items.length ? items.map(x => `<div class="vtip"><b>${esc(x.finding)}</b>${x.driving ? `<span class="muted" style="font-size:11px;letter-spacing:.08em">JÍZDA</span> ${esc(x.driving)}` : ''}${x.setup ? `<br><span class="muted" style="font-size:11px;letter-spacing:.08em">NASTAVENÍ</span> ${esc(x.setup)}` : ''}</div>`).join('')
           : `<div class="muted">Z posledních kol${r.track ? ' na ' + esc(r.track) : ''} nic výrazného – auto je vyvážené.</div>`)
-        + `<div class="muted" style="font-size:12px;margin-top:6px">Z chování auta v posledních kolech (nedotáčivost, přetáčivost, blokování, prokluz). Úpravy nastavení: stránka Setup.</div>`;
+        + `<div class="muted" style="font-size:12px;margin-top:6px">Z telemetrie posledních kol (nedotáčivost, přetáčivost, blokování, prokluz) a z aktivní karty Setupu${r.advice && r.advice.laps ? ` · ${r.advice.laps} kol` : ''}. Měň vždy jen jednu věc: Setup → Duplikovat → upravit → Uložit, pak 3+ kola.</div>`;
     } catch { el.hidden = true; }
   }
   // Advice from the last laps of the active setup, and the setups side by side on this track
@@ -4986,6 +5032,12 @@
     if (!suEdit) return;
     if (e.target.dataset.k) suEdit.values[e.target.dataset.k] = e.target.value;
     if (e.target.id === 'suNote') suEdit.note = e.target.value;
+    const k = e.target.dataset.k || '';
+    if (k === 'final' || /^gear_|^toe_/.test(k)) {
+      const gs = gearSpeeds(suEdit.values);
+      $$('#suForm [data-gs]').forEach(x => { x.innerHTML = gs[x.dataset.gs] || ''; });
+      $$('#suForm [data-toe]').forEach(x => { x.textContent = toeMark(suEdit.values[x.dataset.toe]); });
+    }
     suMarkDirty(true);
   });
   $('suName').addEventListener('input', e => { if (suEdit) { suEdit.name = e.target.value; suMarkDirty(true); } });
@@ -5077,8 +5129,8 @@
       return `<div class="datarow"><b>${esc(c.compound)}</b><span>${c.laps} kol${c.life ? ` · vydrží ${c.life}` : ''}${c.pace != null ? ` · tempo ${c.pace >= 0 ? '+' : '−'}${nf(Math.abs(c.pace), 2)} s` : ''}${c.deg != null ? ` · ${nf(c.deg, 2)} s/kolo stáří (${WEAR_SHORT[c.deg_source] || 'trénink'})` : ''}</span>${todo.length ? `<span class="todo">→ ${todo.join(', ')}</span>` : ''}</div>`;
     }).join('');
     const prep = b.prep && b.prep.items ? b.prep.items.filter(i => i.status !== 'ok') : [];
-    html += `<div class="card"><h2>Na čem plán stojí</h2>${rows || '<div class="muted">Zatím žádná kola z tréninku na téhle trati s tímhle autem.</div>'}`
-      + (prep.length ? `<h2 style="margin-top:12px">Ještě natrénovat / doplnit</h2>` + prep.map(i => `<div class="datarow"><span class="todo">${esc(i.label)}</span><span>${esc(i.todo || i.detail)}</span></div>`).join('') : '')
+    html += `<div class="card basis"><h2>Na čem plán stojí</h2><div class="cols">${rows || '<div class="muted">Zatím žádná kola z tréninku na téhle trati s tímhle autem.</div>'}</div>`
+      + (prep.length ? `<h2 style="margin-top:12px">Ještě natrénovat / doplnit</h2><div class="cols">` + prep.map(i => `<div class="datarow"><span class="todo">${esc(i.label)}</span><span>${esc(i.todo || i.detail)}</span></div>`).join('') + '</div>' : '')
       + '</div>';
     // Fuel saving, only when it decides a stop
     if (!r.no_fuel && b.fuel && !b.fuel.error && p.save && (b.fuel.plans || [])[0]) {
@@ -5144,7 +5196,7 @@
       const why = !l.clean ? 'neplatné' : !l.counted ? 'nepočítá se' : '';
       return `<tr class="${why ? 'off' : ''}"><td>${l.compound} ${l.age + 1}.</td><td>${fmtLap(l.ms)}</td><td>${nf(l.fuel, 2)}</td>`
         + `<td>${l.clean ? `<button data-i="${index}">${l.counted ? 'vyřadit' : 'vrátit'}</button>` : `<small>${l.wrong_layout ? 'jiná varianta' : 'box / neúplné'}</small>`}</td></tr>`;
-    }).join('')}</tbody></table>` : '<span class="muted">Zatím žádné kolo.</span>';
+    }).join('')}</tbody></table><div class="muted" style="font-size:12px;margin-top:6px">Přeškrtnuté kolo se nepočítá do výsledků: jiná varianta (kolo neodpovídá trati), box / neúplné (výjezd, zajížďka do boxu, kolo s chybou), nebo jsi ho vyřadil sám (vrátit).</div>` : '<span class="muted">Zatím žádné kolo.</span>';
   }
   $('stMode').addEventListener('click', async e => {
     const b = e.target.closest('button');

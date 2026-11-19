@@ -2,6 +2,20 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Trať: názvy z kalendáře se sjednotí s uloženým tvarem trati.** Závod z kalendáře se jmenuje
+  „Circuit de Spa-Francorchamps“, uložený tvar trati „Spa-Francorchamps“ – kola z tréninku se
+  proto brala jako „jiná varianta“ (přeškrtnutá) a Trať, převodovka v Měření i první návrh
+  strategie zůstaly prázdné. Názvy se teď porovnávají bez „Circuit de“, „Autodromo“, „Raceway“
+  apod.; uložená kola se přejmenují zpětně a ta, která vadila jen kvůli názvu, se znovu počítají
+  (do 104 % nejlepšího). Spa 19. 11.: ze 14 kol 7 čistých, nejlepší 2:10,615.
+- **Setup:** směs pneumatik z nabídky (RS … CH, s legendou), u sbíhavosti značka „A · sbíhavost“
+  / „V · rozbíhavost“ a vysvětlivka, u převodovky rychlost na omezovači v každém stupni a otáčky
+  po přeřazení – přepočítá se hned při změně poměrů nebo stálého převodu.
+- **Kouč:** karta „Jízda a nastavení auta“ – ke každému problému z telemetrie rada k jízdě
+  i konkrétní změna setupu z aktivní karty (např. „přední stabilizátor 10 → 9“).
+- **Měření:** tabulka bodů řazení se vejde do karty (zdroj pod tabulkou). **Strategie:** karta
+  „Na čem plán stojí“ přes celou šířku, u Posledních kol vysvětlivka k přeškrtnutým.
+
 - **Měření: jen skutečné rozjezdy.** Rozjezd, kdy auto vezla hra (vypuštění z boxu – rychlost
   roste dřív, než šlápneš na plyn) nebo jel na omezovači v boxové uličce (rychlost několik
   sekund na jedné hodnotě a motor pod omezovačem), se nepočítá – ani zpětně v uložených

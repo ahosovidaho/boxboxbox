@@ -210,7 +210,7 @@ async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction
             true
         }
         ("practice_track", ..) => {
-            st.practice.saved.track = a.value.clone().unwrap_or_default().trim().to_string();
+            st.practice.saved.track = st.practice.canonical(a.value.as_deref().unwrap_or_default());
             st.practice.layout_warning = None;
             st.practice.save();
             true
