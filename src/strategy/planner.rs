@@ -10,6 +10,13 @@
 //!   costs deg·(0 + 1 + … + n−1)). A compound with a shorter life wears faster: its rate is scaled
 //!   by (average life of the entered compounds / its life). A rate measured in practice replaces it.
 //!
+//! * fuel on board: a lighter car is faster – every litre costs `fuel_s` seconds a lap (Yas
+//!   Marina, F3500: 0.033 s/l, a full tank ≈ 3 s a lap). Refuelling just enough for the next
+//!   stint keeps the car light; more stops with less fuel can win.
+//!
+//! Each option carries its risks ([`Option_::risks`]): fuel with little margin, a stint at the
+//! end of the tyre life.
+//!
 //! The best plan is the recommendation. The alternative is the best plan with a different
 //! number of stops – the real strategic choice (one stop less on harder tyres, one more on
 //! softer); only when there is none, the best plan with other tyres. Each option carries what its
@@ -58,6 +65,8 @@ pub struct Input {
     pub pit_loss: f32,
     /// Seconds per lap per lap of tyre age
     pub deg: f32,
+    /// Lap time per litre on board, s (0 = not counted)
+    pub fuel_s: f32,
     /// Tyres on the car (None: free choice, before the start without a set starting compound)
     pub current: Option<String>,
     /// Laps already driven on the current tyres
@@ -97,6 +106,8 @@ pub struct Parts {
     pub pace: f32,
     /// Tyre degradation
     pub wear: f32,
+    /// Weight of the fuel on board
+    pub weight: f32,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -110,12 +121,16 @@ pub struct Option_ {
     /// A limit had to be broken (tyre life): no plan fits the entered limits
     pub over_limit: bool,
     pub parts: Parts,
+    /// What could go wrong ("palivo na hraně …"), for the briefing
+    pub risks: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Options {
     pub best: Option<Option_>,
     pub alternative: Option<Option_>,
+    /// A second alternative (another number of stops or other tyres than both above)
+    pub second: Option<Option_>,
 }
 
 /// All ways to split `total` laps into `parts` stints of at least `min` laps (the first may be 0
@@ -148,6 +163,13 @@ struct Eval {
     parts: Parts,
     over: f32,
     stops: Vec<PlannedStop>,
+    risks: Vec<String>,
+}
+
+/// Fuel per lap a stint could still take (tank or fuel on board at its start) minus the planned
+/// figure: how much more the car may burn before the stint runs dry.
+fn fuel_margin(available: f32, laps: u32, reserve: f32, fpl: f32) -> f32 {
+    available / (laps as f32 + reserve) - fpl
 }
 
 fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
@@ -158,6 +180,7 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
     let mut over = 0.0;
     let mut lap = inp.first_lap - 1; // last lap done
     let mut stops = Vec::new();
+    let mut risks = Vec::new();
     let last = lens.len() - 1;
     for (i, (&n, t)) in lens.iter().zip(tyres).enumerate() {
         let fresh = i > 0 || inp.stop_now || inp.current.is_none();
@@ -170,6 +193,10 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
                 return None;
             }
             fuel += add;
+            let margin = fuel_margin(inp.capacity, n, if i == last { inp.reserve } else { 0.05 }, fpl);
+            if fpl > 0.01 && margin < fpl * 0.04 {
+                risks.push(format!("stint {} ({} kol) se do nádrže vejde jen s rezervou {:.2} l/kolo", i + 1, n, margin.max(0.0)));
+            }
             let refuel = if inp.refuel_rate > 0.0 { add / inp.refuel_rate } else { 0.0 };
             cost += inp.pit_loss + refuel;
             parts.stops += inp.pit_loss;
@@ -180,9 +207,22 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
             if fuel + 0.01 < need {
                 return None;
             }
+            let margin = fuel_margin(fuel, n, if i == last { inp.reserve } else { 0.05 }, fpl);
+            if fpl > 0.01 && margin < fpl * 0.04 {
+                risks.push(format!("{} kol bez tankování: rezerva jen {:.2} l/kolo", n, margin.max(0.0)));
+            }
         }
+        // Weight: litres on board, lap by lap (fuel at the start of each lap)
+        let weight = inp.fuel_s * (n as f32 * fuel - fpl * (n as f32 * (n as f32 - 1.0)) / 2.0);
+        cost += weight;
+        parts.weight += weight;
         if let Some(life) = t.life {
             over += (age + n).saturating_sub(life) as f32;
+            if age + n > life {
+                risks.push(format!("{} {} kol – {} nad výdrží sady", t.name, age + n, age + n - life));
+            } else if age + n == life && life > 2 {
+                risks.push(format!("{} {} kol – sada až na hranici výdrže", t.name, age + n));
+            }
         }
         let (pace, wear) = (t.pace * n as f32, deg_cost(t.deg.unwrap_or(inp.deg * t.wear_factor), age, n));
         cost += pace + wear;
@@ -195,7 +235,7 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
         fuel -= n as f32 * fpl;
         lap += n as i16;
     }
-    Some(Eval { cost, parts, over, stops })
+    Some(Eval { cost, parts, over, stops, risks })
 }
 
 pub fn plan(inp: &Input) -> Options {
@@ -252,6 +292,7 @@ pub fn plan(inp: &Input) -> Options {
                         delta: 0.0,
                         over_limit: e.over > 0.0,
                         parts: e.parts,
+                        risks: e.risks,
                     };
                     found.push((k, e.cost, e.over, opt));
                 }
@@ -281,12 +322,19 @@ pub fn plan(inp: &Input) -> Options {
         (0..found.len()).filter(|&i| f(i)).min_by(|&a, &b| key(&found[a]).partial_cmp(&key(&found[b])).unwrap())
     };
     let alt_i = cheapest(&|i| found[i].0 != best_stops).or_else(|| cheapest(&|i| tyres_of(&found[i].3) != tyres_of(&best)));
-    let alternative = alt_i.map(|i| {
+    let with_delta = |i: usize| {
         let mut o = found[i].3.clone();
         o.delta = o.cost - best.cost;
         o
+    };
+    // The second alternative: differs from both in stops or tyres, and no stint of one or two
+    // laps (a "plan" that only bolts a short stint on)
+    let sig = |i: usize| (found[i].0, tyres_of(&found[i].3));
+    let second_i = alt_i.and_then(|a| {
+        cheapest(&|i| sig(i) != sig(best_i) && sig(i) != sig(a) && found[i].3.stints.iter().all(|s| s.laps >= 3 || inp.laps < 10))
     });
-    Options { best: Some(best), alternative }
+    let (alternative, second) = (alt_i.map(with_delta), second_i.map(with_delta));
+    Options { best: Some(best), alternative, second }
 }
 
 #[cfg(test)]
@@ -308,6 +356,7 @@ mod tests {
             refuel_rate: 3.0,
             pit_loss: 25.0,
             deg: 0.2,
+            fuel_s: 0.0,
             current: Some("RM".into()),
             current_age: 0,
             stop_now: false,
@@ -406,6 +455,46 @@ mod tests {
         assert!(alt.delta > 10.0 && alt.delta < 20.0, "{alt:?}");
         assert!((alt.parts.stops - best.parts.stops + 19.7).abs() < 0.01);
         assert!((alt.parts.pace - best.parts.pace - rm[0] as f32 * 2.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn lighter_car_favours_less_fuel_on_board() {
+        // 20 laps, 6 l a lap, tank 100: one stop either way. Without the weight the stop lap
+        // hardly matters; with it the planner keeps the second stint short of fuel by stopping
+        // late (the fuel added at the stop is carried for fewer laps).
+        let mut inp = race(20, 6.0);
+        inp.need_compound = None;
+        inp.compounds = vec![Compound::new("RM", None, 0.0)];
+        inp.deg = 0.0;
+        inp.fuel_s = 0.04;
+        let o = plan(&inp);
+        let best = o.best.unwrap();
+        assert_eq!(best.stops.len(), 1);
+        assert!(best.parts.weight > 0.0);
+        // The latest stop the tank allows: 100 l / 6 = 16.6 laps → box after lap 16
+        assert_eq!(best.stops[0].lap, 16, "{best:?}");
+    }
+
+    #[test]
+    fn options_carry_risks_and_a_second_alternative() {
+        let mut c = vec![Compound::new("RS", Some(9), 0.08), Compound::new("RM", Some(13), 1.5), Compound::new("RH", Some(18), 2.5)];
+        c[0].deg = Some(0.5);
+        let inp = Input { laps: 30, fuel_per_lap: 7.6, pit_loss: 17.0, compounds: c, fuel_s: 0.033, ..race(30, 7.6) };
+        let o = plan(&inp);
+        let (best, alt, second) = (o.best.unwrap(), o.alternative.unwrap(), o.second.unwrap());
+        assert_ne!(alt.stops.len(), best.stops.len());
+        // A third, different plan
+        let sig = |x: &Option_| {
+            (x.stops.len(), {
+                let mut t: Vec<_> = x.stints.iter().map(|s| s.compound.clone()).collect();
+                t.sort();
+                t
+            })
+        };
+        assert!(sig(&second) != sig(&best) && sig(&second) != sig(&alt), "{second:?}");
+        // 13 laps on a 100 l tank at 7.6 l a lap is right at the edge
+        let all = [&best, &alt, &second];
+        assert!(all.iter().any(|x| !x.risks.is_empty()), "{all:?}");
     }
 
     #[test]

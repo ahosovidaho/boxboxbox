@@ -2,6 +2,16 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Strategie: brífink před závodem.** Nahoře závod (datum, pravidla, palivo na kolo, ztráta
+  zastávkou), pod tím doporučený plán a dvě alternativy – kdy do boxu, kolik natankovat, o kolik
+  pomalejší a proč, a co může selhat (palivo na hraně, sada na hranici výdrže). Pak na čem plán
+  stojí (kola z tréninku na každé směsi, odkud je opotřebení) a co ještě natrénovat/doplnit.
+  - Plánovač počítá s **váhou paliva**: lehčí auto je rychlejší (vliv změřený v závodě, jinak
+    0,04 s/l) – tankuje se jen na další stint a víc zastávek s menším tankováním může vyhrát.
+  - Druhá alternativa se liší od obou předchozích (počtem zastávek nebo směsmi), bez stintů
+    na 1–2 kola.
+  - Závod se mění na stránce Trať; tlačítko Parametry strategie otevře gumy, palivo a rezervy.
+
 - **Trať: jediné místo, kde se volí závod.** Výběr z kalendáře šampionátu (jen závod a jeho
   pravidla), pod tím přehled: kola, opotřebení, palivo, tankování, povinná zastávka a směs,
   datum; okruh (délka, zatáčky), tvoje tempo, rekordy a poznámky. Strategie, palivo a gumy

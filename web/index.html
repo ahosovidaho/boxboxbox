@@ -629,6 +629,17 @@
   #p5body { flex: 1; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; min-height: 0;
     display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); grid-auto-rows: max-content; align-content: start; padding-bottom: 8px; }
   #p5body .card { min-height: auto; }
+  /* Strategy briefing: the whole width, plans side by side */
+  .stbrief { grid-column: 1 / -1; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .stbrief:empty { display: none; }
+  .stbrief .hero { grid-column: 1 / -1; }
+  .stbrief .planbox { margin: 0; height: 100%; }
+  .planbox .risk { color: #F2C230; font-size: 13px; margin-top: 4px; }
+  .planbox .risk::before { content: "⚠ "; }
+  .stbrief .datarow { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .stbrief .datarow:first-of-type { border-top: 0; }
+  .stbrief .datarow b { min-width: 34px; }
+  .stbrief .datarow .todo { color: #F2C230; }
   #p5body .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 6px; }
   #prepCard { grid-column: 1 / -1; }
   #prepTitle b { color: var(--text); letter-spacing: 0; text-transform: none; font-size: 12px; margin-left: 6px; }
@@ -1232,14 +1243,14 @@
     <b>Strategie</b>
     <span class="seg" id="stMode"><button data-m="0" class="on">Závod</button><button data-m="1">Trénink</button></span>
     <span id="stRace">–</span>
-    <button class="stbtn small" id="stPick">Závod…</button>
+    <button class="stbtn small" id="stPick">Parametry…</button>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
   </div>
   <div id="p5body">
+    <div id="stBrief" class="stbrief"></div>
     <div class="card wide tq" id="trackQ" hidden></div>
     <div id="stCalls" class="race-only"></div>
-    <div class="card practice-only" id="prepCard" hidden><h2 id="prepTitle">Příprava na závod</h2><div id="prepItems"></div></div>
 
     <div class="card practice-only"><h2>Trénink</h2>
       <div class="stbig" id="prBig">–</div>
@@ -1714,7 +1725,7 @@
   // Race: lift-and-coast plan (see loadLift)
   let liftPlan = null, liftKey = '', liftAt = 0;
   // Track page: briefing or notebook, chosen track ('' = race / practice track)
-  let bkTrack = '', bkBusy = false;
+  let bkTrack = '', bkBusy = false, briefBusy = false;
   // Data page: last state from the server, sort of the session table
   let dsData = null, dsSort = 'date', dsBusy = false;
   // Sessions ticked for a bulk action
@@ -3187,7 +3198,8 @@
     const over = o.over_limit ? '<div class="over">Nevejde se do zadané životnosti gum – nejmenší překročení.</div>' : '';
     // Stint bar: one segment per stint (width = laps), the stops in between
     const bar = `<div class="pbar">${o.stints.map((x, k) => `${k ? '<i></i>' : ''}<span style="flex:${Math.max(1, x.laps)}">${esc(x.compound)} · ${x.laps}</span>`).join('')}</div>`;
-    return `<div class="planbox ${cls}"><span class="tag">${tag}</span><b>${stints}</b>${bar}<div class="muted">${n} ${word}: box ${stops}${delta}</div>${why}${over}</div>`;
+    const risks = (o.risks || []).map(x => `<div class="risk">${esc(x.replace(/(\d)\.(\d)/g, '$1,$2'))}</div>`).join('');
+    return `<div class="planbox ${cls}"><span class="tag">${tag}</span><b>${stints}</b>${bar}<div class="muted">${n} ${word}: box ${stops}${delta}</div>${why}${risks}${over}</div>`;
   }
   // Why the alternative is slower: what its cost is made of against the recommendation, and for
   // a plan on another compound how close that compound's pace would have to be to win
@@ -3201,6 +3213,7 @@
     if (Math.abs(d('refuel')) >= 0.5) bits.push(`tankování ${sgn(d('refuel'))}`);
     if (Math.abs(d('pace')) >= 0.5) bits.push(`tempo gum ${sgn(d('pace'))}`);
     if (Math.abs(d('wear')) >= 0.5) bits.push(`opotřebení ${sgn(d('wear'))}`);
+    if (alt.parts.weight != null && Math.abs(d('weight')) >= 0.5) bits.push(`váha paliva ${sgn(d('weight'))}`);
     if (!bits.length) return '';
     // Laps on a compound the recommendation does not use (or uses less)
     const laps = (o, c) => o.stints.filter(x => x.compound === c).reduce((a, x) => a + x.laps, 0);
@@ -3219,7 +3232,8 @@
   const dayCz = d => d ? `${+d.slice(8, 10)}. ${+d.slice(5, 7)}.` : '?';
   function plansHtml(opts, pu) {
     if (!opts || !opts.best) return '';
-    return planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa', '', whyHtml(opts.alternative, opts.best, pu));
+    return planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa 1', '', whyHtml(opts.alternative, opts.best, pu))
+      + planHtml(opts.second, 'Alternativa 2', '', whyHtml(opts.second, opts.best, pu));
   }
 
   // Page 1: laps to the suggested pit stop, readable at a glance
@@ -4073,122 +4087,6 @@
   }
 
 
-  function itemsTyres(n) {
-    if (n.kart) return '<div class="muted">Motokára – gumy se neopotřebují.</div>' + (n.runs || []).map(r => `<div class="item"><b>${dayOf(r.started)}</b> ${esc(r.text)}</div>`).join('');
-    const t = (n.tyres || []).map(x => zItem('T' + x.n, esc(x.text.replace(/^T\d+: /, '')))).join('');
-    const runs = (n.runs || []).slice(0, 1).map(r => `<div class="item"><b>Nejdelší stint (${dayOf(r.started)})</b> ${esc(r.text)}</div>`).join('');
-    return (t + runs) || '<div class="muted">Zatím bez dlouhého stintu – na tréninku zajeď aspoň 6 kol v kuse.</div>';
-  }
-  function startHtml(starts) {
-    const s = (starts || []).slice(-1)[0];
-    if (!s) return '<div class="muted">Start ještě nemám v datech (zaznamená se v závodě).</div>';
-    if (s.kind === 'rolling') return `<div>Poslední start byl <b>letmý</b> (závod na ${s.race_laps} kol). Rozjezd z místa zatím v datech není.</div>`;
-    return `<div class="row"><span>0–100 <em>${s.to_100 != null ? nf(s.to_100, 2) + ' s' : '–'}</em></span><span>Prokluz <em>${nf(s.spin_s, 1)} s</em></span><span>Otáčky při rozjezdu <em>${s.launch_rpm != null ? Math.round(s.launch_rpm) : '–'}</em></span></div>`
-      + s.advice.map(a => `<div class="item">${esc(a)}</div>`).join('');
-  }
-  // "Podřaď na 2. stupeň – jedeš tu na 3. …": instruction and the rest
-  function splitTip(t) {
-    t = t || '';
-    const k = t.indexOf(' – ');
-    return k > 0 && k < 70 ? { short: t.slice(0, k), text: t.slice(k + 3) } : { short: '', text: t };
-  }
-  function planLine(o) {
-    if (!o) return '';
-    const st = o.stints.map(x => `${esc(x.compound)} ${x.laps}`).join(' → ');
-    const box = o.stops.length ? 'box ' + o.stops.map(x => 'K' + x.lap).join(', ') : 'bez zastávky';
-    return `<span class="mono" style="font-weight:700;color:var(--text)">${st}</span> · ${box}`;
-  }
-  function bkMap(n, marks) {
-    const svg = trackSvg(n.map, n.corners, marks);
-    return svg ? `<div class="card bk"><h2>Okruh</h2>${svg}<div class="mleg"><span style="--c:#F2C230">kde je čas</span><span style="--c:#FF5A4E">pozor</span></div></div>` : '';
-  }
-  function bkMarks(n) {
-    const m = {};
-    (n.reserves || []).forEach(r => { m[r.n] = 'tip'; });
-    (n.risk || []).forEach(r => { m[r.n] = 'risk'; });
-    return m;
-  }
-  function itemsReserves(list) {
-    return (list || []).map(r => { const t = splitTip(r.tip); return tipHtml({ n: r.n, kind: 'tip', dt: r.loss, short: r.short || t.short || 'Ztráta v zatáčce', text: r.short ? r.tip : t.text }); }).join('')
-      || '<div class="muted">Žádná zatáčka, kde bys pravidelně ztrácel víc než 0,05 s.</div>';
-  }
-  function itemsRisk(list, max) {
-    return (list || []).slice(0, max).map(r => {
-      const what = [r.spins ? `${r.spins}× spin` : '', r.moments ? `${r.moments}× ujetí` : '', r.slides ? `${r.slides}× smyk zádi` : ''].filter(Boolean).join(', ');
-      return tipHtml({ n: r.n, kind: 'risk', short: what, text: [r.cause ? r.cause + '.' : '', r.tip || ''].join(' ') });
-    }).join('') || '<div class="muted">Bez spinů a ujetí – drž to tak.</div>';
-  }
-  function renderBriefing(b) {
-    const body = $('p10body');
-    if (b.error === 'no_race') {
-      body.innerHTML = '<div class="card wide bk"><h2>Briefing</h2>Vyber závod (Strategie → Vybrat závod). Briefing se poskládá z tréninku na té trati: plán, cílové tempo, kde je čas, kde pozor, palivo, gumy a start. Zápisník trati je ve vedlejší záložce.</div>';
-      return;
-    }
-    const r = b.race, n = b.book || {}, p = b.plan || {};
-    const rules = [r.laps ? `${r.laps} kol` : '', r.pit_required ? 'povinná zastávka' : '', r.mandatory ? `povinná směs ${esc(r.mandatory)}` : '',
-      r.tyre_wear ? `opotřebení ×${nf(r.tyre_wear, 1)}` : '', r.fuel_mult ? `palivo ×${nf(r.fuel_mult, 1)}` : ''].filter(Boolean).join(' · ');
-    const setup = b.setup ? `setup „${esc(b.setup.name)}“${b.setup.bop && !/bop/i.test(b.setup.name) ? ' (BoP)' : ''}` : 'bez karty setupu';
-    const extra = [r.no_wear ? 'bez opotřebení' : '', r.no_fuel ? 'bez paliva' : ''].filter(Boolean).join(' a ');
-    const best = b.options && b.options.best;
-    let html = `<div class="card wide bk bkhero2">
-      <div class="bkrace">
-        <div class="bkname"><span class="skew"></span>${esc(r.name || 'Závod')}</div>
-        <div>${esc(b.track)}${rules ? ' · ' + rules : ''}</div>
-        <div class="muted">${esc(b.car_name || '')} · ${setup}${extra ? ' · ' + extra : ''}</div>
-        ${best ? `<div style="margin-top:6px"><span class="lbl" style="color:var(--green);margin-right:8px">Plán</span>${planLine(best)}</div>` : ''}
-      </div>
-      <div class="bkkpis">
-        <div><span class="lbl" style="color:#F2C230">Cílové tempo</span><span class="big">${fmtLap(n.typical_ms)}</span><small>medián ${n.normal_laps || 0} kol</small></div>
-        <div><span class="lbl">Nejlepší</span><span class="big" style="color:#C99BFF">${fmtLap(n.best && n.best.ms)}</span><small>${n.best ? dayOf(n.best.started) : ''}</small></div>
-        <div><span class="lbl">Ideální</span><span class="big">${fmtLap(n.ideal_ms)}</span><small>nejlepší zatáčky</small></div>
-      </div></div>`;
-    html += bkMap(n, bkMarks(n));
-    const gain = (n.reserves || []).reduce((a, x) => a + x.loss, 0);
-    html += `<div class="card bk"><h2>Kde je čas${gain ? ` <span class="mono" style="float:right;font-size:13px;color:var(--label);letter-spacing:0">−${nf(gain, 2)} s / kolo</span>` : ''}</h2><div class="tiplist">${itemsReserves(n.reserves)}</div></div>`;
-    const vr = b.vsref;
-    if (vr) {
-      const g = vr.best.gap_ms / 1000;
-      html += `<div class="card bk"><h2>Proti ${esc(vr.ref.driver)} <span class="mono" style="float:right;font-size:13px;color:var(--label);letter-spacing:0">${fmtLap(vr.ref.ms)} · ${g > 0 ? '+' : '−'}${nf(Math.abs(g), 3)} s</span></h2><div class="tiplist">`
-        + (vr.top.length ? vr.top.map(c => `<div class="item"><b>T${c.n} +${nf(c.best, 2)} s</b> ${c.short ? '– ' + esc(c.short) : ''}</div>`).join('') : '<div class="item">V žádné zatáčce neztrácíš víc než 0,1 s.</div>')
-        + `</div><div class="muted" style="margin-top:6px">Tvoje nejlepší ${fmtLap(vr.best.ms)}${vr.ref.same_car ? '' : ' · reference s jiným autem'}. Podrobně: Kouč → Reference.</div></div>`;
-    }
-    const prep = b.prep;
-    const open = prep && prep.items ? prep.items.filter(i => i.status !== 'ok') : [];
-    html += `<div class="bkcol"><div class="card bk"><h2>Pozor</h2><div class="tiplist">${itemsRisk(n.risk, 2)}</div></div>`
-      + (prep && prep.items ? `<div class="card bk"><h2>Zbývá připravit <span class="mono" style="float:right;color:#F2C230;letter-spacing:0">${open.length}</span></h2>${open.map(i => `<div class="prepi"><b>${esc(i.label)}</b> <span>– ${esc(i.todo || i.detail)}</span></div>`).join('') || '<div>Všechno připraveno.</div>'}</div>` : '')
-      + '</div>';
-    // Strategy, fuel, tyres, start
-    html += `<div class="card bk"><h2>Strategie</h2>${plansHtml(b.options, p.practice_use) || '<div class="muted">Chybí data pro plán – zadej v závodě kola a pravidla.</div>'}
-      <div class="row" style="margin-top:8px"><span>Palivo/kolo <em>${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) : '–'}</em></span><span>Ztráta v boxech <em>${nf(p.pit_loss || 0, 1)} s</em></span></div></div>`;
-    let fuel = '';
-    if (r.no_fuel) fuel = '<div class="muted">Závod bez spotřeby paliva.</div>';
-    else if (!b.fuel || b.fuel.error) fuel = '<div class="muted">Na šetření paliva potřebuju z tréninku na trati aspoň pár kol s tímhle autem.</div>';
-    else {
-      const plans = b.fuel.plans || [];
-      const lifts = pl => pl.lifts.map(l => `T${l.corner || '?'} ${l.lift_m} m`).join(' · ');
-      if (p.save && plans[0]) {
-        const pl = plans[0].plan, laps = r.laps || p.total_laps || 0, total = pl.cost_s * laps;
-        const what = p.no_stop_fpl != null ? 'dojedeš bez zastávky' : 'stačí 1 zastávka';
-        const worth = total < (p.pit_loss || 0);
-        fuel = `<div>Když ušetříš <b>${nf(p.save, 2)}/kolo</b>, ${what}.</div>`
-          + `<div class="item">Zvedni nohu před brzděním: <b>${lifts(pl)}</b> – stojí ≈ <b>+${nf(pl.cost_s, 2)} s/kolo</b>${pl.short ? ' (samo to nestačí)' : ''}.</div>`
-          + `<div class="item">Za ${laps} kol ≈ <b>${nf(total, 1)} s</b> proti <b>${nf(p.pit_loss || 0, 1)} s</b> za zastávku → <b>${worth ? 'šetřit se vyplatí' : 'radši zastav, šetření je dražší'}</b>.</div>`;
-      } else {
-        fuel = '<div>Šetřit není potřeba. Kdyby bylo (safety car, víc kol):</div>'
-          + plans.map(x => `<div class="item"><b>−${nf(x.save, 2)}/kolo</b> = +${nf(x.plan.cost_s, 2)} s/kolo · ${lifts(x.plan)}</div>`).join('');
-      }
-    }
-    html += `<div class="card bk"><h2>Palivo</h2>${fuel}</div>`;
-    let tyres = r.no_wear ? '<div class="muted">Gumy se v tomhle závodě neopotřebují.</div>' : '';
-    if (!r.no_wear) {
-      const pu = p.practice_use && p.practice_use.compounds || [];
-      tyres = pu.map(c => `<div class="row"><span><b>${esc(c.compound)}</b></span><span>${c.laps} kol z tréninku</span>${c.life ? `<span>vydrží ~${c.life} kol</span>` : ''}${c.deg != null ? `<span>+${nf(c.deg, 2)} s/kolo stáří</span>` : ''}</div>`).join('') + itemsTyres(n);
-    }
-    html += `<div class="card bk"><h2>Gumy</h2>${tyres}</div>`;
-    html += `<div class="card bk"><h2>Start</h2>${startHtml(n.starts)}</div>`;
-    if (n.note && n.note.text) html += `<div class="card wide bk"><h2>Tvoje poznámky k trati</h2><div style="white-space:pre-wrap">${esc(n.note.text)}</div></div>`;
-    body.innerHTML = html;
-  }
   $('bkRace').addEventListener('click', () => openRaceSheet(true));
   $('p10body').addEventListener('click', e => { if (e.target.closest('[data-race-edit]')) openRaceSheet(true); });
   $('bkTrack').addEventListener('change', e => { bkTrack = e.target.value; loadTrackPage(); });
@@ -5035,19 +4933,66 @@
   let prData = null, prKey = '', prBusy = false;
   const fmtLap = ms => ms == null ? '–' : `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`.replace('.', ',');
   // Race preparation: what is known for the chosen race and what to practise next
+  // Strategy briefing (page Strategie, both modes): the race, one recommended plan and two
+  // alternatives with what could go wrong, and what practice still has to deliver
   async function loadPrep() {
-    try {
-      const r = await (await fetch('api/prep', { cache: 'no-store' })).json();
-      const card = $('prepCard');
-      if (!r.items || !r.items.length) { card.hidden = true; return; }
-      card.hidden = false;
-      $('prepTitle').innerHTML = `Příprava na závod <b>${esc(r.race)} · ${esc(r.track)} · hotovo ${r.done}/${r.total}</b>`;
-      // Open items first, then the done ones
-      const order = { missing: 0, warn: 1, ok: 2 };
-      $('prepItems').innerHTML = r.items.slice().sort((a, b) => order[a.status] - order[b.status])
-        .map(i => `<div class="prep ${i.status}"><b>${esc(i.label)}</b>${esc(i.detail)}${i.todo ? `<div class="todo">${esc(i.todo)}</div>` : ''}</div>`).join('');
-    } catch {}
+    if (briefBusy) return;
+    briefBusy = true;
+    try { renderStratBrief(await (await fetch('api/briefing', { cache: 'no-store' })).json()); } catch {}
+    briefBusy = false;
   }
+  const WEAR_SHORT = { race: 'ze závodu', race_life: 'odhad ze závodu', practice: 'z tréninku', manual: 'zadáno' };
+  function renderStratBrief(b) {
+    const el = $('stBrief');
+    if (b.error === 'no_race') {
+      el.innerHTML = `<div class="card hero"><h2>Strategický brífink</h2><div style="font-size:15px">Není vybraný závod.</div><div class="muted" style="margin:4px 0 10px">Závod se vybírá na stránce Trať (z kalendáře šampionátu).</div><span class="seg"><button class="on" type="button" data-goto="10">Vybrat závod</button></span></div>`;
+      return;
+    }
+    const r = b.race, p = b.plan || {}, o = b.options || {}, pu = p.practice_use;
+    const d = r.date ? new Date(r.date) : null;
+    const when = d && !isNaN(d) ? d.toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'numeric' }) + ' ' + d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }) : '';
+    const rules = [r.laps ? `${r.laps} kol` : '', r.pit_required ? 'povinná zastávka' : '', r.mandatory ? `povinně ${esc(r.mandatory)}` : '',
+      r.no_wear ? 'bez opotřebení' : r.tyre_wear ? `gumy ×${nf(r.tyre_wear, 1)}` : '', r.no_fuel ? 'bez paliva' : r.fuel_mult ? `palivo ×${nf(r.fuel_mult, 1)}` : ''].filter(Boolean).join(' · ');
+    let html = `<div class="card hero bk bkhero2"><div class="bkrace">
+      <div class="bkname"><span class="skew"></span>${esc(r.name || 'Závod')}</div>
+      <div>${esc(r.track)}${when ? ' · ' + esc(when) : ''}</div><div class="muted">${rules}</div></div>
+      <div class="bkkpis">
+        <div><span class="lbl">Palivo / kolo</span><span class="big" style="font-size:22px">${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) + ' l' : '–'}</span></div>
+        <div><span class="lbl">Ztráta zastávkou</span><span class="big" style="font-size:22px">${nf(p.pit_loss || 0, 1)} s</span></div>
+        <div><span class="lbl">Cílové tempo</span><span class="big" style="font-size:22px">${fmtLap(b.book && b.book.typical_ms)}</span></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="seg"><button type="button" data-goto="10">Změnit závod</button></span><span class="seg"><button type="button" data-st-params="1">Parametry strategie</button></span></div></div>`;
+    if (o.best) {
+      html += planHtml(o.best, 'Doporučeno', 'best') + planHtml(o.alternative, 'Alternativa 1', '', whyHtml(o.alternative, o.best, pu))
+        + planHtml(o.second, 'Alternativa 2', '', whyHtml(o.second, o.best, pu));
+    } else {
+      html += `<div class="card hero"><h2>Plán</h2><div class="muted">Chybí údaje pro plán: počet kol a spotřeba (z tréninku nebo zadaná v Parametrech).</div></div>`;
+    }
+    // What the plan rests on: practice per compound, and what is still missing
+    // Only the kind of tyres the race is on (racing, sports, comfort)
+    const kind = (r.mandatory || r.start_compound || (o.best && o.best.stints[0].compound) || 'R').charAt(0);
+    const comps = (pu && pu.compounds || []).filter(c => c.compound.charAt(0) === kind && (c.laps || c.life || c.deg != null));
+    const rows = comps.map(c => {
+      const todo = [];
+      if (!c.life) todo.push('výdrž: zadej podle opotřebení ve hře');
+      if (c.laps < 5) todo.push(`zajeď ${Math.max(5 - c.laps, 3)}+ kol`);
+      if (c.stale) todo.push(`data z ${dayCz(c.last)}, zajeď znovu`);
+      return `<div class="datarow"><b>${esc(c.compound)}</b><span>${c.laps} kol${c.life ? ` · vydrží ${c.life}` : ''}${c.pace != null ? ` · tempo ${c.pace >= 0 ? '+' : '−'}${nf(Math.abs(c.pace), 2)} s` : ''}${c.deg != null ? ` · ${nf(c.deg, 2)} s/kolo stáří (${WEAR_SHORT[c.deg_source] || 'trénink'})` : ''}</span>${todo.length ? `<span class="todo">→ ${todo.join(', ')}</span>` : ''}</div>`;
+    }).join('');
+    const prep = b.prep && b.prep.items ? b.prep.items.filter(i => i.status !== 'ok') : [];
+    html += `<div class="card"><h2>Na čem plán stojí</h2>${rows || '<div class="muted">Zatím žádná kola z tréninku na téhle trati s tímhle autem.</div>'}`
+      + (prep.length ? `<h2 style="margin-top:12px">Ještě natrénovat / doplnit</h2>` + prep.map(i => `<div class="datarow"><span class="todo">${esc(i.label)}</span><span>${esc(i.todo || i.detail)}</span></div>`).join('') : '')
+      + '</div>';
+    // Fuel saving, only when it decides a stop
+    if (!r.no_fuel && b.fuel && !b.fuel.error && p.save && (b.fuel.plans || [])[0]) {
+      const pl = b.fuel.plans[0].plan, laps = r.laps || p.total_laps || 0, total = pl.cost_s * laps;
+      const lifts = pl.lifts.map(l => `T${l.corner || '?'} ${l.lift_m} m`).join(' · ');
+      html += `<div class="card"><h2>Šetření paliva</h2><div>Ušetříš-li <b>${nf(p.save, 2)} l/kolo</b>, ${p.no_stop_fpl != null ? 'dojedeš bez zastávky' : 'stačí o zastávku méně'}.</div>`
+        + `<div class="muted" style="margin-top:4px">Zvednout nohu: ${lifts} · ≈ +${nf(pl.cost_s, 2)} s/kolo, za závod ${nf(total, 1)} s proti ${nf(p.pit_loss || 0, 1)} s za zastávku → ${total < (p.pit_loss || 0) ? '<b>vyplatí se</b>' : 'radši zastav'}.</div></div>`;
+    }
+    el.innerHTML = html;
+  }
+  $('stBrief').addEventListener('click', e => { if (e.target.closest('[data-st-params]')) openRaceSheet(false); });
   async function loadPractice() {
     if (prBusy) return;
     prBusy = true;
@@ -5144,7 +5089,7 @@
   function renderStrategy(d) {
     const st = d.strategy;
     if (!st) return;
-    setText('stRace', st.race || 'žádný závod – vyber „Závod…“');
+    setText('stRace', st.race || 'žádný závod – vyber na stránce Trať');
     // Calls
     const calls = st.calls.map(c => `<div class="stcall ${c.level}">${c.text}</div>`).join('');
     if ($('stCalls').innerHTML !== calls) $('stCalls').innerHTML = calls;

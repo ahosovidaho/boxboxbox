@@ -1221,6 +1221,7 @@ fn planner_input(saved: &Saved, live: &Live, p: &Plan, pit_loss: f32) -> Option<
         refuel_rate: race.refuel_rate.unwrap_or(0.0),
         pit_loss,
         deg: if race.no_wear { 0.0 } else { race.deg.unwrap_or(DEFAULT_DEG) },
+        fuel_s: if race.no_fuel { 0.0 } else { fuel_s_of(&saved.calibration, live.car_code, &race.track) },
         current: current.clone(),
         current_age: p.stint_laps.floor() as u32,
         stop_now: false,
@@ -1543,6 +1544,9 @@ mod tests {
         // Lap 11 just started: 10 laps done, fuel 100 − 10 × 7.16
         let mut saved = barcelona(23);
         saved.race.as_mut().unwrap().start_compound = Some("RM".into());
+        // Without the weight of the fuel (with it the planner would rather box later, lighter)
+        let track = saved.race.as_ref().unwrap().track.clone();
+        saved.calibration.insert(fuel_s_key(1, &track), 0.0);
         let p = full(&saved, &live(11, 0.0, 28.4), 7.16);
         assert_eq!(p.window, Some([11, 13]));
         // 10 laps on old mediums: the planner boxes now
