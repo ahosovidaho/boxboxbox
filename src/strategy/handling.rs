@@ -111,20 +111,6 @@ fn layout(drive: Option<&str>) -> (bool, bool, bool) {
     }
 }
 
-/// Name of the layout for the dashboard
-pub fn drive_label(drive: &str) -> &'static str {
-    match drive.trim().to_uppercase().as_str() {
-        "FF" => "motor vpředu, pohon předních kol (FF)",
-        "FR" => "motor vpředu, pohon zadních kol (FR)",
-        "MR" => "motor uprostřed, pohon zadních kol (MR)",
-        "RR" => "motor vzadu, pohon zadních kol (RR)",
-        "4WD" | "AWD" => "pohon všech kol (4WD)",
-        "RWD" => "pohon zadních kol",
-        "FWD" => "pohon předních kol",
-        _ => "",
-    }
-}
-
 impl LapStats {
     fn add(&mut self, o: &LapStats) {
         self.entry.add(&o.entry);
@@ -373,13 +359,7 @@ pub fn advice(laps: &[&LapStats], setup: Option<&Setup>, bop: bool, balance: boo
             _ => "",
         };
         let driving = format!("{driving}{}", if driving.is_empty() { extra.trim_start() } else { extra });
-        out.push(Advice {
-            area: area.into(),
-            finding,
-            setup: (!bop).then_some(setup),
-            driving: (!driving.is_empty()).then_some(driving),
-            share,
-        });
+        out.push(Advice { area, finding, setup: (!bop).then_some(setup), driving: (!driving.is_empty()).then_some(driving), share });
     };
     let p = |x: f32| format!("{:.0} %", x * 100.0);
 
