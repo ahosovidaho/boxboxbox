@@ -2,6 +2,13 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Setup: auto a pohon, kouč podle nich.** Karta Auto (i u BoP): pohon FF / FR / MR / RR / 4WD,
+  nebo zjistit z jízdy – poháněná náprava se pozná z prokluzu kol na plném plynu (na Yas
+  F3500: zadní kola +5 %, přední 0). Rady k jízdě z chování auta (nedotáčivost, přetáčivost,
+  blokování, prokluz) se podle pohonu doplní – např. „Motor vzadu: neuber plyn prudce ve středu
+  zatáčky“, „U předokolky na výjezdu nedávej plný plyn, dokud kola nemíří ven“. Nově je ukazuje
+  i Kouč (karta Styl jízdy s tímhle autem); úpravy nastavení zůstávají na stránce Setup.
+
 - **Měření: výběr auta, přeřazování a převodovka.**
   - Seznam aut s naměřenými daty (jiné auto než to, se kterým jedeš, neovlivní diody).
   - Body řazení ze stejného zdroje jako modré diody (jízdy na plný plyn, jinak rozjezdy);

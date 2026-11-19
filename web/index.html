@@ -1152,6 +1152,7 @@
     <div id="cLeft">
       <div class="card" id="cSuggest" hidden></div>
       <div class="card" id="cLatest"><span class="muted">Zatím žádné vyhodnocené kolo – odjeď kolo od čáry do čáry.</span></div>
+      <div class="card" id="cStyle" hidden></div>
       <div class="card" id="cHistory" hidden><h2>Předchozí kola</h2><div id="feed"></div></div>
     </div>
     <div id="cRight">
@@ -1819,7 +1820,7 @@
     if (n === 11) { loadStorage(); loadTracks(); }
     if (n === 12) loadRefs();
     if (n === 1) requestAnimationFrame(() => drawMap(true));
-    if (n === 3) markCoachRead();
+    if (n === 3) { markCoachRead(); loadStyle(); }
     if (n === 4) requestAnimationFrame(() => { renderPerfData(); if (lastData.live) renderPerfLive(lastData); });
     if (n === 5 && lastData.live) renderStrategy(lastData);
   }
@@ -4851,6 +4852,8 @@
       ['ballast', 'Zátěž', 'kg', false], ['ballast_pos', 'Umístění zátěže', '−50…+50', false]]],
   ];
   let suCar = null, suList = [], suActive = '', suEdit = null, suDirty = false, suInfoData = null, suLap = null;
+  const DRIVE_NAME = { FF: 'FF – motor vpředu, přední pohon', FR: 'FR – motor vpředu, zadní pohon', MR: 'MR – motor uprostřed, zadní pohon',
+    RR: 'RR – motor vzadu, zadní pohon', '4WD': '4WD – pohon všech kol', rwd: 'pohon zadních kol', fwd: 'pohon předních kol', awd: 'pohon všech kol' };
   function suBlank(car) { return { id: '', car, name: '', note: '', bop: false, values: {} }; }
   async function loadSetups(force) {
     const car = lastData && lastData.car_code;
@@ -4879,7 +4882,13 @@
     const v = suEdit.values || {};
     const inp = (k, type) => `<input ${type === 'text' ? 'type="text" class="wide"' : 'type="text" inputmode="decimal"'} data-k="${k}" value="${esc(v[k] ?? '')}" autocomplete="off">`;
     $('suBop').checked = !!suEdit.bop;
-    $('suForm').innerHTML = (suEdit.bop ? `<div class="card"><h2>BoP</h2><div class="pnote" style="margin:0">Nastavení je v závodě zamčené (Balance of Performance). Kola a body řazení se ukládají k této kartě, doporučení jsou jen pro jízdu.</div></div>` : SETUP_FIELDS.map(([title, fields]) => {
+    // The car and its drive layout (for the coach's driving advice) – BoP cars too
+    const det = suInfoData && suInfoData.advice && suInfoData.advice.drive_detected;
+    const drv = [['', `zjistit z jízdy${det ? ' (' + DRIVE_NAME[det] + ')' : ''}`], ...Object.entries(DRIVE_NAME).filter(([k]) => k === k.toUpperCase())];
+    const autoCard = `<div class="card"><h2>Auto</h2><table class="sutab"><tr><td>Auto</td><td colspan="2"><b>${esc((lastData && lastData.car_name) || 'auto ' + suCar)}</b></td></tr>`
+      + `<tr><td>Pohon</td><td colspan="2"><select data-k="drive">${drv.map(([k, n]) => `<option value="${k}" ${(v.drive || '').toUpperCase() === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td></tr></table>`
+      + `<div class="pnote">Kouč podle pohonu upraví rady k jízdě (výjezd, trakce, ubrání plynu). Z jízdy poznám poháněnou nápravu; polohu motoru (MR, RR) vyber.</div></div>`;
+    $('suForm').innerHTML = autoCard + (suEdit.bop ? `<div class="card"><h2>BoP</h2><div class="pnote" style="margin:0">Nastavení je v závodě zamčené (Balance of Performance). Kola a body řazení se ukládají k této kartě, doporučení jsou jen pro jízdu.</div></div>` : SETUP_FIELDS.map(([title, fields]) => {
       const pair = fields.some(f => f[3]);
       const rows = fields.map(([k, label, unit, fr, type]) => fr
         ? `<tr><td>${label}${unit ? ` <small>${unit}</small>` : ''}</td><td>${inp(k + '_f', type)}</td><td>${inp(k + '_r', type)}</td></tr>`
@@ -4888,6 +4897,25 @@
     }).join('')) + `<div class="card"><h2>Poznámka</h2><textarea id="suNote" placeholder="např. trať, počasí, jak se auto chovalo">${esc(suEdit.note || '')}</textarea>
       <div class="pnote">Aktivní setup se přiřazuje tréninkovým kolům a bodům řazení z jízdy – po změně převodovky nebo přítlaku ulož nový setup (Duplikovat), ať se data nemíchají.</div></div>`;
     suMarkDirty(suDirty);
+  }
+  // Coach page: how to drive this car – the driving half of the handling advice (balance, brakes,
+  // traction from the last laps), with the drive layout taken into account
+  async function loadStyle() {
+    const car = lastData && lastData.car_code;
+    const el = $('cStyle');
+    if (!car) { el.hidden = true; return; }
+    try {
+      const r = await (await fetch('api/setups?car=' + car, { cache: 'no-store' })).json();
+      const a = r.advice || {};
+      const items = (a.advice || []).filter(x => x.driving).slice(0, 3);
+      const drive = a.drive ? DRIVE_NAME[a.drive] || a.drive : '';
+      if (!items.length && !drive) { el.hidden = true; return; }
+      el.hidden = false;
+      el.innerHTML = `<h2>Styl jízdy s tímhle autem${drive ? ` <span style="letter-spacing:0;text-transform:none;float:right" class="muted">${esc(drive)}</span>` : ''}</h2>`
+        + (items.length ? items.map(x => `<div class="vtip"><b>${esc(x.finding)}</b>${esc(x.driving)}</div>`).join('')
+          : `<div class="muted">Z posledních kol${r.track ? ' na ' + esc(r.track) : ''} nic výrazného – auto je vyvážené.</div>`)
+        + `<div class="muted" style="font-size:12px;margin-top:6px">Z chování auta v posledních kolech (nedotáčivost, přetáčivost, blokování, prokluz). Úpravy nastavení: stránka Setup.</div>`;
+    } catch { el.hidden = true; }
   }
   // Advice from the last laps of the active setup, and the setups side by side on this track
   function renderSetupInfo() {

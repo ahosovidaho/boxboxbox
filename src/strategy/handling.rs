@@ -75,6 +75,54 @@ pub struct LapStats {
     pub limiter: u32,
     pub max_gear: u8,
     pub gears: u8,
+    /// Full throttle in the low gears on a straight: summed slip of the front and rear wheels
+    /// (wheel speed / car speed − 1) and the ticks – the driven axle slips a few per cent
+    pub drive_f: f32,
+    pub drive_r: f32,
+    pub drive_n: u32,
+}
+
+/// Which wheels drive the car, from the slip at full throttle: "rwd", "fwd", "awd"
+pub fn detect_drive(t: &LapStats) -> Option<&'static str> {
+    if t.drive_n < 60 {
+        return None;
+    }
+    let (f, r) = (t.drive_f / t.drive_n as f32, t.drive_r / t.drive_n as f32);
+    if r - f > 0.012 && f < 0.01 {
+        Some("rwd")
+    } else if f - r > 0.012 && r < 0.01 {
+        Some("fwd")
+    } else if f > 0.008 && r > 0.008 && (f - r).abs() < 0.012 {
+        Some("awd")
+    } else {
+        None
+    }
+}
+
+/// The drive layout entered on the setup card ("FR", "MR" …) or detected ("rwd" …), as
+/// (engine at the back, rear driven, front driven)
+fn layout(drive: Option<&str>) -> (bool, bool, bool) {
+    match drive.map(|d| d.trim().to_uppercase()).as_deref() {
+        Some("FF") | Some("FWD") => (false, false, true),
+        Some("FR") | Some("RWD") => (false, true, false),
+        Some("MR") | Some("RR") => (true, true, false),
+        Some("4WD") | Some("AWD") => (false, true, true),
+        _ => (false, false, false),
+    }
+}
+
+/// Name of the layout for the dashboard
+pub fn drive_label(drive: &str) -> &'static str {
+    match drive.trim().to_uppercase().as_str() {
+        "FF" => "motor vpředu, pohon předních kol (FF)",
+        "FR" => "motor vpředu, pohon zadních kol (FR)",
+        "MR" => "motor uprostřed, pohon zadních kol (MR)",
+        "RR" => "motor vzadu, pohon zadních kol (RR)",
+        "4WD" | "AWD" => "pohon všech kol (4WD)",
+        "RWD" => "pohon zadních kol",
+        "FWD" => "pohon předních kol",
+        _ => "",
+    }
 }
 
 impl LapStats {
@@ -93,6 +141,9 @@ impl LapStats {
         self.limiter += o.limiter;
         self.max_gear = self.max_gear.max(o.max_gear);
         self.gears = self.gears.max(o.gears);
+        self.drive_f += o.drive_f;
+        self.drive_r += o.drive_r;
+        self.drive_n += o.drive_n;
     }
 }
 
@@ -125,6 +176,12 @@ impl Collector {
             s.spin_f += u32::from(ws[0].max(ws[1]) > SPIN);
             s.spin_r += u32::from(ws[2].max(ws[3]) > SPIN);
             s.tcs += u32::from(p.flags & flags::TCS_ACTIVE != 0);
+            // Driven axle: low gear, straight, not too fast (the slip is clearest there)
+            if (1..=3).contains(&p.gear) && d.yaw_rate.abs() < MIN_YAW && speed < 45.0 {
+                s.drive_f += (ws[0] + ws[1]) / 2.0 - 1.0;
+                s.drive_r += (ws[2] + ws[3]) / 2.0 - 1.0;
+                s.drive_n += 1;
+            }
             if gears >= 4 && p.gear == gears {
                 s.top += 1;
                 s.limiter += u32::from(p.rpm_alert_max > 0 && p.engine_rpm >= p.rpm_alert_max as f32);
@@ -233,6 +290,9 @@ pub struct Report {
     pub spin: f32,
     /// The balance cannot be judged for this car (shown instead of the balance advice)
     pub balance_note: Option<String>,
+    /// Drive layout the advice took into account, and detected from the laps
+    pub drive: Option<String>,
+    pub drive_detected: Option<String>,
 }
 
 fn pct(a: u32, n: u32) -> f32 {
@@ -277,6 +337,14 @@ pub fn advice(laps: &[&LapStats], setup: Option<&Setup>, bop: bool, balance: boo
     for l in laps {
         t.add(l);
     }
+    // Drive layout: entered on the setup card, else detected from the slip of the wheels
+    let detected = detect_drive(&t);
+    let entered = setup.and_then(|s| s.values.get("drive")).map(|d| d.trim().to_uppercase()).filter(|d| !d.is_empty());
+    let drive = entered.clone().or(detected.map(str::to_string));
+    r.drive = drive.clone();
+    r.drive_detected = detected.map(str::to_string);
+    let (rear_engine, rear_driven, front_driven) = layout(drive.as_deref());
+    let awd = rear_driven && front_driven;
     r.entry = [pct(t.entry.us, t.entry.n) * 100.0, pct(t.entry.os, t.entry.n) * 100.0];
     r.mid = [pct(t.mid.us, t.mid.n) * 100.0, pct(t.mid.os, t.mid.n) * 100.0];
     r.exit = [pct(t.exit.us, t.exit.n) * 100.0, pct(t.exit.os, t.exit.n) * 100.0];
@@ -288,12 +356,28 @@ pub fn advice(laps: &[&LapStats], setup: Option<&Setup>, bop: bool, balance: boo
     }
     let s = setup;
     let mut out: Vec<Advice> = Vec::new();
-    let mut push = |area, finding: String, setup: String, driving: &str, share: f32| {
+    let mut push = |area: &'static str, finding: String, setup: String, driving: &str, share: f32| {
+        // What the drive layout adds to the driving tip
+        let over = finding.starts_with("Přetáčivost");
+        let under = finding.starts_with("Nedotáčivost");
+        let extra = match area {
+            "traction" if awd => " Čtyřkolka snese plyn dřív, ale ne naplno s plně natočeným volantem.",
+            "traction" if front_driven => " Přední pohon: s natočenými koly plyn dávkuj, jinak kola protáčejí a auto tlačí ven.",
+            "traction" if rear_driven => " Zadní pohon: plný plyn až když povoluješ volant.",
+            "exit" if under && front_driven && !awd => {
+                " U předokolky na výjezdu nedávej plný plyn, dokud kola nemíří ven – auto se samo stáhne."
+            }
+            "exit" | "mid" if over && rear_engine => " Motor vzadu: neuber plyn prudce ve středu zatáčky – záď se odlehčí a přetočí.",
+            "exit" if over && rear_driven => " Zadní pohon: plyn plynule, ne skokem.",
+            "entry" if over && rear_engine => " Motor vzadu: při brzdění se záď odlehčí – brzdi víc v přímém směru.",
+            _ => "",
+        };
+        let driving = format!("{driving}{}", if driving.is_empty() { extra.trim_start() } else { extra });
         out.push(Advice {
-            area,
+            area: area.into(),
             finding,
             setup: (!bop).then_some(setup),
-            driving: (!driving.is_empty()).then(|| driving.to_string()),
+            driving: (!driving.is_empty()).then_some(driving),
             share,
         });
     };
@@ -462,6 +546,33 @@ mod tests {
         // BoP: the same finding, driving tip only
         let r = advice(&laps, Some(&s), true, true);
         assert!(r.advice[0].setup.is_none() && r.advice[0].driving.is_some());
+    }
+
+    #[test]
+    fn drive_layout_detected_and_used_in_the_tips() {
+        // Rear wheels 4 % faster than the car at full throttle, front ones rolling: rear driven
+        let mut l = lap(Phase { n: 400, us: 10, os: 20 }, Phase { n: 900, us: 20, os: 20 }, Phase { n: 800, us: 20, os: 160 });
+        l.drive_n = 100;
+        l.drive_r = 4.0;
+        l.drive_f = 0.2;
+        assert_eq!(detect_drive(&l), Some("rwd"));
+        let r = advice(&[&l, &l, &l], None, false, true);
+        assert_eq!(r.drive_detected.as_deref(), Some("rwd"));
+        let exit = r.advice.iter().find(|a| a.area == "exit").unwrap();
+        assert!(exit.driving.as_deref().unwrap().contains("Zadní pohon"), "{exit:?}");
+        // Entered as MR on the card: the mid-engine tip instead
+        let mut s = Setup::default();
+        s.values.insert("drive".into(), "mr".into());
+        let r = advice(&[&l, &l, &l], Some(&s), true, true);
+        assert_eq!(r.drive.as_deref(), Some("MR"));
+        let exit = r.advice.iter().find(|a| a.area == "exit").unwrap();
+        assert!(exit.driving.as_deref().unwrap().contains("Motor vzadu"), "{exit:?}");
+        // Front driven, all wheels
+        let mut f = l.clone();
+        (f.drive_f, f.drive_r) = (3.0, 0.1);
+        assert_eq!(detect_drive(&f), Some("fwd"));
+        (f.drive_f, f.drive_r) = (2.0, 2.2);
+        assert_eq!(detect_drive(&f), Some("awd"));
     }
 
     #[test]
