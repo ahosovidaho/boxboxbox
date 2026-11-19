@@ -2,6 +2,15 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Odpočet k brzdnému bodu** (Kouč → Trénink → Hlasový kouč → Odpočet k brzdění: Tóny). U
+  vybraných zatáček dva krátké tóny po sekundě a dlouhý tam, kde brzdí nejlepší kolo – tóny,
+  ne slova, protože řeč v prohlížeči startuje s nestálým zpožděním. Odhad času počítá
+  i se zrychlováním na rovince; povel k zatáčce zazní dřív, aby skončil před prvním tónem.
+  - **Kalibrace** (5 pokusů v tréninku na rovince): změří zpoždění sluchátek, telemetrie
+    a reakce dohromady; dlouhý tón pak přijde o tolik dřív. Ukládá se pro každé zařízení.
+  - Ověřeno přehráním kola z Yas Mariny: dlouhý tón 0,22–0,25 s před brzdným bodem při
+    nastavení 0,25 s.
+
 - **Opotřebení gum podle času na kolo, bez vlivu paliva.** Kolo se zpomaluje se stářím gum a
   zrychluje, jak ubývá paliva – z plné nádrže se to v tréninku skoro vyruší a opotřebení vycházelo
   nulové (Yas Marina RS: 0,01 s/kolo, v závodě ve skutečnosti 0,64).
