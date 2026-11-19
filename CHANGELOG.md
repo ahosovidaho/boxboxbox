@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Strategie: rezerva paliva při příjezdu do boxu.** Dosud se při zastávce tankovalo jen na
+  kola do další zastávky + 0,05 kola (Spa: do boxu s 0,6 l). Nově nastavitelná „Rezerva paliva
+  při příjezdu do boxu“ v pravidlech závodu, výchozí 0,3 kola (≈ jedno pomalejší kolo nebo
+  zaváhání u vjezdu). S palivem, které už v nádrži je, je rezerva přání: plán, který ji nedodrží,
+  stojí 30 s za kolo chybějící rezervy a ukáže riziko; povinné minimum zůstává 0,05 kola.
+  Spa 21 kol, 12,08 l/kolo: místo RS 8 → 7 → 6 (+82 / +75 l) teď RS 7 → 7 → 7 (+73 / +85 l),
+  do boxu vždy aspoň s 3,6 l. Údaj „naplno“ u tankování počítá stejně.
+
 - **Trať: názvy z kalendáře se sjednotí s uloženým tvarem trati.** Závod z kalendáře se jmenuje
   „Circuit de Spa-Francorchamps“, uložený tvar trati „Spa-Francorchamps“ – kola z tréninku se
   proto brala jako „jiná varianta“ (přeškrtnutá) a Trať, převodovka v Měření i první návrh
