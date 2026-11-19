@@ -574,6 +574,11 @@ impl Tracker {
         let car = cars::name(car_code).map_or_else(|| format!("car{car_code}"), str::to_string);
         let start = chrono::Local::now() - chrono::TimeDelta::milliseconds((run.duration_s * 1000.0) as i64);
         run.stamp(car_code, &car, start);
+        // Which setup card and track: to compare like with like on the dashboard
+        run.setup = (!self.setup_id.is_empty()).then(|| self.setup_id.clone());
+        let mut track = String::new();
+        self.with_strategy(|s| track = s.advice_track());
+        run.track = (!track.is_empty()).then_some(track);
         let h = perf::cli::headline(&run);
         println!("{}", tr!("Messung: {h}", "Measurement: {h}", "Měření: {h}"));
         if let Some(store) = &self.perf_store {

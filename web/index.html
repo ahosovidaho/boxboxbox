@@ -1211,6 +1211,7 @@
       <div class="pempty" id="perfChartEmpty" data-t>Noch keine Beschleunigung gemessen.</div>
       <div class="legend" id="perfLegend"></div>
       <div class="readout" id="perfRead"></div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Rozjezd z místa na plný plyn: měří se sám, když auto stojí a ty do 1 s šlápneš na plyn (aspoň do 100 km/h). Výjezdy z boxu se nepočítají. Nejlepší jízda je se stejnou kartou setupu jako ta poslední.</div>
     </div>
 
     <div class="card" id="gearCard"><h2>Převodovka pro trať <span id="gearTrack" style="letter-spacing:0;text-transform:none"></span></h2><div id="gearBody"><span class="muted">–</span></div></div>
@@ -3142,8 +3143,10 @@
     if (page !== 4) return;
     const P = perfShown() || {}, series = [];
     const trace = r => r.trace.map(p => [p[0], U.spd(p[1])]);
-    if (P.best_accel) series.push({ name: t('Bestlauf'), color: SERIES.best, dash: [5, 4], pts: trace(P.best_accel) });
-    if (P.last_accel) series.push({ name: P.best_accel ? t('Letzter Lauf') : t('Letzter Lauf = Bestlauf'), color: SERIES.last, pts: trace(P.last_accel) });
+    // When and where each run was driven: comparable only on the same track and setup
+    const when = r => { const d = new Date(r.time); return (isNaN(d) ? '' : ` · ${d.getDate()}. ${d.getMonth() + 1}.`) + (r.track ? ' · ' + r.track : ''); };
+    if (P.best_accel) series.push({ name: t('Bestlauf') + when(P.best_accel), color: SERIES.best, dash: [5, 4], pts: trace(P.best_accel) });
+    if (P.last_accel) series.push({ name: (P.best_accel ? t('Letzter Lauf') : t('Letzter Lauf = Bestlauf')) + when(P.last_accel), color: SERIES.last, pts: trace(P.last_accel) });
     if (livePts.length > 1) series.push({ name: t('Live'), color: SERIES.live, pts: livePts.map(([x, v]) => [x, U.spd(v)]), live: true });
     $('perfChartEmpty').hidden = series.length > 0;
     $('perfChart').hidden = !series.length;
@@ -3160,7 +3163,7 @@
     setHtml('perfLegend', legendHtml(series));
     if (perfCursor == null) { setText('perfRead', t('Tippen zeigt die Werte')); return; }
     const vals = series.map(s => [s, valueAt(s.pts, perfCursor)]).filter(([, v]) => v != null);
-    setText('perfRead', `${perfCursor.toFixed(2)} s: ` + vals.map(([s, v]) => `${s.name.split(' = ')[0]} ${Math.round(v)} ${U.speed}`).join(' · '));
+    setText('perfRead', `${perfCursor.toFixed(2)} s: ` + vals.map(([s, v]) => `${s.name.split(' = ')[0].split(' · ')[0]} ${Math.round(v)} ${U.speed}`).join(' · '));
   }
 
   // Best shift points and the power band (power and torque in % of their maximum: no weight needed)

@@ -148,8 +148,16 @@ impl Store {
     }
 
     /// All runs of a car, newest first.
+    /// Stored runs, newest first; starts the driver did not make (pit box release, pit limiter)
+    /// measured before they were recognised are left out
     pub fn runs(&self, car: i32) -> Vec<Run> {
-        self.run_files(car).iter().filter_map(|p| read_json(p)).collect()
+        self.run_files(car)
+            .iter()
+            .filter_map(|p| read_json::<Run>(p))
+            .filter(|r| {
+                r.kind != Kind::Accel || !super::not_a_launch(&r.trace.iter().map(|t| (t[0], t[1], t[5] / 100.0, t[3])).collect::<Vec<_>>())
+            })
+            .collect()
     }
 
     /// Cars with measurements (runs or shift points from driving), as (code, name).
@@ -201,8 +209,31 @@ impl Store {
             }
         }
         let last_accel = runs.iter().find(|r| r.kind == Kind::Accel);
-        let best_id = ["0-100", "0-50"].iter().find_map(|k| best.get(k).map(|b| b.2.id.as_str()));
-        let best_accel = runs.iter().find(|r| Some(r.id.as_str()) == best_id && Some(&r.id) != last_accel.map(|l| &l.id));
+        // The best run to draw against the last one: with the same setup card when the last run
+        // has one (another setup or BoP makes a different car)
+        let same = |r: &Run| last_accel.and_then(|l| l.setup.as_ref()).is_none_or(|s| r.setup.as_ref() == Some(s));
+        let best_accel = runs
+            .iter()
+            .filter(|r| r.kind == Kind::Accel && same(r) && Some(&r.id) != last_accel.map(|l| &l.id))
+            .filter_map(|r| {
+                let m = r
+                    .marks
+                    .iter()
+                    .filter(|m| m.g.abs() <= MAX_GRADE)
+                    .find(|m| m.key == "0-100")
+                    .or_else(|| r.marks.iter().find(|m| m.key == "0-50"))?;
+                Some((m.t, r))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|x| x.1)
+            .filter(|b| {
+                // Only when it is faster than the last run
+                let t = |r: &Run| r.marks.iter().find(|m| m.key == "0-100").map(|m| m.t);
+                match (t(b), last_accel.and_then(t)) {
+                    (Some(x), Some(y)) => x < y,
+                    _ => true,
+                }
+            });
 
         // The run that reached the highest rpm: a run shifted early cannot tell whether revving
         // higher pays off (every gear looks "late"); newest first among equals
