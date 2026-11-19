@@ -59,6 +59,8 @@ pub struct Input {
     pub fuel_per_lap: f32,
     /// Fuel left at the finish, in laps
     pub reserve: f32,
+    /// Fuel left on arriving at a stop, in laps
+    pub stop_reserve: f32,
     /// Fuel per second when refuelling (0 = not counted)
     pub refuel_rate: f32,
     /// Time lost by a stop without refuelling, s
@@ -166,6 +168,12 @@ struct Eval {
     risks: Vec<String>,
 }
 
+/// Fuel that has to be left on arriving at a stop, laps, whatever the reserve set
+const MIN_STOP_RESERVE: f32 = 0.05;
+/// Cost of each lap of stop reserve not kept with the fuel on board, s: any plan that keeps it
+/// is taken first, unless it costs more than about a stop
+const SHORT_RESERVE_S: f32 = 30.0;
+
 /// Fuel per lap a stint could still take (tank or fuel on board at its start) minus the planned
 /// figure: how much more the car may burn before the stint runs dry.
 fn fuel_margin(available: f32, laps: u32, reserve: f32, fpl: f32) -> f32 {
@@ -186,14 +194,14 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
         let fresh = i > 0 || inp.stop_now || inp.current.is_none();
         let age = if fresh { 0 } else { inp.current_age };
         if i > 0 || inp.stop_now {
-            // Stop before this stint: just enough fuel for it (and the reserve at the end)
-            let need = (n as f32 + if i == last { inp.reserve } else { 0.05 }) * fpl;
+            // Stop before this stint: just enough fuel for it and the reserve (to the next stop or the finish)
+            let need = (n as f32 + if i == last { inp.reserve } else { inp.stop_reserve }) * fpl;
             let add = (need - fuel).max(0.0);
             if fuel + add > inp.capacity + 0.01 {
                 return None;
             }
             fuel += add;
-            let margin = fuel_margin(inp.capacity, n, if i == last { inp.reserve } else { 0.05 }, fpl);
+            let margin = fuel_margin(inp.capacity, n, if i == last { inp.reserve } else { inp.stop_reserve }, fpl);
             if fpl > 0.01 && margin < fpl * 0.04 {
                 risks.push(format!("stint {} ({} kol) se do nádrže vejde jen s rezervou {:.2} l/kolo", i + 1, n, margin.max(0.0)));
             }
@@ -203,11 +211,26 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
             parts.refuel += refuel;
             stops.push(PlannedStop { lap, compound: t.name.clone(), fuel: add });
         } else {
-            let need = (n as f32 + if i == last { inp.reserve } else { 0.05 }) * fpl;
-            if fuel + 0.01 < need {
+            // The fuel on board is what it is: to the next stop the reserve is a wish (a cost when
+            // it is not kept), only a twentieth of a lap is a must
+            let hard = if i == last { inp.reserve } else { inp.stop_reserve.min(MIN_STOP_RESERVE) };
+            if fuel + 0.01 < (n as f32 + hard) * fpl {
                 return None;
             }
-            let margin = fuel_margin(fuel, n, if i == last { inp.reserve } else { 0.05 }, fpl);
+            if i != last && fpl > 0.01 {
+                let left = fuel / fpl - n as f32;
+                if left + 0.001 < inp.stop_reserve {
+                    let short = inp.stop_reserve - left;
+                    cost += short * SHORT_RESERVE_S;
+                    parts.stops += short * SHORT_RESERVE_S;
+                    risks.push(format!(
+                        "do boxu po {n} kolech dojedeš jen s {:.1} l – méně než rezerva {:.1} kola",
+                        left.max(0.0) * fpl,
+                        inp.stop_reserve
+                    ));
+                }
+            }
+            let margin = fuel_margin(fuel, n, if i == last { inp.reserve } else { hard }, fpl);
             if fpl > 0.01 && margin < fpl * 0.04 {
                 risks.push(format!("{} kol bez tankování: rezerva jen {:.2} l/kolo", n, margin.max(0.0)));
             }
@@ -353,6 +376,7 @@ mod tests {
             capacity: 100.0,
             fuel_per_lap: fpl,
             reserve: 0.3,
+            stop_reserve: 0.05,
             refuel_rate: 3.0,
             pit_loss: 25.0,
             deg: 0.2,
@@ -424,6 +448,30 @@ mod tests {
         assert_eq!(best.stops[0].lap, 21);
         // (6 + 0.3) × 7.71 − 7.0 = 41.6 (today 48.8 went in: 7 too much)
         assert!((best.stops[0].fuel - 41.57).abs() < 0.05, "{best:?}");
+    }
+
+    #[test]
+    fn stop_reserve_is_left_on_arriving_at_each_stop() {
+        // Spa 19 Nov: 21 laps, 12.08 per lap, a 100 l tank, RS only (life 8)
+        let fpl = 12.08;
+        let mut inp = race(21, fpl);
+        inp.compounds = vec![Compound::new("RS", Some(8), 0.0)];
+        inp.current = Some("RS".into());
+        inp.need_compound = None;
+        for reserve in [0.05, 0.3, 0.5] {
+            inp.stop_reserve = reserve;
+            let best = plan(&inp).best.unwrap();
+            assert!(best.stops.len() >= 2, "{best:?}");
+            let mut fuel = 100.0;
+            for (i, st) in best.stints.iter().enumerate() {
+                if i > 0 {
+                    fuel += best.stops[i - 1].fuel;
+                }
+                fuel -= st.laps as f32 * fpl;
+                let want = if i + 1 == best.stints.len() { inp.reserve } else { reserve };
+                assert!(fuel >= want * fpl - 0.05, "stint {i}, reserve {reserve}: {fuel} l left · {best:?}");
+            }
+        }
     }
 
     #[test]

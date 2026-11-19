@@ -28,6 +28,8 @@ pub type Shared = Arc<Mutex<Strategy>>;
 
 /// Fuel left over at the finish, in laps
 const DEFAULT_RESERVE: f32 = 0.3;
+/// Fuel left on arriving at a stop, in laps (a slower lap, a lap more before the box)
+const DEFAULT_STOP_RESERVE: f32 = 0.3;
 /// Tyre wear (%) at which the tyres count as finished
 const DEFAULT_WEAR_LIMIT: f32 = 70.0;
 /// Fuel per lap: average of this many recent clean laps
@@ -62,6 +64,8 @@ pub struct Race {
     /// Fuel per lap to plan with before a lap has been measured
     pub fuel_per_lap: Option<f32>,
     pub reserve_laps: Option<f32>,
+    /// Fuel left on arriving at a planned stop, in laps (default [`DEFAULT_STOP_RESERVE`])
+    pub stop_reserve_laps: Option<f32>,
     pub wear_limit: Option<f32>,
     /// Per compound ("RS", "RM" …): laps a set lasts and pace difference
     pub tyres: BTreeMap<String, TyreSpec>,
@@ -227,6 +231,7 @@ pub struct Plan {
     pub add_now: Option<f32>,
     pub refuel_s: Option<f32>,
     pub reserve_laps: f32,
+    pub stop_reserve_laps: f32,
     pub pit_required: bool,
     pub pit_done: bool,
     /// Race without tyre wear / fuel use
@@ -773,11 +778,15 @@ impl Strategy {
         }
         if let Some(laps) = p.stop_add_laps.filter(|_| p.stop_add.is_some()) {
             let before = self.saved.stops.last().map_or(live.fuel, |s| (live.fuel - s.fuel_added).max(0.0));
-            p.stop_add_max = Some(add_for(laps as f32, before));
+            // Another stop after this stint: the stop reserve instead of the one for the finish
+            let more = p.options.best.as_ref().is_some_and(|b| b.stints.len() > 1);
+            let extra = if more { p.stop_reserve_laps - p.reserve_laps } else { 0.0 };
+            p.stop_add_max = Some(add_for(laps as f32 + extra, before));
         }
         if let (Some(t), Some(best)) = (p.target_lap, p.options.best.as_ref()) {
             let at_box = (live.fuel - fmax * (t as f32 - live.driven())).max(0.0);
             let next = best.stints.get(1).map_or(total - t as f32, |s| s.laps as f32);
+            let next = if best.stints.len() > 2 { next + p.stop_reserve_laps - p.reserve_laps } else { next };
             p.next_stop_fuel_max = Some(add_for(next, at_box));
         }
     }
@@ -972,7 +981,7 @@ impl Strategy {
             // Recompute when something that matters changes, not for every packet
             let r = |v: f32, step: f32| (v / step).round() as i32;
             let key = format!(
-                "{} {} {} {:?} {} {:?} {} {} {} {} {} {} {} {:?}",
+                "{} {} {} {:?} {} {:?} {} {} {} {} {} {} {} {} {:?}",
                 inp.first_lap,
                 inp.laps,
                 inp.stop_now,
@@ -985,6 +994,7 @@ impl Strategy {
                 r(inp.pit_loss, 0.5),
                 r(inp.deg, 0.01),
                 r(inp.reserve, 0.1),
+                r(inp.stop_reserve, 0.05),
                 r(inp.refuel_rate, 0.1),
                 inp.compounds,
             );
@@ -1232,6 +1242,7 @@ fn planner_input(saved: &Saved, live: &Live, p: &Plan, pit_loss: f32) -> Option<
         capacity: cap,
         fuel_per_lap: fpl,
         reserve: p.reserve_laps,
+        stop_reserve: p.stop_reserve_laps,
         refuel_rate: race.refuel_rate.unwrap_or(0.0),
         pit_loss,
         deg: if race.no_wear { 0.0 } else { race.deg.unwrap_or(DEFAULT_DEG) },
@@ -1312,6 +1323,7 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
     let mut p = Plan {
         race: saved.race.as_ref().map(|r| r.name.clone()),
         reserve_laps: race.reserve_laps.unwrap_or(DEFAULT_RESERVE),
+        stop_reserve_laps: race.stop_reserve_laps.unwrap_or(DEFAULT_STOP_RESERVE).max(0.0),
         wear_limit: race.wear_limit.unwrap_or(DEFAULT_WEAR_LIMIT),
         pit_required: race.pit_required,
         no_wear: race.no_wear,

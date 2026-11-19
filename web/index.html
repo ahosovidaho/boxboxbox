@@ -1304,7 +1304,7 @@
         <span>Box teď: dotankovat</span><span id="stAdd">–</span>
         <span>Box teď: naplno</span><span id="stAddMax">–</span>
         <span>Doba tankování</span><span id="stRefuel">–</span>
-        <span>Rezerva v cíli</span><span id="stReserve">–</span>
+        <span>Rezerva: zastávka · cíl</span><span id="stReserve">–</span>
       </div>
     </div>
 
@@ -1593,7 +1593,9 @@
     <div id="rPreview"></div>
     <h2 class="sect">Palivo</h2>
     <label><span>Odhad spotřeby / kolo (než změřím)</span> <input type="number" id="rFpl" inputmode="decimal" step="0.01"></label>
+    <label><span>Rezerva paliva při příjezdu do boxu (kola)</span> <input type="number" id="rStopReserve" inputmode="decimal" step="0.1" min="0"></label>
     <label><span>Rezerva paliva v cíli (kola)</span> <input type="number" id="rReserve" inputmode="decimal" step="0.1"></label>
+    <div class="sinfo" style="word-break: normal">Při zastávce se dotankuje na kola do další zastávky + rezervu při příjezdu do boxu (0,3 kola ≈ jedno pomalejší kolo nebo zaváhání u vjezdu). Menší rezerva = lehčí auto a kratší tankování, ale riziko, že do boxu nedojedeš.</div>
     <label><span>Limit opotřebení gum %</span> <input type="number" id="rLimit" inputmode="numeric"></label>
     </div>
     <div class="serr" id="rErr" hidden></div>
@@ -5258,7 +5260,7 @@
         + (st.fuel_margin_laps_max != null ? ` · do cíle ${st.fuel_margin_laps_max >= 0 ? '+' : ''}${nf(st.fuel_margin_laps_max)} kola` : ''));
     setText('stAddMax', st.add_now_max == null ? '–' : '+' + nf(st.add_now_max));
     setText('stRefuel', st.refuel_s == null ? '–' : '≈ ' + nf(st.refuel_s, 0) + ' s');
-    setText('stReserve', nf(st.reserve_laps) + ' kola');
+    setText('stReserve', `${nf(st.stop_reserve_laps ?? 0.3)} · ${nf(st.reserve_laps)} kola`);
     // Tyres
     setText('stWearBig', st.wear_now == null ? (st.compound || '–') : `${st.compound || ''} ${nf(st.wear_now, 0)} %`);
     const question = st.tyre_question || stNewMode;
@@ -5354,7 +5356,7 @@
     $('rDeg').value = r.deg ?? '';
     $('rPitLoss').value = r.pit_loss ?? '';
     renderTyreRows();
-    $('rFpl').value = r.fuel_per_lap ?? ''; $('rReserve').value = r.reserve_laps ?? 0.3; $('rLimit').value = r.wear_limit ?? 70;
+    $('rFpl').value = r.fuel_per_lap ?? ''; $('rReserve').value = r.reserve_laps ?? 0.3; $('rStopReserve').value = r.stop_reserve_laps ?? 0.3; $('rLimit').value = r.wear_limit ?? 70;
     $('raceSheet').dataset.id = r.id || '';
     $('raceSheet').dataset.date = r.date || '';
   }
@@ -5411,13 +5413,13 @@
       laps: numIn($('rLaps').value), tyre_wear: numIn($('rWear').value), fuel_mult: numIn($('rFuelMult').value),
       refuel_rate: numIn($('rRefuel').value), pit_required: $('rPit').checked, mandatory: $('rMand').value || null,
       start_compound: $('rStart').value || null, tyres: readTyres(), deg: numIn($('rDeg').value), pit_loss: numIn($('rPitLoss').value),
-      fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), wear_limit: numIn($('rLimit').value),
+      fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), stop_reserve_laps: numIn($('rStopReserve').value), wear_limit: numIn($('rLimit').value),
       no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked, date: $('raceSheet').dataset.date || null,
     };
   }
   function syncNoWearFuel() {
     for (const id of ['rWear', 'rDeg', 'rLimit']) $(id).disabled = $('rNoWear').checked;
-    for (const id of ['rFuelMult', 'rRefuel', 'rFpl', 'rReserve']) $(id).disabled = $('rNoFuel').checked;
+    for (const id of ['rFuelMult', 'rRefuel', 'rFpl', 'rReserve', 'rStopReserve']) $(id).disabled = $('rNoFuel').checked;
   }
   $('rNoWear').addEventListener('change', syncNoWearFuel);
   $('rNoFuel').addEventListener('change', syncNoWearFuel);
