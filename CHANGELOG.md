@@ -2,6 +2,15 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Měření: výběr auta, přeřazování a převodovka.**
+  - Seznam aut s naměřenými daty (jiné auto než to, se kterým jedeš, neovlivní diody).
+  - Body řazení ze stejného zdroje jako modré diody (jízdy na plný plyn, jinak rozjezdy);
+    nový sloupec „Modré LED“: dioda se rozsvítí o reakci (0,15 s) dřív – podle toho, jak
+    rychle v daném stupni rostou otáčky – ať se přeřadí přesně v optimu.
+  - **Převodovka pro trať** (závodní, jinak tréninková): na konci nejdelší rovinky – nejvyšší
+    stupeň nevytočený (moc dlouhá), v omezovači (moc krátká), nevyužité stupně; návrh změny
+    stálého převodu v %, s hodnotou z karty Setupu i nová hodnota. U BoP jen pro informaci.
+
 - **Strategie: brífink před závodem.** Nahoře závod (datum, pravidla, palivo na kolo, ztráta
   zastávkou), pod tím doporučený plán a dvě alternativy – kdy do boxu, kolik natankovat, o kolik
   pomalejší a proč, a co může selhat (palivo na hraně, sada na hranici výdrže). Pak na čem plán
