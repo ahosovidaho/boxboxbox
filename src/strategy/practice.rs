@@ -104,6 +104,27 @@ pub struct TrackQuestion {
 /// The catalogue layout a stored shape is, when it can be told without asking: the name is a
 /// layout of the catalogue, or exactly one layout of its base track fits its length (the name
 /// decides between a layout and its variant: "bez šikany"/"no chicane", "reverse"/"opačně").
+/// The track key without the words that only some sources write ("Circuit de Spa-Francorchamps"
+/// from the championship calendar is "Spa-Francorchamps" in GT7, "Yas Marina Circuit" is "Yas
+/// Marina"): for matching names, never as a key of stored data.
+pub fn loose_key(name: &str) -> String {
+    let mut k = track_key(name);
+    for p in ["circuitde", "circuitof", "circuitodel", "circuitode", "circuitodi", "autodromodi", "autodromo", "circuito", "circuit", "the"]
+    {
+        if k.len() > p.len() + 3 && k.starts_with(p) {
+            k = k[p.len()..].to_string();
+            break;
+        }
+    }
+    for p in ["circuit", "raceway", "racecourse", "gp"] {
+        if k.len() > p.len() + 3 && k.ends_with(p) {
+            k.truncate(k.len() - p.len());
+            break;
+        }
+    }
+    k
+}
+
 pub fn guess_course(name: &str, length_m: f32) -> Option<i32> {
     if let Some(c) = super::courses::by_name(name) {
         return Some(c.id);
@@ -282,7 +303,7 @@ impl Practice {
             sh.course = guess_course(&sh.track, sh.length_m);
             changed |= sh.course.is_some();
         }
-        let p = Practice {
+        let mut p = Practice {
             saved,
             file,
             pit_this_lap: false,
@@ -295,6 +316,7 @@ impl Practice {
         if changed {
             p.save();
         }
+        p.adopt_names();
         p
     }
 
@@ -450,6 +472,13 @@ impl Practice {
             (Some(false), None) => Some(format!(
                 "Kolo má jiný tvar než uložená trať „{name}“ – jiná varianta? Pojmenuj ji jinak (např. „{name} – varianta 2“). Kolo se nepočítá."
             )),
+            // The same track written differently ("Circuit de Spa-Francorchamps" from the calendar):
+            // practice goes on under the stored name, the lap counts
+            (None, Some(other)) if self.canonical(&name) == other => {
+                self.saved.track = other;
+                self.save();
+                None
+            }
             (None, Some(other)) => {
                 Some(format!("Kolo odpovídá už uložené trati „{other}“. Vyber ji, ať se data nerozdělí. Kolo se nepočítá."))
             }
@@ -548,6 +577,65 @@ impl Practice {
         }
         self.save();
         Ok(c.name.clone())
+    }
+
+    /// The name a track goes by here: a name written differently (from the calendar, typed) maps
+    /// to the stored layout of the same track – the same key, the same key without "Circuit de"
+    /// and the like, or the same catalogue layout. Unknown names stay as they are.
+    pub fn canonical(&self, name: &str) -> String {
+        let name = name.trim();
+        if name.is_empty() {
+            return String::new();
+        }
+        let key = track_key(name);
+        if let Some(s) = self.saved.shapes.iter().find(|s| track_key(&s.track) == key) {
+            return s.track.clone();
+        }
+        let loose = loose_key(name);
+        let by_loose: Vec<&Shape> = self.saved.shapes.iter().filter(|s| loose_key(&s.track) == loose).collect();
+        if by_loose.len() == 1 {
+            return by_loose[0].track.clone();
+        }
+        if let Some(c) = super::courses::by_name(name) {
+            if let Some(s) = self.saved.shapes.iter().find(|s| s.course == Some(c.id)) {
+                return s.track.clone();
+            }
+        }
+        name.to_string()
+    }
+
+    /// Practice and stored laps under a name written differently than the stored layout (the
+    /// race picked from the calendar): moved to the layout's name. Laps refused only because of
+    /// the name ("another layout") count again when they are not much slower than the best of them.
+    pub fn adopt_names(&mut self) -> bool {
+        let mut changed = false;
+        let cur = self.canonical(&self.saved.track);
+        if cur != self.saved.track {
+            self.saved.track = cur;
+            changed = true;
+        }
+        let names: Vec<String> =
+            self.saved.laps.iter().map(|l| l.track.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        for n in names {
+            let c = self.canonical(&n);
+            if c == n {
+                continue;
+            }
+            let best = self.saved.laps.iter().filter(|l| l.track == n).map(|l| l.ms).min().unwrap_or(0);
+            for l in self.saved.laps.iter_mut().filter(|l| l.track == n) {
+                l.track = c.clone();
+                if l.wrong_layout {
+                    l.wrong_layout = false;
+                    // What else made it unclean is not known: a lap near the best of them is clean
+                    l.clean = l.ms > 0 && (l.ms as f64) <= best as f64 * 1.04;
+                }
+            }
+            changed = true;
+        }
+        if changed {
+            self.save();
+        }
+        changed
     }
 
     /// Length (m) of the layout stored for the track name.
@@ -968,6 +1056,32 @@ mod tests {
         // Back on GP but still named Nordschleife: the lap belongs to the other name
         p.shape(&circle(500.0));
         assert!(p.layout_warning.as_deref().unwrap().contains("„Nürburgring GP“"));
+    }
+
+    #[test]
+    fn calendar_name_is_mapped_to_the_stored_layout() {
+        let mut p = practice();
+        p.saved.shapes.push(Shape { track: "Spa-Francorchamps".into(), pts: vec![], length_m: 7004.0, course: None });
+        assert_eq!(loose_key("Circuit de Spa-Francorchamps"), loose_key("Spa-Francorchamps"));
+        assert_eq!(p.canonical("Circuit de Spa-Francorchamps"), "Spa-Francorchamps");
+        assert_eq!(p.canonical("  "), "");
+        // Not stored and not like anything stored: kept as it is
+        assert_eq!(p.canonical("Suzuka Circuit"), "Suzuka Circuit");
+        // Laps from the calendar name, refused as "another layout": moved, near-best ones clean
+        p.saved.track = "Circuit de Spa-Francorchamps".into();
+        p.new_set(Some("RS"));
+        for ms in [131_000, 132_000, 150_000] {
+            p.lap_done(1, "", 12.0, false, Some(ms), true);
+        }
+        for l in p.saved.laps.iter_mut() {
+            l.wrong_layout = true;
+            l.clean = false;
+        }
+        assert!(p.adopt_names());
+        assert_eq!(p.saved.track, "Spa-Francorchamps");
+        let flags: Vec<(&str, bool, bool)> = p.saved.laps.iter().map(|l| (l.track.as_str(), l.clean, l.wrong_layout)).collect();
+        assert_eq!(flags, [("Spa-Francorchamps", true, false), ("Spa-Francorchamps", true, false), ("Spa-Francorchamps", false, false)]);
+        assert!(!p.adopt_names());
     }
 
     fn ring(r: f32, n: usize) -> Vec<[f32; 2]> {

@@ -340,7 +340,15 @@ impl Strategy {
         let practice = practice::Practice::load(file.as_ref().map(|f| f.with_file_name("practice.json")));
         let setups = setups::Setups::load(file.as_ref().map(|f| f.with_file_name("setups.json")));
         let handling = handling::Handling::load(file.as_ref().map(|f| f.with_file_name("handling.json")));
-        Strategy {
+        let mut saved: Saved = saved;
+        // A race picked before names were matched: the name of the stored layout
+        let mut renamed = false;
+        if let Some(r) = saved.race.as_mut() {
+            let c = practice.canonical(&r.track);
+            renamed = c != r.track;
+            r.track = c;
+        }
+        let s = Strategy {
             saved,
             file,
             live: Live::default(),
@@ -352,7 +360,11 @@ impl Strategy {
             history_scanned: Default::default(),
             track_mismatch: None,
             misfits: 0,
+        };
+        if renamed {
+            s.save();
         }
+        s
     }
 
     pub fn shared(self) -> Shared {
@@ -375,7 +387,9 @@ impl Strategy {
     }
 
     /// New race settings; a different race starts from scratch.
-    pub fn set_race(&mut self, race: Race) {
+    pub fn set_race(&mut self, mut race: Race) {
+        // The calendar writes some tracks differently than GT7 ("Circuit de Spa-Francorchamps")
+        race.track = self.practice.canonical(&race.track);
         // Picking the race during the session keeps what was measured so far
         let other = self.saved.race.as_ref().is_some_and(|r| r.id != race.id || r.name != race.name);
         if other {
