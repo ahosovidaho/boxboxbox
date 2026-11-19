@@ -287,6 +287,50 @@ pub fn save(
     Ok(r)
 }
 
+/// A lap of one's own recordings as a reference (a training race, a good lap of a friend's
+/// session recorded on this dashboard): copied as it is (real time, k = 1).
+#[allow(clippy::too_many_arguments)]
+pub fn from_lap(
+    root: &Path,
+    lap: &Path,
+    driver: &str,
+    official_ms: i64,
+    car_code: i32,
+    car: &str,
+    track: &str,
+    created: &str,
+) -> Result<Reference, String> {
+    let text = super::lap::read_text(lap).map_err(|e| e.to_string())?;
+    let pts = points(&text);
+    if pts.len() < 100 {
+        return Err("Kolo je moc krátké.".into());
+    }
+    let length_m = pts.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt() as f64).sum::<f64>();
+    let driver: String = driver.trim().chars().filter(|c| !c.is_control()).take(40).collect();
+    let driver = if driver.is_empty() { "Já".to_string() } else { driver };
+    let tag: String = driver.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let stamp: String = created.chars().filter(|c| c.is_ascii_digit()).take(14).collect();
+    let rid = format!("own{stamp}_{official_ms}_{tag}");
+    let out_dir = root.join(track_key(track));
+    fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    fs::write(out_dir.join(format!("{rid}.csv")), &text).map_err(|e| e.to_string())?;
+    let r = Reference {
+        id: rid.clone(),
+        driver,
+        official_ms,
+        telemetry_ms: official_ms,
+        k: 1.0,
+        car_code,
+        car: car.to_string(),
+        track: track.to_string(),
+        length_m: length_m.round(),
+        created: created.to_string(),
+        source: "recording".into(),
+    };
+    fs::write(out_dir.join(format!("{rid}.json")), serde_json::to_string_pretty(&r).unwrap_or_default()).map_err(|e| e.to_string())?;
+    Ok(r)
+}
+
 /// Removes a pending lap or a saved reference (its two files).
 pub fn remove(root: &Path, id: &str) -> Result<(), String> {
     if !safe(id) {

@@ -2,6 +2,13 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Nová navigace.** Přepínač TRÉNINK | ZÁVOD ukazuje oba režimy (trénink modře, závod
+  červeně, barevná linka nahoře). Trénink: Jízda · Trať · Kouč · Telemetrie · Měření ·
+  Strategie · Setup · Data. Závod: Strategie (brífink před startem) · Jízda · Rekap · Data.
+  - Reference se otevírají z Kouče (záložka Reference → Nahrát / spravovat); nově i nejlepší
+    kolo z vlastního záznamu (třeba tréninkového závodu) jako reference.
+  - Živá data jsou v Datech jako Diagnostika.
+
 - **Odpočet k brzdnému bodu** (Kouč → Trénink → Hlasový kouč → Odpočet k brzdění: Tóny). U
   vybraných zatáček dva krátké tóny po sekundě a dlouhý tam, kde brzdí nejlepší kolo – tóny,
   ne slova, protože řeč v prohlížeči startuje s nestálým zpožděním. Odhad času počítá
