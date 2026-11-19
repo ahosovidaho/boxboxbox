@@ -20,6 +20,8 @@ const MAX_GRADE: f32 = 2.0;
 #[derive(Serialize)]
 struct Overview<'a> {
     car_code: i32,
+    /// All cars with measurements: [code, name]
+    cars: Vec<(i32, String)>,
     car: Option<String>,
     max_grade: f32,
     best: BTreeMap<&'a str, Best<'a>>,
@@ -150,6 +152,22 @@ impl Store {
         self.run_files(car).iter().filter_map(|p| read_json(p)).collect()
     }
 
+    /// Cars with measurements (runs or shift points from driving), as (code, name).
+    pub fn cars(&self) -> Vec<(i32, String)> {
+        let mut out: Vec<(i32, String)> = fs::read_dir(&self.dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let car: i32 = e.file_name().to_str()?.parse().ok()?;
+                let has = fs::read_dir(e.path()).ok()?.flatten().any(|f| f.path().extension().is_some_and(|x| x == "json"));
+                has.then(|| (car, crate::telemetry::cars::name(car).map(str::to_string).unwrap_or_else(|| format!("auto {car}"))))
+            })
+            .collect();
+        out.sort_by(|a, b| a.1.cmp(&b.1));
+        out
+    }
+
     /// Car with the most recent run.
     fn latest_car(&self) -> Option<i32> {
         fs::read_dir(&self.dir)
@@ -169,7 +187,7 @@ impl Store {
     /// and of the last braking run.
     pub fn overview(&self, car: Option<i32>, setup_of: impl FnOnce(i32) -> String) -> String {
         let Some(car) = car.or_else(|| self.latest_car()) else {
-            return json!({ "car_code": null, "runs": [], "best": {} }).to_string();
+            return json!({ "car_code": null, "runs": [], "best": {}, "cars": self.cars() }).to_string();
         };
         let runs = self.runs(car);
 
@@ -197,6 +215,7 @@ impl Store {
         });
         let overview = Overview {
             car_code: car,
+            cars: self.cars(),
             car: runs.first().map(|r| r.car.clone()).or_else(|| crate::telemetry::cars::name(car).map(str::to_string)),
             max_grade: MAX_GRADE,
             best: best.iter().map(|(k, (_, m, r))| (*k, Best { t: m.t, d: m.d, v: m.v, run: &r.id, time: &r.time })).collect(),

@@ -90,6 +90,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/storage/action", axum::routing::post(storage_action))
         .route("/api/prep", get(prep))
         .route("/api/perf", get(perf_overview))
+        .route("/api/perf/gearing", get(perf_gearing))
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/strategy", get(strategy_state))
         .route("/api/strategy/race", axum::routing::post(strategy_race))
@@ -1279,6 +1280,63 @@ async fn perf_overview(State(s): State<AppState>, Query(q): Query<PerfQuery>) ->
     let body = tokio::task::spawn_blocking(move || {
         // Shift points from driving belong to the setup that is active for the car
         s.perf.overview(q.car, |car| st.lock().unwrap_or_else(|e| e.into_inner()).setups.active_id(car))
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
+}
+
+#[derive(Deserialize)]
+struct GearingQuery {
+    car: i32,
+    track: Option<String>,
+}
+
+/// Is the gearing right for the track (race track by default)? From the newest sessions of the
+/// car there (see [`crate::perf::gearing`]); with the final gear of the active setup card the
+/// suggested value too.
+async fn perf_gearing(State(s): State<AppState>, Query(q): Query<GearingQuery>) -> impl IntoResponse {
+    let body = tokio::task::spawn_blocking(move || {
+        let (track, _) = track_and_car(&s, q.track.clone(), Some(q.car));
+        if track.trim().is_empty() {
+            return json!({ "track": "", "gearing": null }).to_string();
+        }
+        let (track_of, layouts) = track_matcher(&s.strategy);
+        let all = crate::coach::library::index(&s.settings.data.recordings, &mut comparer(), &track_of, layouts);
+        let mut on = crate::coach::library::of_track(&all, &track, Some(q.car));
+        on.sort_by(|a, b| b.started.cmp(&a.started));
+        // Whole laps of the three newest sessions (no out-lap, not the lap cut off at the end)
+        let mut files: Vec<PathBuf> = Vec::new();
+        for i in on.iter().take(3) {
+            let dir = s.settings.data.recordings.join(&i.session);
+            let mut f: Vec<PathBuf> = std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    let n = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                    n.contains("_lap") && !n.contains("_lap00") && (n.ends_with(".csv") || n.ends_with(".csv.gz"))
+                })
+                .collect();
+            f.sort();
+            f.pop();
+            files.extend(f);
+        }
+        let refs: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
+        let g = crate::perf::gearing::analyse(&refs);
+        let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+        let setup = st.setups.active(q.car);
+        let fin = setup.and_then(|x| x.values.get("final")).and_then(|v| v.replace(',', ".").parse::<f32>().ok());
+        let suggested = match (&g, fin) {
+            (Some(g), Some(f)) if g.change_pct != 0.0 => Some((f * (1.0 + g.change_pct / 100.0) * 1000.0).round() / 1000.0),
+            _ => None,
+        };
+        json!({
+            "track": track, "car": q.car, "sessions": on.len().min(3), "gearing": g,
+            "final": fin, "final_new": suggested, "bop": setup.is_some_and(|x| x.bop), "setup": setup.map(|x| x.name.clone()),
+        })
+        .to_string()
     })
     .await
     .unwrap_or_default();

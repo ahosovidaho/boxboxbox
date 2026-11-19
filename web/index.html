@@ -1190,7 +1190,8 @@
 <section class="page rd" id="p4" hidden>
   <div id="p4head">
     <b data-t>Messung</b>
-    <span id="perfCar"></span>
+    <select id="perfCarSel" aria-label="Auto"></select>
+    <span id="perfCar" hidden></span>
     <span class="coachpill" hidden>COACH ●</span>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
@@ -1210,6 +1211,8 @@
       <div class="legend" id="perfLegend"></div>
       <div class="readout" id="perfRead"></div>
     </div>
+
+    <div class="card" id="gearCard"><h2>Převodovka pro trať <span id="gearTrack" style="letter-spacing:0;text-transform:none"></span></h2><div id="gearBody"><span class="muted">–</span></div></div>
 
     <div class="card"><h2 data-t>Schaltpunkte</h2>
       <table class="ptable" id="shiftTable"></table>
@@ -2872,6 +2875,10 @@
   // Marks exist in km/h and mph; only those of the unit system in use are shown.
   const SERIES = { last: '#3d8bff', best: '#8a8a94', live: '#f2c230', torque: '#f2c230' };
   let perf = null, perfKey = null, perfFetching = false, livePts = [], perfCursor = null, dynoCursor = null;
+  // Page 4 can show another car than the one driven (picked in the list); the shift lights stay on
+  // the driven car's data (`perf`)
+  let perfManual = null, perfView = null, perfLiveCar = null;
+  const perfShown = () => (perfManual != null && perfView ? perfView : perf);
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const DIST = { '1/8mi': ['1/8', 1], '1/4mi': ['1/4', 2], '1/2mi': ['1/2', 3], '1km': ['1', 4] };
   const isDist = k => k in DIST;
@@ -2925,10 +2932,42 @@
     } catch (e) { perfKey = null; } finally { perfFetching = false; }
   }
 
+  $('perfCarSel').addEventListener('change', async e => {
+    const car = +e.target.value;
+    if (!car) return;
+    if (car === perfLiveCar || (perf && perf.car_code === car)) { perfManual = null; perfView = null; renderPerfData(); return; }
+    perfManual = car;
+    try { perfView = await (await fetch('api/perf?car=' + car, { cache: 'no-store' })).json(); } catch { perfView = null; }
+    renderPerfData();
+  });
+  let gearKey = null;
+  async function loadGearing(car) {
+    if (!car) return;
+    let tr = '';
+    try { tr = stRace && stRace.track || ''; } catch {}
+    const key = car + '|' + tr;
+    if (key === gearKey) return;
+    gearKey = key;
+    try {
+      const g = await (await fetch('api/perf/gearing?car=' + car, { cache: 'no-store' })).json();
+      setText('gearTrack', g.track ? '· ' + g.track : '');
+      const x = g.gearing;
+      if (!x) { setHtml('gearBody', `<span class="muted">${g.track ? 'Na téhle trati s tímhle autem ještě nemám celá kola.' : 'Vyber závod nebo trať (stránka Trať).'}</span>`); return; }
+      const col = { ok: 'var(--green)', long: '#F2C230', short: '#F2C230', unused: '#F2C230' }[x.verdict] || 'var(--text)';
+      const fin = g.bop ? '<div class="muted" style="margin-top:6px">BoP: převodovka je zamčená, jen pro informaci.</div>'
+        : g.final != null && g.final_new != null ? `<div style="margin-top:6px">Stálý převod v kartě „${esc(g.setup || '')}“: <b>${nf(g.final, 3)}</b> → zkus <b>${nf(g.final_new, 3)}</b></div>`
+        : x.change_pct ? `<div class="muted" style="margin-top:6px">Zadej stálý převod v Setupu, spočítám přesnou hodnotu.</div>` : '';
+      setHtml('gearBody', `<div style="font-size:15px;color:${col};font-weight:600">${x.verdict === 'ok' ? 'Sedí' : x.verdict === 'long' ? 'Moc dlouhá' : x.verdict === 'short' ? 'Moc krátká' : 'Nevyužité stupně'}</div>`
+        + `<div style="margin-top:4px">${esc(x.text)}</div>`
+        + `<div class="muted" style="margin-top:6px;font-size:13px">${x.laps} kol z ${g.sessions} jízd · nejvyšší stupeň ${x.top_gear}/${x.gears || '?'} · ${Math.round(x.kmh)} km/h při ${Math.round(x.rpm)} ot. · omezovač ${Math.round(x.limiter)}</div>` + fin);
+    } catch { gearKey = null; }
+  }
+
   // On every snapshot: record the live curve, reload on a new run or another car
   function trackPerf(d) {
     const p = d.perf;
     if (!p) return;
+    if (d.car_code && d.car_code !== perfLiveCar) { perfLiveCar = d.car_code; perfManual = null; perfView = null; }
     const key = `${d.car_code}:${p.saved}`;
     if (key !== perfKey) { perfKey = key; fetchPerf(d.car_code); }
     if (p.phase === 'accel') {
@@ -2978,8 +3017,13 @@
 
   function renderPerfData() {
     if (page !== 4) return;
-    const P = perf || { runs: [], best: {} };
+    const P = perfShown() || { runs: [], best: {} };
     setText('perfCar', P.car || '');
+    const cars = (P.cars || []).slice();
+    const cur = P.car_code;
+    if (cur != null && !cars.some(c => c[0] === cur)) cars.unshift([cur, P.car || 'auto ' + cur]);
+    setHtml('perfCarSel', cars.map(([c, n]) => `<option value="${c}" ${c === cur ? 'selected' : ''}>${esc(n)}${c === perfLiveCar ? ' ●' : ''}</option>`).join('') || '<option>–</option>');
+    loadGearing(cur);
     setText('perfHint', t('Anhalten und Gas geben misst die Beschleunigung (zählt ab {v}). Vollbremsung ab {v} bis zum Stillstand misst den Bremsweg.', { v: speedText(100) }));
     setText('perfAxis', `${U.speed} · s`);
     // Best values
@@ -3095,7 +3139,7 @@
 
   function drawSpeedChart() {
     if (page !== 4) return;
-    const P = perf || {}, series = [];
+    const P = perfShown() || {}, series = [];
     const trace = r => r.trace.map(p => [p[0], U.spd(p[1])]);
     if (P.best_accel) series.push({ name: t('Bestlauf'), color: SERIES.best, dash: [5, 4], pts: trace(P.best_accel) });
     if (P.last_accel) series.push({ name: P.best_accel ? t('Letzter Lauf') : t('Letzter Lauf = Bestlauf'), color: SERIES.last, pts: trace(P.last_accel) });
@@ -3121,13 +3165,16 @@
   // Best shift points and the power band (power and torque in % of their maximum: no weight needed)
   function drawDyno() {
     if (page !== 4) return;
-    const P = perf || {}, dy = P.dyno;
+    const P = perfShown() || {};
+    // The same source as the shift lights: driving (all gears) first, else the launch runs
+    const td = P.track_dyno && P.track_dyno.dyno;
+    const dy = td && (td.shifts || []).length ? td : P.dyno;
     $('dynoEmpty').hidden = !!dy;
     $('dynoBox').hidden = !dy;
     if (!dy) { setHtml('shiftTable', ''); return; }
     const shifts = dy.shifts || [];
     setHtml('shiftTable', !shifts.length ? '' :
-      `<tr><td>${esc(t('Gang'))}</td><td class="v">${esc(t('optimal'))}</td><td class="x"></td><td class="w">${esc(t('gefahren'))}</td></tr>` +
+      `<tr><td>${esc(t('Gang'))}</td><td class="v">${esc(t('optimal'))}</td><td class="x"></td><td class="w">${esc(t('gefahren'))}</td><td class="w">Modré LED</td></tr>` +
       shifts.map(s => {
         const best = s.late ? `${esc(t('spät'))}` : `${Math.round(s.rpm)}`;
         const at = s.late ? `${esc(t('bis'))} ${Math.round(dy.max_rpm)}` : speedText(s.kmh);
@@ -3136,8 +3183,9 @@
           const diff = s.actual - (s.late ? dy.max_rpm : s.rpm);
           drove = `${Math.round(s.actual)}` + (Math.abs(diff) < 150 ? ' ✓' : ` <span class="${Math.abs(diff) >= 300 ? 'warn' : ''}">(${sgn(diff, 0)})</span>`);
         }
-        return `<tr><td>${s.gear} → ${s.gear + 1}</td><td class="v">${best}</td><td class="x">${at}</td><td class="w">${drove}</td></tr>`;
-      }).join(''));
+        const led = ledRpm(dy, s, P.car_code === perfLiveCar && lastData ? lastData.rpm_alert_max : 0);
+        return `<tr><td>${s.gear} → ${s.gear + 1}</td><td class="v">${best}</td><td class="x">${at}</td><td class="w">${drove}</td><td class="w">${led ? Math.round(led) : '–'}</td></tr>`;
+      }).join('') + `<tr><td colspan="5" class="x" style="text-transform:none;letter-spacing:0;font-size:12px">Zdroj: ${dy === td ? 'jízdy (plný plyn v tréninku a závodech)' : 'rozjezdy z místa'}. Modrá LED se rozsvítí o tvou reakci (0,15 s) dřív, ať přeřadíš přesně v optimu.</td></tr>`);
     const pmax = Math.max(...dy.curve.map(c => c[1]));
     const tq = dy.curve.map(([r, w]) => [r, w / r]);
     const tmax = Math.max(...tq.map(c => c[1]));
@@ -3362,13 +3410,31 @@
     const lim = limiterRpm(d);
     return lim != null && d.rpm >= lim - 75;
   }
+  // How fast the revs climb at a shift point (rpm/s): the power per kg at that rpm accelerates
+  // the car, a = P / v, and the revs follow the speed through the gear's rpm per km/h
+  function revRate(dy, gear, rpm) {
+    const r = (dy.ratios || []).find(x => x[0] === gear);
+    const c = dy.curve || [];
+    if (!r || c.length < 2 || rpm <= 0) return 0;
+    let p = c[0][1];
+    for (let i = 1; i < c.length; i++) if (c[i][0] >= rpm) { const [a, b] = [c[i - 1], c[i]]; p = a[1] + (b[1] - a[1]) * (rpm - a[0]) / Math.max(1, b[0] - a[0]); break; } else p = c[i][1];
+    return p * 12.96 * r[1] * r[1] / rpm;
+  }
+  const SHIFT_REACTION_S = 0.15;
+  // Where the blue light comes on for a shift point: the reaction earlier (at most 400 rpm)
+  function ledRpm(dy, s, game) {
+    const target = s.late ? (dy.max_rpm >= (game || dy.max_rpm) * 0.97 ? Math.min(game || dy.max_rpm, dy.max_rpm) : null) : s.rpm;
+    if (target == null) return null;
+    const lead = Math.min(400, Math.max(s.late ? 100 : 0, revRate(dy, s.gear, target) * SHIFT_REACTION_S));
+    return target - lead;
+  }
   function shiftPoint(d) {
     const game = d.rpm_alert_max > 0 ? d.rpm_alert_max : 8000;
     const from = (dy, src) => {
       const s = dy && (dy.shifts || []).find(x => x.gear === d.gear);
       if (!s) return null;
-      if (!s.late) return { rpm: s.rpm, src };
-      return dy.max_rpm >= game * 0.97 ? { rpm: Math.min(game, dy.max_rpm) - 100, src } : null;
+      const rpm = ledRpm(dy, s, game);
+      return rpm != null ? { rpm, src } : null;
     };
     return from(perf && perf.track_dyno && perf.track_dyno.dyno, 'Z JÍZDY')
       || from(perf && perf.dyno, 'Z MĚŘENÍ')

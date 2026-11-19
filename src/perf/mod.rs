@@ -14,6 +14,7 @@
 
 pub mod cli;
 mod dyno;
+pub mod gearing;
 pub mod store;
 pub mod track;
 
