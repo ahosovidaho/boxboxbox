@@ -1598,7 +1598,7 @@
     custom: { name: t('Eigene Werte') },
   };
   const DEFAULTS = { preset: 'rm', cold: 65, hot: 90, over: 102, smooth: 4, mirror: false, bright: 1, shift: true,
-    voice: false, voLap: true, voRace: true, voCoach: true, voCorners: true, voName: '', voRate: 1.1, voVol: 1 };
+    voice: false, voLap: true, voRace: true, voCoach: true, voCorners: true, voName: '', voRate: 1.1, voVol: 1, voCountdown: false, cdLead: 0.25 };
   let cfg = { ...DEFAULTS };
   try {
     const saved = JSON.parse(load('settings') || '{}');
@@ -1835,7 +1835,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && wantAwake) keepAwake();
   });
-  $('go').onclick = () => { $('start').hidden = true; keepAwake(); voiceUnlock(); };
+  $('go').onclick = () => { $('start').hidden = true; keepAwake(); voiceUnlock(); audioCtx(); };
 
   // ---------- Burn-in protection ----------
   // Every 30 s everything moves a few pixels along an orbit, so static elements (labels,
@@ -2565,9 +2565,16 @@
         const loss = c.loss ?? c.dt;
         return `<button class="vchip${on(c.n) ? ' on' : ''}${task && task.n === c.n ? ' task' : ''}" data-vc="${c.n}"><b>T${c.n}</b><small>${loss != null ? (loss >= 0.005 ? '+' + nf(loss, 2) : '±0') : '–'}</small></button>`;
       }).join('') + `</div>`
+      + `<div class="lhead" style="margin-top:14px"><b style="font-size:15px">Odpočet k brzdění</b><span class="seg"><button data-cd="0" class="${cfg.voCountdown ? '' : 'on'}">Vypnuto</button><button data-cd="1" class="${cfg.voCountdown ? 'on' : ''}">Tóny</button></span></div>`
+      + `<p class="muted" style="font-size:13px;margin:6px 0 8px">U vybraných zatáček dva krátké tóny a dlouhý tam, kde brzdí tvé nejlepší kolo – brzdi na dlouhý. Pouští ho o ${nf(cfg.cdLead ?? 0.25, 2)} s dřív (sluchátka a reakce).</p>`
+      + `<div class="lhead"><span class="muted" style="font-size:13px">${CAL.on ? `Kalibrace běží: ${CAL.tries.length} z 5 · na rovince plný plyn nad 80 km/h, brzdi na dlouhý tón` : 'Kalibrace změří zpoždění na tomhle zařízení a sluchátkách (5 pokusů v tréninku).'}</span><span class="seg"><button class="on" data-cal="1">${CAL.on ? 'Zrušit' : 'Kalibrovat'}</button></span></div>`
       + (cfg.voice ? '' : `<p class="muted" style="font-size:12px;margin:10px 0 0">Na tomhle zařízení je hlas vypnutý – zapneš ho v Nastavení → Hlasový inženýr (dlouhý stisk).</p>`);
   }
   $('p3train').addEventListener('click', e => {
+    const cd = e.target.closest('[data-cd]');
+    if (cd) { e.stopPropagation(); cfg.voCountdown = cd.dataset.cd === '1'; save(); if (cfg.voCountdown) { audioCtx(); tone(audioCtx().currentTime + 0.05, true); } else cdCancel(); renderVoiceCard(); return; }
+    const cal = e.target.closest('[data-cal]');
+    if (cal) { e.stopPropagation(); if (CAL.on) calStop('Kalibrace zrušena.'); else { VO.unlocked = true; calStart(); } renderVoiceCard(); return; }
     const mode = e.target.closest('[data-vm]');
     if (mode) { e.stopPropagation(); const m = mode.dataset.vm; saveVoicePrefs(m, m === 'pick' ? (voPrefs.mode === 'pick' ? voPrefs.corners : autoCorners()) : voPrefs.corners); return; }
     const chip = e.target.closest('[data-vc]');
@@ -3617,6 +3624,131 @@
     if (m.metric === 'gear' && m.gear && c.rg) return m.gear === c.rg ? `${name}: stupeň sedí.` : `${name}: jel jsi na ${GEAR4[m.gear] || m.gear}.`;
     return null;
   }
+  // ---- Countdown to the braking point: two short tones a second apart and a long one where the
+  // best lap brakes, like start lights. Tones, not words: speech in the browser starts with an
+  // unsteady delay, a scheduled tone plays to the millisecond. The long tone comes `cdLead`
+  // earlier – the delay of the earbuds, the telemetry and the driver's reaction together,
+  // measured by the calibration.
+  let actx = null;
+  function audioCtx() {
+    if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; try { actx = new C(); } catch { return null; } }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  function tone(at, long) {
+    const a = audioCtx();
+    if (!a) return null;
+    const o = a.createOscillator(), g = a.createGain(), len = long ? 0.32 : 0.08, vol = 0.5 * (cfg.voVol ?? 1);
+    o.type = 'sine'; o.frequency.value = long ? 1175 : 880;
+    g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + 0.005);
+    g.gain.setValueAtTime(vol, at + len - 0.02); g.gain.linearRampToValueAtTime(0, at + len);
+    o.connect(g).connect(a.destination); o.start(at); o.stop(at + len + 0.02);
+    return { o, at };
+  }
+  const CD = { key: null, T: null, tones: [], done: new Set(), v: null, t: null, acc: 0 };
+  // Tones for a braking point at audio time T. A tone already played stays played; the ones
+  // still ahead move to the new time.
+  function cdSchedule(T) {
+    const a = audioCtx();
+    if (!a) return;
+    const old = CD.tones;
+    CD.tones = [T - 2, T - 1, T].map((at, i) => {
+      const o = old[i];
+      if (o && o.at <= a.currentTime + 0.01) return o;
+      if (o) try { o.o.stop(); } catch {}
+      return at > a.currentTime + 0.02 ? tone(at, i === 2) : null;
+    });
+    CD.T = T;
+  }
+  function cdCancel() {
+    const a = actx;
+    if (a) for (const x of CD.tones) if (x && x.at > a.currentTime + 0.01) try { x.o.stop(); } catch {}
+    CD.tones = []; CD.key = null; CD.T = null;
+  }
+  // Seconds to `ahead` metres, with the car still speeding up on the straight
+  function cdEta(d, ahead) {
+    const v = (d.speed_kmh || 0) / 3.6, now = performance.now();
+    if (CD.v != null && now - CD.t > 10 && now - CD.t < 500) CD.acc = 0.7 * CD.acc + 0.3 * (v - CD.v) / ((now - CD.t) / 1000);
+    CD.v = v; CD.t = now;
+    const a = Math.max(0, Math.min(CD.acc, 15));
+    if (v < 5) return Infinity;
+    return a > 0.2 ? (-v + Math.sqrt(v * v + 2 * a * ahead)) / a : ahead / v;
+  }
+  function voiceCountdown(d, sNow, set) {
+    let next = null, ahead = Infinity;
+    for (const o of TP.cs) {
+      if (!set.has(o.c.n) || o.c.bx == null || CD.done.has(d.lap + '|' + o.c.n)) continue;
+      const a = tpMod(o.sb - sNow);
+      if (a < ahead) { ahead = a; next = o; }
+    }
+    const eta = cdEta(d, ahead);
+    if (!next) return;
+    const key = d.lap + '|' + next.c.n, a = audioCtx();
+    if (!a) return;
+    const tb = eta - (cfg.cdLead ?? 0.25);
+    if (CD.key === key && CD.T != null && a.currentTime > CD.T + 0.05) {
+      CD.done.add(key); CD.key = null; CD.T = null;
+      if (CD.done.size > 300) CD.done.clear();
+      return;
+    }
+    if (tb > 2.3 || ahead > 1200) { if (CD.key === key) cdCancel(); return; }
+    const T = a.currentTime + Math.max(tb, 0);
+    if (CD.key !== key) { cdCancel(); CD.key = key; cdSchedule(T); }
+    // Refined while the tones are ahead (not within the last tenth before one)
+    else if (Math.abs(T - CD.T) > 0.05 && [CD.T - 2, CD.T - 1, CD.T].every(x => x < a.currentTime || x > a.currentTime + 0.1)) cdSchedule(T);
+  }
+
+  // ---- Calibration: on a straight the countdown plays at a random moment, the driver brakes on
+  // the long tone. The delay from the tone to the brake in the telemetry (earbuds, reaction,
+  // telemetry) is how much earlier the countdown has to come. Five valid tries, the median.
+  const CAL = { on: false, tries: [], state: 'idle', since: null, T: null, Tperf: null, quiet: 0 };
+  function calStart() {
+    if (!audioCtx()) return;
+    Object.assign(CAL, { on: true, tries: [], state: 'idle', since: null, T: null, Tperf: null, quiet: performance.now() + 1500 });
+    cdCancel();
+    if (synth) synth.cancel();
+    VO.q = [];
+    voiceSpeak('Kalibrace. Na rovince plný plyn, pak brzdi na dlouhý tón.', 0);
+    if (trainData) renderTrainTab();
+  }
+  function calStop(text) {
+    CAL.on = false; CAL.state = 'idle';
+    for (const x of CD.tones) if (x && actx && x.at > actx.currentTime) try { x.o.stop(); } catch {}
+    CD.tones = [];
+    if (text) voiceSpeak(text, 0);
+    if (trainData) renderTrainTab();
+  }
+  function calTick(d, driving) {
+    const now = performance.now(), a = audioCtx();
+    if (!a || !driving) { CAL.since = null; return; }
+    if (CAL.state === 'idle') {
+      const ok = d.speed_kmh > 80 && d.throttle >= 90 && d.brake < 2 && now > CAL.quiet && !(synth && synth.speaking);
+      CAL.since = ok ? CAL.since ?? now : null;
+      if (CAL.since != null && now - CAL.since > 1000) {
+        CAL.T = a.currentTime + 2.2 + Math.random();
+        CAL.Tperf = now + (CAL.T - a.currentTime) * 1000;
+        CD.tones = [];
+        cdSchedule(CAL.T);
+        CAL.state = 'run';
+      }
+      return;
+    }
+    const dt = (now - CAL.Tperf) / 1000;
+    const again = text => { CAL.state = 'idle'; CAL.since = null; CAL.quiet = now + 2500; if (text) voiceSpeak(text, 0); if (coachTab === 'train') renderVoiceCard(); };
+    if (d.brake > 20) {
+      if (dt < -0.15) { for (const x of CD.tones) if (x && x.at > a.currentTime) try { x.o.stop(); } catch {} return again('Moc brzo. Ještě jednou.'); }
+      if (dt > 1.2) return again('Pozdě. Ještě jednou.');
+      CAL.tries.push(dt);
+      if (CAL.tries.length >= 5) {
+        const t = [...CAL.tries].sort((x, y) => x - y)[2];
+        cfg.cdLead = Math.round(t * 100) / 100; save();
+        return calStop(`Kalibrace hotová. Brzdíš ${String(cfg.cdLead).replace('.', ',')} sekundy po tónu, o tolik ho pustím dřív.`);
+      }
+      return again(`${CAL.tries.length}.`);
+    }
+    if (dt > 1.6) again('Nezabrzdil jsi. Ještě jednou.');
+  }
+
   function voiceCorners(d, driving) {
     const practice = appMode === 'practice';
     VO.nextCallIn = Infinity;
@@ -3644,8 +3776,10 @@
         }
       }
     }
-    // The next chosen corner ahead: called 6 s before its braking point (at least 2 s)
+    // The next chosen corner ahead: called 6 s before its braking point (at least 2 s; with the
+    // countdown on, early enough to be over before its first tone)
     const set = voiceCornerSet();
+    if (cfg.voCountdown) voiceCountdown(d, sNow, set);
     let next = null, ahead = Infinity;
     for (const o of TP.cs) {
       if (!set.has(o.c.n) || VO.called.has(d.lap + '|' + o.c.n)) continue;
@@ -3655,7 +3789,7 @@
     if (!next) return;
     const t = ahead / v, key = d.lap + '|' + next.c.n;
     VO.nextCallIn = t - 6;
-    if (t <= 6 && t >= 2 && !VO.called.has(key)) {
+    if (t <= 6 && t >= (cfg.voCountdown && next.c.bx != null ? 4.3 : 2) && !VO.called.has(key)) {
       VO.called.add(key);
       if (VO.called.size > 300) VO.called.clear();
       const call = cornerCall(next.c, task);
@@ -3700,7 +3834,10 @@
       if (VO.radioSeen != null && sig !== VO.radioSeen) coachData.radio.slice(0, 2).forEach(r => say(r.text, 4, 'radio|' + r.text, 1200, 40000));
       VO.radioSeen = sig;
     }
-    voiceCorners(d, driving);
+    if (CAL.on) {
+      if (appMode !== 'practice') calStop();
+      else calTick(d, driving);
+    } else voiceCorners(d, driving);
     voiceFlush(d, driving);
   }
   // One message at a time. Nothing starts when a corner call is due before it would end; the
