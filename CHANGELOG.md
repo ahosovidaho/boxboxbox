@@ -2,6 +2,18 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Strategie: víc zastávek, když gumy vydrží málo.** Plán zkoušel nejvýš 3 zastávky; Spa
+  21 kol s RS na 5 kol se do toho nevejde, takže doporučil RS 6 → 5 → 5 → 5 s první sadou přes
+  výdrž. Když žádný plán do 3 zastávek nedodrží výdrž, zkusí se až 6 zastávek se stinty
+  rozdělenými podle výdrže sad: Spa teď RS 5 → 4 → 4 → 4 → 4, nic přes výdrž.
+- **Strategie: volba auta pro závod.** Brífink bral auto, které je zrovna ve hře (dnes AMG se
+  2 koly), jinak to s nejvíc koly. Nově výběr „Auto pro závod“ z aut s koly na trati; uloží se
+  k závodu. V závodě platí auto, které jede. Výdrž zadaná u závodu se v „Na čem plán stojí“
+  bere jako známá; při víc než 4 stintech se v pruhu ukazuje jen počet kol.
+- **Kouč – souhrn tréninku:** „Zlepšení z prvního na nejlepší kolo“ počítá od prvního kola bez
+  chyby (dnes 26,1 s kvůli kolu s hodinami), ztráta přes 2 s v jedné zatáčce je chyba, ne
+  rezerva, průměr čistých kol jen ze dvou a víc kol, „3 měřená kola“.
+
 - **Strategie: rezerva paliva při příjezdu do boxu.** Dosud se při zastávce tankovalo jen na
   kola do další zastávky + 0,05 kola (Spa: do boxu s 0,6 l). Nově nastavitelná „Rezerva paliva
   při příjezdu do boxu“ v pravidlech závodu, výchozí 0,3 kola (≈ jedno pomalejší kolo nebo

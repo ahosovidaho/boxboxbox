@@ -634,6 +634,9 @@
   .toemark { font-size: 11px; color: var(--label); margin-top: 2px; text-align: right; }
   .gearspd { font: 13px "JetBrains Mono", ui-monospace, monospace; color: var(--label); white-space: nowrap; padding-left: 8px; }
   .gearspd small { display: block; font-size: 11px; opacity: .8; }
+  .stcar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 6px; }
+  .stcar label { display: inline-flex; gap: 8px; align-items: center; }
+  .stcar select { max-width: 260px; }
   .stbrief .basis { grid-column: 1 / -1; }
   .stbrief .basis .cols { columns: 340px; column-gap: 24px; }
   .stbrief .basis .datarow { break-inside: avoid; }
@@ -3261,7 +3264,7 @@
     const delta = o.delta > 0.05 ? ` · o ${nf(o.delta, 1)} s pomalejší` : '';
     const over = o.over_limit ? '<div class="over">Nevejde se do zadané životnosti gum – nejmenší překročení.</div>' : '';
     // Stint bar: one segment per stint (width = laps), the stops in between
-    const bar = `<div class="pbar">${o.stints.map((x, k) => `${k ? '<i></i>' : ''}<span style="flex:${Math.max(1, x.laps)}">${esc(x.compound)} · ${x.laps}</span>`).join('')}</div>`;
+    const bar = `<div class="pbar">${o.stints.map((x, k) => `${k ? '<i></i>' : ''}<span style="flex:${Math.max(1, x.laps)}" title="${esc(x.compound)} · ${x.laps} kol">${o.stints.length > 4 ? x.laps : esc(x.compound) + ' · ' + x.laps}</span>`).join('')}</div>`;
     const risks = (o.risks || []).map(x => `<div class="risk">${esc(x.replace(/(\d)\.(\d)/g, '$1,$2'))}</div>`).join('');
     return `<div class="planbox ${cls}"><span class="tag">${tag}</span><b>${stints}</b>${bar}<div class="muted">${n} ${word}: box ${stops}${delta}</div>${why}${risks}${over}</div>`;
   }
@@ -5092,6 +5095,13 @@
     try { renderStratBrief(await (await fetch('api/briefing', { cache: 'no-store' })).json()); } catch {}
     briefBusy = false;
   }
+  // Which car the race is planned with: the cars with laps on the track (the briefing's car first)
+  function carPick(b) {
+    const recs = (b.book && b.book.records) || [];
+    if (recs.length < 2 && (!recs.length || recs[0].car === b.car)) return b.car_name ? `<div class="muted">Auto: ${esc(b.car_name)}${b.setup ? ' · setup ' + esc(b.setup.name) : ''}</div>` : '';
+    const opts = recs.map(x => `<option value="${x.car}" ${x.car === b.car ? 'selected' : ''}>${esc(x.name)} · ${x.laps} ${x.laps === 1 ? 'kolo' : x.laps < 5 ? 'kola' : 'kol'}</option>`).join('');
+    return `<div class="stcar muted"><label>Auto pro závod <select id="stCar">${opts}</select></label>${b.setup ? `<span>setup ${esc(b.setup.name)}</span>` : ''}</div>`;
+  }
   const WEAR_SHORT = { race: 'ze závodu', race_life: 'odhad ze závodu', practice: 'z tréninku', manual: 'zadáno' };
   function renderStratBrief(b) {
     const el = $('stBrief');
@@ -5106,7 +5116,7 @@
       r.no_wear ? 'bez opotřebení' : r.tyre_wear ? `gumy ×${nf(r.tyre_wear, 1)}` : '', r.no_fuel ? 'bez paliva' : r.fuel_mult ? `palivo ×${nf(r.fuel_mult, 1)}` : ''].filter(Boolean).join(' · ');
     let html = `<div class="card hero bk bkhero2"><div class="bkrace">
       <div class="bkname"><span class="skew"></span>${esc(r.name || 'Závod')}</div>
-      <div>${esc(r.track)}${when ? ' · ' + esc(when) : ''}</div><div class="muted">${rules}</div></div>
+      <div>${esc(r.track)}${when ? ' · ' + esc(when) : ''}</div><div class="muted">${rules}</div>${carPick(b)}</div>
       <div class="bkkpis">
         <div><span class="lbl">Palivo / kolo</span><span class="big" style="font-size:22px">${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) + ' l' : '–'}</span></div>
         <div><span class="lbl">Ztráta zastávkou</span><span class="big" style="font-size:22px">${nf(p.pit_loss || 0, 1)} s</span></div>
@@ -5125,6 +5135,8 @@
     const comps = (pu && pu.compounds || []).filter(c => c.compound.charAt(0) === kind && (c.laps || c.life || c.deg != null));
     const rows = comps.map(c => {
       const todo = [];
+      // The life entered for the race counts as known
+      c = { ...c, life: c.life || (r.tyres && r.tyres[c.compound] && r.tyres[c.compound].life) || null };
       if (!c.life) todo.push('výdrž: zadej podle opotřebení ve hře');
       if (c.laps < 5) todo.push(`zajeď ${Math.max(5 - c.laps, 3)}+ kol`);
       if (c.stale) todo.push(`data z ${dayCz(c.last)}, zajeď znovu`);
@@ -5143,6 +5155,14 @@
     }
     el.innerHTML = html;
   }
+  $('stBrief').addEventListener('change', async e => {
+    if (e.target.id !== 'stCar') return;
+    let cur = null;
+    try { cur = await (await fetch('api/strategy', { cache: 'no-store' })).json(); } catch {}
+    if (!cur || !cur.race) return;
+    const saved = await stPost('api/strategy/race', { ...cur.race, car: Number(e.target.value) || null });
+    if (saved) { stRace = saved.race; prKey = ''; loadPrep(); }
+  });
   $('stBrief').addEventListener('click', e => { if (e.target.closest('[data-st-params]')) openRaceSheet(false); });
   async function loadPractice() {
     if (prBusy) return;
@@ -5415,6 +5435,7 @@
       start_compound: $('rStart').value || null, tyres: readTyres(), deg: numIn($('rDeg').value), pit_loss: numIn($('rPitLoss').value),
       fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), stop_reserve_laps: numIn($('rStopReserve').value), wear_limit: numIn($('rLimit').value),
       no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked, date: $('raceSheet').dataset.date || null,
+      car: (stRace && stRace.track && $('rTrack').value.trim() === stRace.track && stRace.car) || null,
     };
   }
   function syncNoWearFuel() {

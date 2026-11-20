@@ -476,6 +476,8 @@ pub fn typical_tips(res: &Comparison, cn: usize, limit: f64) -> Option<String> {
 
 /// Laps slower than this × the best lap are incidents and left out of the focus.
 const INCIDENT: f64 = 1.07;
+/// Seconds lost in one corner beyond which it was a mistake (spin, off), not a reserve to work on
+const CORNER_MISTAKE_S: f64 = 2.0;
 
 /// Focus: the corner with the largest average loss over the normal laps (incidents left out);
 /// cause taken from the latest lap.
@@ -608,18 +610,24 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
     let (count, best_t, best_lap) =
         (laps.len(), t_loc(best), if res.multi_run() { lap_tag(res, reference) } else { reference.lap.to_string() });
     let (avg, spread) = (t_loc(lap::mean(clean.iter().copied())), secs(lap::pstdev(&clean) / 1000.0, 2));
-    let mut points = vec![
-        tr!(
-            "{count} gezeitete Runden, Bestzeit {best_t} (Runde {best_lap}).",
-            "{count} timed laps, best {best_t} (lap {best_lap}).",
-            "{count} měřených kol, nejlepší {best_t} (kolo {best_lap})."
-        ),
-        tr!(
+    let measured = match count {
+        1 => "měřené kolo",
+        2..=4 => "měřená kola",
+        _ => "měřených kol",
+    };
+    let mut points = vec![tr!(
+        "{count} gezeitete Runden, Bestzeit {best_t} (Runde {best_lap}).",
+        "{count} timed laps, best {best_t} (lap {best_lap}).",
+        "{count} {measured}, nejlepší {best_t} (kolo {best_lap})."
+    )];
+    // An average of one lap says nothing
+    if clean.len() > 1 {
+        points.push(tr!(
             "Schnitt der sauberen Runden {avg}, Streuung ±{spread} s.",
             "Average of the clean laps {avg}, spread ±{spread} s.",
             "Průměr čistých kol {avg}, rozptyl ±{spread} s."
-        ),
-    ];
+        ));
+    }
     // Several runs (restart, practice before the race): each on its own line
     if res.multi_run() {
         let runs = laps.iter().map(|l| l.run).max().unwrap_or(1);
@@ -640,8 +648,10 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
             ));
         }
     }
-    if times.len() > 1 && times[0] > best {
-        let d = secs((times[0] - best) / 1000.0, 2);
+    // From the first lap without a mistake (a spin in the first lap is no progress)
+    let first = times.iter().copied().find(|t| *t <= best * INCIDENT);
+    if let Some(first) = first.filter(|f| times.len() > 1 && *f > best) {
+        let d = secs((first - best) / 1000.0, 2);
         points.push(tr!(
             "Verbesserung von der ersten zur besten Runde: {d} s.",
             "Improvement from the first to the best lap: {d} s.",
@@ -660,8 +670,12 @@ pub fn summary(session: &Path, dir: &Path, res: &Comparison, metrics: &BTreeMap<
         .corners
         .iter()
         .filter_map(|c| {
-            let vals: Vec<f64> =
-                laps.iter().filter(|l| l.file != reference.file && (l.ms as f64) <= best * INCIDENT).map(|l| l.corner(c.n).dt).collect();
+            let vals: Vec<f64> = laps
+                .iter()
+                .filter(|l| l.file != reference.file && (l.ms as f64) <= best * INCIDENT)
+                .map(|l| l.corner(c.n).dt)
+                .filter(|d| *d < CORNER_MISTAKE_S)
+                .collect();
             (!vals.is_empty()).then(|| (lap::mean(vals), c.n))
         })
         .collect();
