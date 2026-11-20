@@ -66,6 +66,9 @@ pub struct Race {
     pub reserve_laps: Option<f32>,
     /// Fuel left on arriving at a planned stop, in laps (default [`DEFAULT_STOP_RESERVE`])
     pub stop_reserve_laps: Option<f32>,
+    /// Car the race is planned with (its practice laps on the track); None = the car driven now,
+    /// else the one with the most laps there
+    pub car: Option<i32>,
     pub wear_limit: Option<f32>,
     /// Per compound ("RS", "RM" …): laps a set lasts and pace difference
     pub tyres: BTreeMap<String, TyreSpec>,
@@ -910,6 +913,14 @@ impl Strategy {
     pub fn practice_car(&self, track: &str) -> Option<i32> {
         let key = practice::track_key(track);
         let has = |c: i32| self.practice.saved.laps.iter().any(|l| l.car == c && practice::track_key(&l.track) == key);
+        // In a race the car driven is the one; before it the one chosen for the race
+        if self.live.total_laps > 0 && self.live.car_code > 0 && has(self.live.car_code) {
+            return Some(self.live.car_code);
+        }
+        let chosen = self.saved.race.as_ref().filter(|r| practice::track_key(&r.track) == key).and_then(|r| r.car);
+        if let Some(c) = chosen.filter(|c| has(*c)) {
+            return Some(c);
+        }
         if self.live.car_code > 0 && has(self.live.car_code) {
             return Some(self.live.car_code);
         }

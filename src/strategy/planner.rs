@@ -26,6 +26,9 @@
 use serde::Serialize;
 
 pub const MAX_STOPS: usize = 3;
+/// When no plan with up to [`MAX_STOPS`] keeps the tyres within their life (short life, long
+/// race), plans with up to this many stops are tried, with stints as even as the sets allow
+pub const MAX_STOPS_LIFE: usize = 6;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Compound {
@@ -155,6 +158,45 @@ fn splits(total: u32, parts: usize, first_min: u32, out: &mut Vec<Vec<u32>>, cur
     }
 }
 
+/// Stints as even as the tyres allow, none longer than its set lasts: laps shared in proportion
+/// to the life, the laps left over going to the first stints, or to the last ones. Empty when
+/// the sets cannot cover the race. (Many stops: trying every split would take too long.)
+fn balanced_splits(inp: &Input, tyres: &[&Compound]) -> Vec<Vec<u32>> {
+    let caps: Vec<u32> = tyres
+        .iter()
+        .enumerate()
+        .map(|(i, t)| t.life.unwrap_or(inp.laps).saturating_sub(if i == 0 && !inp.stop_now { inp.current_age } else { 0 }))
+        .collect();
+    let sum: u32 = caps.iter().sum();
+    if sum < inp.laps || caps.contains(&0) {
+        return vec![];
+    }
+    let base: Vec<u32> = caps.iter().map(|c| ((inp.laps as u64 * *c as u64 / sum as u64) as u32).clamp(1, *c)).collect();
+    let mut out = Vec::new();
+    for back in [false, true] {
+        let mut lens = base.clone();
+        let mut left = inp.laps as i64 - lens.iter().sum::<u32>() as i64;
+        while left > 0 {
+            let order: Vec<usize> = if back { (0..lens.len()).rev().collect() } else { (0..lens.len()).collect() };
+            let mut moved = false;
+            for i in order {
+                if left > 0 && lens[i] < caps[i] {
+                    lens[i] += 1;
+                    left -= 1;
+                    moved = true;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        if left == 0 && !out.contains(&lens) {
+            out.push(lens);
+        }
+    }
+    out
+}
+
 fn deg_cost(deg: f32, age: u32, laps: u32) -> f32 {
     // age + (age+1) + … + (age+laps−1)
     deg * (laps as f32 * age as f32 + (laps as f32 * (laps as f32 - 1.0)) / 2.0)
@@ -261,31 +303,24 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
     Some(Eval { cost, parts, over, stops, risks })
 }
 
-pub fn plan(inp: &Input) -> Options {
-    if inp.laps == 0 || inp.fuel_per_lap <= 0.0 || inp.compounds.is_empty() {
-        return Options::default();
-    }
-    // Shorter life = faster wear
-    let lives: Vec<f32> = inp.compounds.iter().filter_map(|c| c.life).map(|l| l as f32).collect();
-    let avg = if lives.is_empty() { 0.0 } else { lives.iter().sum::<f32>() / lives.len() as f32 };
-    let compounds: Vec<Compound> = inp
-        .compounds
-        .iter()
-        .map(|c| Compound { wear_factor: c.life.filter(|l| *l > 0 && avg > 0.0).map_or(1.0, |l| avg / l as f32), ..c.clone() })
-        .collect();
-    let inp = &Input { compounds, ..inp.clone() };
-    let current = inp.current.as_ref().and_then(|c| inp.compounds.iter().find(|x| &x.name == c)).cloned();
-    let current_compound = current.clone().or_else(|| inp.current.as_ref().map(|c| Compound::new(c, None, 0.0)));
-    // (stops, cost, over, option)
-    let mut found: Vec<(usize, f32, f32, Option_)> = Vec::new();
-    let min_stops = usize::from(inp.stop_now || inp.need_stop);
-    for k in min_stops.max(if inp.stop_now { 1 } else { 0 })..=MAX_STOPS {
+/// Plans with `ks` stops and stints of at most `max` laps, added to `found` as (stops, cost,
+/// laps over the tyre life, plan).
+fn search(
+    inp: &Input,
+    current_compound: &Option<Compound>,
+    ks: std::ops::RangeInclusive<usize>,
+    balanced: bool,
+    found: &mut Vec<(usize, f32, f32, Option_)>,
+) {
+    for k in ks {
         let parts = if inp.stop_now { k } else { k + 1 };
         if parts == 0 || parts as u32 > inp.laps {
             continue;
         }
         let mut all = Vec::new();
-        splits(inp.laps, parts, 1, &mut all, &mut Vec::new());
+        if !balanced {
+            splits(inp.laps, parts, 1, &mut all, &mut Vec::new());
+        }
         // Tyre choices: the first stint keeps the current tyres (unless free / in the pit)
         let free_first = inp.stop_now || current_compound.is_none();
         let choices = inp.compounds.len();
@@ -306,7 +341,8 @@ pub fn plan(inp: &Input) -> Options {
                     continue;
                 }
             }
-            for lens in &all {
+            let even = if balanced { balanced_splits(inp, &tyres) } else { vec![] };
+            for lens in if balanced { &even } else { &all } {
                 if let Some(e) = evaluate(inp, lens, &tyres) {
                     let opt = Option_ {
                         stints: lens.iter().zip(&tyres).map(|(&laps, t)| Stint { compound: t.name.clone(), laps }).collect(),
@@ -321,6 +357,32 @@ pub fn plan(inp: &Input) -> Options {
                 }
             }
         }
+    }
+}
+
+pub fn plan(inp: &Input) -> Options {
+    if inp.laps == 0 || inp.fuel_per_lap <= 0.0 || inp.compounds.is_empty() {
+        return Options::default();
+    }
+    // Shorter life = faster wear
+    let lives: Vec<f32> = inp.compounds.iter().filter_map(|c| c.life).map(|l| l as f32).collect();
+    let avg = if lives.is_empty() { 0.0 } else { lives.iter().sum::<f32>() / lives.len() as f32 };
+    let compounds: Vec<Compound> = inp
+        .compounds
+        .iter()
+        .map(|c| Compound { wear_factor: c.life.filter(|l| *l > 0 && avg > 0.0).map_or(1.0, |l| avg / l as f32), ..c.clone() })
+        .collect();
+    let inp = &Input { compounds, ..inp.clone() };
+    let current = inp.current.as_ref().and_then(|c| inp.compounds.iter().find(|x| &x.name == c)).cloned();
+    let current_compound = current.clone().or_else(|| inp.current.as_ref().map(|c| Compound::new(c, None, 0.0)));
+    // (stops, cost, over, option)
+    let mut found: Vec<(usize, f32, f32, Option_)> = Vec::new();
+    let min_stops = usize::from(inp.stop_now || inp.need_stop);
+    let first_k = min_stops.max(if inp.stop_now { 1 } else { 0 });
+    search(inp, &current_compound, first_k..=MAX_STOPS, false, &mut found);
+    // Nothing within the tyre life: more stops, stints as even as the sets allow
+    if found.iter().all(|f| f.2 > 0.0) && inp.compounds.iter().any(|c| c.life.is_some()) {
+        search(inp, &current_compound, (MAX_STOPS + 1).max(first_k)..=MAX_STOPS_LIFE, true, &mut found);
     }
     if found.is_empty() {
         return Options::default();
@@ -472,6 +534,30 @@ mod tests {
                 assert!(fuel >= want * fpl - 0.05, "stint {i}, reserve {reserve}: {fuel} l left · {best:?}");
             }
         }
+    }
+
+    #[test]
+    fn short_life_takes_more_stops_than_three() {
+        // Spa 20 Nov: 21 laps, RS only, a set lasts 5 laps → 5 stints, none over the life
+        let mut inp = race(21, 11.94);
+        inp.compounds = vec![Compound::new("RS", Some(5), 0.0)];
+        inp.current = Some("RS".into());
+        inp.need_compound = None;
+        inp.stop_reserve = 0.3;
+        let t = std::time::Instant::now();
+        let o = plan(&inp);
+        assert!(t.elapsed().as_millis() < 500, "{:?}", t.elapsed());
+        let best = o.best.unwrap();
+        assert!(!best.over_limit, "{best:?}");
+        assert_eq!(best.stops.len(), 4, "{best:?}");
+        assert!(best.stints.iter().all(|s| s.laps <= 5), "{best:?}");
+        // Three compounds with a life each: still quick
+        let mut inp = race(40, 7.0);
+        inp.compounds = tyres(Some(5), Some(7), Some(9));
+        let t = std::time::Instant::now();
+        let best = plan(&inp).best.unwrap();
+        assert!(t.elapsed().as_millis() < 1500, "{:?}", t.elapsed());
+        assert!(!best.over_limit, "{best:?}");
     }
 
     #[test]
