@@ -70,7 +70,23 @@ pub struct PracticeLap {
     pub counted: bool,
     /// The lap was driven on another layout than the track name says
     pub wrong_layout: bool,
+    /// Pit stop in this lap (standing in the pit, refuelling); litres put in
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pit: bool,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub refuel_l: f32,
+    /// The lap out of the pit (started slowly after a stop in the lap before)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub out: bool,
 }
+
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
+}
+
+/// A lap after a stop that crosses the line slower than this started in the pit lane (an
+/// out-lap); faster, the stop was just before the line (Spa: the box) or no pit at all, km/h
+const OUT_LAP_KMH: f32 = 120.0;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Shape {
@@ -284,6 +300,10 @@ pub struct Practice {
     pit_this_lap: bool,
     incident_this_lap: bool,
     pit_last_lap: bool,
+    /// Litres put in during the running lap
+    pit_added: f32,
+    /// Speed at the line when the running lap began
+    start_kmh: Option<f32>,
     /// A full lap on a layout not stored yet: which one is it? (the driver picks from the catalogue)
     pub question: Option<TrackQuestion>,
     /// The lap just finished fits the layout of the track name (set by [`Practice::shape`])
@@ -310,6 +330,8 @@ impl Practice {
             pit_this_lap: false,
             incident_this_lap: false,
             pit_last_lap: false,
+            pit_added: 0.0,
+            start_kmh: None,
             question: None,
             layout_ok: true,
             layout_warning: None,
@@ -372,6 +394,17 @@ impl Practice {
         self.incident_this_lap = true;
     }
 
+    /// Fuel put in during the running lap.
+    pub fn refuel(&mut self, litres: f32) {
+        self.pit_this_lap = true;
+        self.pit_added += litres;
+    }
+
+    /// A new lap began at this speed (at the line).
+    pub fn lap_start(&mut self, kmh: f32) {
+        self.start_kmh = Some(kmh);
+    }
+
     /// New tyres were fitted (detected after a stop, or pressed by the driver).
     pub fn new_set(&mut self, compound: Option<&str>) {
         if let Some(c) = compound {
@@ -384,7 +417,10 @@ impl Practice {
     /// A timed lap ended. `closed`: it ended where it started (not the short first race lap).
     pub fn lap_done(&mut self, car: i32, setup: &str, used: f32, refuel: bool, ms: Option<i32>, closed: bool) {
         let pit = self.pit_this_lap || refuel;
-        let out_lap = self.pit_last_lap;
+        // After a stop only a slow start is an out-lap: a stand just before the line (the box at
+        // Spa, a spin at the Bus Stop) leaves the next lap a flying one
+        let out_lap = self.pit_last_lap && self.start_kmh.take().is_none_or(|v| v < OUT_LAP_KMH);
+        let refuel_l = std::mem::take(&mut self.pit_added);
         let wrong_layout = !std::mem::replace(&mut self.layout_ok, true);
         let incident = std::mem::take(&mut self.incident_this_lap);
         let fuel_start = self.fuel_start.take();
@@ -421,6 +457,9 @@ impl Practice {
             clean: closed && !pit && !out_lap && !wrong_layout && !incident,
             counted: s.counting,
             wrong_layout,
+            pit,
+            refuel_l,
+            out: out_lap,
         });
         if s.laps.len() > MAX_LAPS {
             s.laps.remove(0);

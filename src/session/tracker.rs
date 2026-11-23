@@ -341,16 +341,15 @@ impl Tracker {
             if let (Some(r), true) = (&self.recorder, self.session_open) {
                 r.send(Msg::Lap(p.current_lap));
             }
+            if on_track && p.current_lap > 0 {
+                let kmh = p.speed_ms * 3.6;
+                self.with_strategy(|s| s.practice.lap_start(kmh));
+            }
             self.lap = p.current_lap;
             self.lap_start_tick = (p.current_lap > 0).then_some(p.packet_id);
             self.fuel_at_lap_start = (p.current_lap > 0).then_some(p.fuel_level);
         }
 
-        // Standing before the first lap: in practice that is the pit box
-        if p.current_lap == 0 && on_track && !paused && p.speed_ms < 0.3 {
-            let (x, z) = (p.position[0], p.position[2]);
-            self.with_strategy(|s| s.box_at(x, z, true));
-        }
         // Fuel: burnt per lap, and refuelling in the pit (fuel goes up)
         let loading = p.flags & flags::LOADING != 0;
         if let (Some(prev), true) = (self.prev_fuel, on_track && !loading && p.current_lap > 0) {
@@ -363,7 +362,7 @@ impl Tracker {
                 let (x, z) = (p.position[0], p.position[2]);
                 self.with_strategy(|s| {
                     if p.speed_ms < 1.0 {
-                        s.box_at(x, z, false);
+                        s.box_at(x, z);
                     }
                     s.refuelled(lap, diff)
                 });
