@@ -2,6 +2,17 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Ztráta v boxu se měří i v tréninku.** Dosud jen v závodě, takže pro Spa platil odhad 25 s.
+  Po zastávce v tréninku: kola se zastávkou (+ kolo z boxu, když začalo pomalu) proti mediánu
+  čistých kol okolo, minus tankování. Spa 23. 11., jen gumy: 144,6 + 135,3 − 2 × 130,5 = 18,8 s
+  (v boxové uličce 31 s, po trati by stejný úsek trval ~12 s). U kol se ukládá `pit`,
+  `refuel_l` a `out`.
+- **Kolo z boxu jen po pomalém startu.** Na Spa je box těsně před čárou: po zastávce (nebo po
+  hodinách na Bus Stopu) projede auto čáru ~160–180 km/h a další kolo je letmé. Výjezd z boxu je
+  teď jen kolo, které po zastávce začalo pod 120 km/h.
+- **Oprava PR #21:** pozice boxu se nebere ze startu tréninku – to je garáž, na Spa 430 m od
+  místa zastávky, takže by skutečná zastávka vypadala jako nehoda. Box jen z tankování.
+
 - **Měření ukazovalo jiné auto, než které jede.** Při otevření stránka načte auto s poslední
   jízdou (Ferrari); když během toho přišla data z jedoucího auta (AMG), druhé načtení se
   zahodilo a stránka zůstala na Ferrari. Výběr AMG (●) v nabídce pak nic neudělal – bral ho

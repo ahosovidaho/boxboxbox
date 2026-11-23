@@ -480,6 +480,7 @@ impl Strategy {
         if self.practice.saved.active {
             let setup = self.setups.active_id(self.live.car_code);
             self.practice.lap_done(self.live.car_code, &setup, used, refuel, ms, closed);
+            self.measure_practice_pit();
             return;
         }
         if lap < 1 || used <= 0.0 || self.wrong_track() {
@@ -539,6 +540,55 @@ impl Strategy {
         self.saved.calibration.extend(found);
     }
 
+    /// A stop in practice, once over (the first lap after it without a stop): the laps with the
+    /// stop and the out-lap against the typical lap of the session around it, less the refuelling
+    /// time = pit loss of the track, as in a race. Spa 23 Nov, tyres only: 144.6 + 135.3 −
+    /// 2 × 130.5 = 18.8 s (31 s in the pit lane, about 12 s on the track the same way).
+    fn measure_practice_pit(&mut self) {
+        let laps = &self.practice.saved.laps;
+        let Some(last) = laps.last() else { return };
+        if last.pit {
+            return;
+        }
+        let same = |l: &practice::PracticeLap| l.car == last.car && l.track == last.track && l.at.get(..10) == last.at.get(..10);
+        let mut first = laps.len() - 1;
+        while first > 0 && laps[first - 1].pit && same(&laps[first - 1]) && laps.len() - 1 - (first - 1) <= 2 {
+            first -= 1;
+        }
+        if first == laps.len() - 1 {
+            return;
+        }
+        let mut lost: Vec<&practice::PracticeLap> = laps[first..laps.len() - 1].iter().collect();
+        if last.out {
+            lost.push(last);
+        }
+        // The typical lap: clean laps of the session around it (the stop laps are not clean)
+        let mut clean: Vec<i32> =
+            laps[laps.len().saturating_sub(12)..].iter().filter(|l| l.clean && l.counted && same(l)).map(|l| l.ms).collect();
+        if clean.len() < 2 {
+            return;
+        }
+        clean.sort_unstable();
+        let mid = clean.len() / 2;
+        let typical =
+            if clean.len().is_multiple_of(2) { (clean[mid - 1] + clean[mid]) as f32 / 2000.0 } else { clean[mid] as f32 / 1000.0 };
+        let litres: f32 = lost.iter().map(|l| l.refuel_l).sum();
+        let rate = self.saved.race.as_ref().and_then(|r| r.refuel_rate).filter(|r| *r > 0.0);
+        let refuel_s = match (litres > 0.0, rate) {
+            (false, _) => 0.0,
+            (true, Some(r)) => litres / r,
+            (true, None) => return,
+        };
+        let loss = lost.iter().map(|l| l.ms as f32 / 1000.0).sum::<f32>() - lost.len() as f32 * typical - refuel_s;
+        if !(5.0..=90.0).contains(&loss) {
+            return;
+        }
+        let key = format!("pit|{}", last.track);
+        let v = self.saved.calibration.get(&key).map_or(loss, |old| (old + loss) / 2.0);
+        self.saved.calibration.insert(key, v);
+        self.save();
+    }
+
     /// After the out-lap: (in-lap + out-lap) − 2 × typical lap − refuelling time = pit loss of the
     /// track. Kept per track (average with earlier measurements).
     fn measure_pit_loss(&mut self, lap: i16) {
@@ -571,7 +621,7 @@ impl Strategy {
     /// the same stop.
     pub fn refuelled(&mut self, lap: i16, added: f32) {
         if self.practice.saved.active {
-            self.practice.pit();
+            self.practice.refuel(added);
             return;
         }
         if self.wrong_track() {
@@ -583,12 +633,10 @@ impl Strategy {
         }
     }
 
-    /// The pit box is here: fuel went up (`start` false), or the car stands at the start of a
-    /// session (`start` true – only practice starts in the box, a race on the grid).
-    pub fn box_at(&mut self, x: f32, z: f32, start: bool) {
-        if !start || self.practice.saved.active {
-            self.box_pos = Some([x, z]);
-        }
+    /// The pit box is here: fuel went up. (Not where a practice session starts: that is the
+    /// garage, at Spa 430 m from the box.)
+    pub fn box_at(&mut self, x: f32, z: f32) {
+        self.box_pos = Some([x, z]);
     }
 
     pub fn box_forget(&mut self) {
@@ -2015,40 +2063,60 @@ mod tests {
     }
 
     #[test]
-    fn standing_on_the_track_is_no_pit_stop() {
+    fn practice_stops_out_laps_and_pit_loss() {
         let mut s = Strategy::load(None);
         let race = Race { name: "Spa".into(), track: "Spa-Francorchamps".into(), laps: Some(21), ..Default::default() };
         s.set_race(race);
         s.update_live(Live { car_code: 3531, capacity: 100.0, fuel: 100.0, ..Default::default() });
         s.set_practice(true);
-        s.practice.new_set(Some("RM"));
-        // Session start in the box; lap 1 from the pit exit (not closed)
-        s.box_at(-425.0, -833.0, true);
-        s.lap_finished(1, 11.0, false, Some(124_000), false);
-        s.lap_finished(2, 11.4, false, Some(132_600), true);
-        // Lap 3: 28 s standing at the Bus Stop after a spin (460 m from the box)
-        s.stopped_at(3, -284.0, -395.0);
-        s.lap_finished(3, 9.2, false, Some(154_600), true);
-        s.lap_finished(4, 11.6, false, Some(130_200), true);
-        // A real stop in the box: that lap is not clean and neither is the next (out of the pit)
-        s.stopped_at(5, -420.0, -830.0);
-        s.lap_finished(5, 11.0, false, Some(160_000), true);
-        s.lap_finished(6, 11.0, false, Some(135_000), true);
-        s.lap_finished(7, 11.0, false, Some(131_000), true);
-        let clean: Vec<(i32, bool)> = s.practice.saved.laps.iter().map(|l| (l.ms, l.clean)).collect();
-        assert_eq!(
-            clean,
-            [(124_000, false), (132_600, true), (154_600, false), (130_200, true), (160_000, false), (135_000, false), (131_000, true)]
-        );
-        // A race: no box known after a new session – every long stand is a stop, as before
-        s.box_forget();
-        s.set_practice(false);
+        s.practice.new_set(Some("RS"));
+        // (lap, ms, stood still in it, speed at the line at its start)
+        let lap = |s: &mut Strategy, n: i16, ms: i32, stood: bool, start: f32| {
+            s.practice.lap_start(start);
+            if stood {
+                s.stopped_at(n, -200.0, -452.0);
+            }
+            s.lap_finished(n, 11.0, false, Some(ms), true);
+        };
+        // 23 Nov, 21:00: two laps, the stop in the box just before the line (stands at the end of
+        // lap 3 and at the start of lap 4), lap 5 a flying one
+        lap(&mut s, 1, 129_734, false, 180.0);
+        lap(&mut s, 2, 130_545, false, 180.0);
+        lap(&mut s, 3, 144_602, true, 180.0);
+        lap(&mut s, 4, 135_283, true, 0.0);
+        lap(&mut s, 5, 131_000, false, 179.8);
+        let flags: Vec<(bool, bool, bool)> = s.practice.saved.laps.iter().map(|l| (l.clean, l.pit, l.out)).collect();
+        assert_eq!(flags, [(true, false, false), (true, false, false), (false, true, false), (false, true, true), (true, false, false)]);
+        // 144.6 + 135.3 − 2 × 130.5 (median of the clean laps) = 18.8 s
+        let loss = s.saved.calibration["pit|Spa-Francorchamps"];
+        assert!((loss - 18.8).abs() < 0.05, "{loss}");
+        // A stop the lap after begins slowly (box after the line): that lap is an out-lap
+        lap(&mut s, 6, 131_000, false, 180.0);
+        lap(&mut s, 7, 160_000, true, 180.0);
+        lap(&mut s, 8, 140_000, false, 70.0);
+        lap(&mut s, 9, 131_000, false, 180.0);
+        let l = &s.practice.saved.laps;
+        assert!(l[7].out && !l[7].clean && l[8].clean, "{:?}", &l[6..]);
+        // Measured after lap 8 (the out-lap): 160 + 140 − 2 × 130.8 = 38.5 s, averaged with 18.8 s
+        let v = s.saved.calibration["pit|Spa-Francorchamps"];
+        assert!((v - 28.6).abs() < 0.1, "{v}");
+    }
+
+    #[test]
+    fn standing_away_from_the_box_is_no_race_stop() {
+        let mut s = Strategy::load(None);
+        let race = Race { name: "Spa".into(), track: "Spa-Francorchamps".into(), laps: Some(21), ..Default::default() };
+        s.set_race(race);
+        s.update_live(Live { car_code: 3531, capacity: 100.0, fuel: 100.0, ..Default::default() });
+        // No box known yet: every long stand is a stop, as before
         s.stopped_at(4, -284.0, -395.0);
         assert_eq!(s.saved.stops.len(), 1);
-        // The box known from refuelling: standing elsewhere is no stop
-        s.box_at(-425.0, -833.0, false);
-        s.stopped_at(9, -284.0, -395.0);
+        // The box known from refuelling: standing 460 m away is no stop
+        s.box_at(-200.0, -452.0);
+        s.stopped_at(9, -284.0, -895.0);
         assert_eq!(s.saved.stops.len(), 1);
+        s.stopped_at(12, -205.0, -450.0);
+        assert_eq!(s.saved.stops.len(), 2);
     }
 
     #[test]
