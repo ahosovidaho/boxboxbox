@@ -298,7 +298,6 @@ pub struct Practice {
     file: Option<PathBuf>,
     /// The lap running now had a pit stop / the previous one ended in the pit
     pit_this_lap: bool,
-    incident_this_lap: bool,
     pit_last_lap: bool,
     /// Litres put in during the running lap
     pit_added: f32,
@@ -328,7 +327,6 @@ impl Practice {
             saved,
             file,
             pit_this_lap: false,
-            incident_this_lap: false,
             pit_last_lap: false,
             pit_added: 0.0,
             start_kmh: None,
@@ -389,11 +387,6 @@ impl Practice {
         self.pit_this_lap = true;
     }
 
-    /// The car stood on the track (spin, crash): this lap is not clean, the next one is no out-lap.
-    pub fn incident(&mut self) {
-        self.incident_this_lap = true;
-    }
-
     /// Fuel put in during the running lap.
     pub fn refuel(&mut self, litres: f32) {
         self.pit_this_lap = true;
@@ -422,7 +415,6 @@ impl Practice {
         let out_lap = self.pit_last_lap && self.start_kmh.take().is_none_or(|v| v < OUT_LAP_KMH);
         let refuel_l = std::mem::take(&mut self.pit_added);
         let wrong_layout = !std::mem::replace(&mut self.layout_ok, true);
-        let incident = std::mem::take(&mut self.incident_this_lap);
         let fuel_start = self.fuel_start.take();
         self.pit_last_lap = pit;
         self.pit_this_lap = false;
@@ -454,7 +446,7 @@ impl Practice {
             fuel_start,
             wear_mult: s.wear_mult,
             fuel_mult: s.fuel_mult,
-            clean: closed && !pit && !out_lap && !wrong_layout && !incident,
+            clean: closed && !pit && !out_lap && !wrong_layout,
             counted: s.counting,
             wrong_layout,
             pit,

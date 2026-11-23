@@ -2,6 +2,16 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Závod Spa 23. 11.: zastávka se rozpadala na dvě.** GT7 zastávku dělá ve dvou krocích: 16 s
+  stání na místě boxu (konec kola), pak přesun auta o ~330 m dál a tam výměna gum + tankování
+  (6–7 s + litry ÷ 3 l/s; 99 l → 40 s, 32 l → 18 s). Pravidlo z #21/#23 „stání dál než 150 m
+  od místa tankování není zastávka“ proto druhou zastávku zapsalo o kolo později (17 místo 16)
+  a změřilo z ní špatnou ztrátu. Pravidlo je pryč; kolo z boxu se v tréninku pozná podle
+  rychlosti na čáře (#23), to pozici nepotřebuje.
+- **Směs po výměně gum podle plánu.** Nové gumy se braly jako stejná směs jako předtím – závod
+  RM → RS → RS se zapsal jako RM, RM, RM (a z toho se počítalo opotřebení RM). Teď dostane nový
+  stint směs, kterou plán nasazoval při té zastávce; ruční volba v Závodě má přednost.
+
 - **Ztráta v boxu se měří i v tréninku.** Dosud jen v závodě, takže pro Spa platil odhad 25 s.
   Po zastávce v tréninku: kola se zastávkou (+ kolo z boxu, když začalo pomalu) proti mediánu
   čistých kol okolo, minus tankování. Spa 23. 11., jen gumy: 144,6 + 135,3 − 2 × 130,5 = 18,8 s
