@@ -359,13 +359,7 @@ impl Tracker {
             if diff > 0.05 || (diff > 0.0 && p.speed_ms < 1.0) {
                 self.lap_refuel = true;
                 let lap = p.current_lap;
-                let (x, z) = (p.position[0], p.position[2]);
-                self.with_strategy(|s| {
-                    if p.speed_ms < 1.0 {
-                        s.box_at(x, z);
-                    }
-                    s.refuelled(lap, diff)
-                });
+                self.with_strategy(|s| s.refuelled(lap, diff));
             } else if diff < 0.0 && !paused {
                 self.lap_burn -= diff;
             }
@@ -388,8 +382,7 @@ impl Tracker {
             if self.still_since.is_some_and(|since| now.duration_since(since) >= PIT_STILL) {
                 let lap = p.current_lap;
                 self.lap_refuel = true; // this lap's fuel figure is not a racing lap
-                let (x, z) = (p.position[0], p.position[2]);
-                self.with_strategy(|s| s.stopped_at(lap, x, z));
+                self.with_strategy(|s| s.stopped(lap));
                 self.tyre_check.get_or_insert(TyreCheck { before: self.still_temp, moving_since: None, coldest: f32::MAX });
             }
         } else {
@@ -645,8 +638,6 @@ impl Tracker {
         let resume = self.session_car == Some(p.car_code) && self.track.is_near(p.position[0], p.position[2], RESUME_DISTANCE);
         if !resume {
             self.reset(true);
-            // Another place: the pit box is learnt anew
-            self.with_strategy(|s| s.box_forget());
         }
         self.session_car = Some(p.car_code);
         self.session_open = true;

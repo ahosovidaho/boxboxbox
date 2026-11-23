@@ -338,12 +338,10 @@ pub struct Strategy {
     pub track_mismatch: Option<String>,
     /// Laps in a row that fit no stored layout (one is an excursion, two are another track)
     misfits: u32,
-    /// Where the pit box is (x, z): where fuel went up, or where a practice session started
-    box_pos: Option<[f32; 2]>,
+    /// Compound the plan fits at the stop under way (stood still, the plan said what to put on):
+    /// the stint after it gets it unless the driver chooses
+    stop_compound: Option<String>,
 }
-
-/// A car standing this far from the pit box is not in the pit (a spin, a crash), m
-const BOX_RADIUS_M: f32 = 150.0;
 
 impl Strategy {
     /// `file = None`: nothing is stored (demo).
@@ -373,7 +371,7 @@ impl Strategy {
             history_scanned: Default::default(),
             track_mismatch: None,
             misfits: 0,
-            box_pos: None,
+            stop_compound: None,
         };
         if renamed {
             s.save();
@@ -633,28 +631,6 @@ impl Strategy {
         }
     }
 
-    /// The pit box is here: fuel went up. (Not where a practice session starts: that is the
-    /// garage, at Spa 430 m from the box.)
-    pub fn box_at(&mut self, x: f32, z: f32) {
-        self.box_pos = Some([x, z]);
-    }
-
-    pub fn box_forget(&mut self) {
-        self.box_pos = None;
-    }
-
-    /// The car stood still long enough to be a pit stop, at (x, z). Far from the pit box it was a
-    /// spin or a crash: in practice the lap is not clean (the next one is no out-lap), in a race
-    /// no stop.
-    pub fn stopped_at(&mut self, lap: i16, x: f32, z: f32) {
-        let far = self.box_pos.is_some_and(|b| ((b[0] - x).powi(2) + (b[1] - z).powi(2)).sqrt() > BOX_RADIUS_M);
-        if !far {
-            self.stopped(lap);
-        } else if self.practice.saved.active {
-            self.practice.incident();
-        }
-    }
-
     /// The car stood still in a race lap long enough to be a pit stop (tyres only, no fuel).
     pub fn stopped(&mut self, lap: i16) {
         if self.practice.saved.active {
@@ -679,7 +655,8 @@ impl Strategy {
     }
 
     /// After a stop the tracker saw whether the tyres came out cold (new) or not. A choice the
-    /// driver made on the dashboard is kept; new tyres are assumed to be the same compound.
+    /// driver made on the dashboard is kept; new tyres are the compound the plan fitted at this
+    /// stop, else the same as before. (Spa 23 Nov: RM → RS → RS was recorded as RM three times.)
     pub fn tyres_detected(&mut self, changed: bool) {
         if self.practice.saved.active {
             if changed {
@@ -693,8 +670,9 @@ impl Strategy {
         }
         stop.tyres = Some(changed);
         let lap = stop.lap;
+        let planned = self.stop_compound.take();
         if changed {
-            let compound = effective_stints(&self.saved).last().and_then(|s| s.compound.clone());
+            let compound = planned.or_else(|| effective_stints(&self.saved).last().and_then(|s| s.compound.clone()));
             if self.saved.stints.is_empty() {
                 self.saved.stints = effective_stints(&self.saved);
             }
@@ -1058,6 +1036,12 @@ impl Strategy {
         p.practice_use = practice_use;
         p.practice = self.practice_state();
         self.apply_max(&mut p);
+        // Standing in the box: what the plan puts on now
+        if p.stop_add.is_some() {
+            if let Some(st) = p.options.best.as_ref().and_then(|b| b.stops.first()) {
+                self.stop_compound = Some(st.compound.clone());
+            }
+        }
         p
     }
 
@@ -1953,6 +1937,27 @@ mod tests {
     }
 
     #[test]
+    fn new_tyres_are_the_compound_the_plan_fits() {
+        // Spa 23 Nov: start on RM, the plan puts RS on at the stop (mandatory) – recorded as RM
+        let mut s = Strategy::load(None);
+        let mut race = barcelona(21).race.unwrap();
+        race.start_compound = Some("RM".into());
+        race.fuel_per_lap = Some(11.1);
+        s.set_race(race);
+        s.update_live(Live { car_code: 3531, lap: 9, total_laps: 21, capacity: 100.0, fuel: 11.0, ..Default::default() });
+        // Stands at the box at the end of lap 9, refuels at the start of lap 10
+        s.stopped(9);
+        s.update_live(Live { car_code: 3531, lap: 10, total_laps: 21, capacity: 100.0, fuel: 0.8, standing: true, ..Default::default() });
+        s.refuelled(10, 80.0);
+        assert_eq!(s.saved.stops.len(), 1, "{:?}", s.saved.stops);
+        let p = s.plan();
+        let fit = p.options.best.as_ref().and_then(|b| b.stops.first()).map(|st| st.compound.clone());
+        assert_eq!(fit.as_deref(), Some("RS"), "{:?}", p.options.best);
+        s.tyres_detected(true);
+        assert_eq!(s.saved.stints.iter().map(|x| x.compound.as_deref().unwrap_or("?")).collect::<Vec<_>>(), ["RM", "RS"]);
+    }
+
+    #[test]
     fn tyre_change_detected_keeps_the_start_compound() {
         let mut s = Strategy::load(None);
         let mut race = barcelona(11).race.unwrap();
@@ -2074,7 +2079,7 @@ mod tests {
         let lap = |s: &mut Strategy, n: i16, ms: i32, stood: bool, start: f32| {
             s.practice.lap_start(start);
             if stood {
-                s.stopped_at(n, -200.0, -452.0);
+                s.stopped(n);
             }
             s.lap_finished(n, 11.0, false, Some(ms), true);
         };
@@ -2100,23 +2105,6 @@ mod tests {
         // Measured after lap 8 (the out-lap): 160 + 140 − 2 × 130.8 = 38.5 s, averaged with 18.8 s
         let v = s.saved.calibration["pit|Spa-Francorchamps"];
         assert!((v - 28.6).abs() < 0.1, "{v}");
-    }
-
-    #[test]
-    fn standing_away_from_the_box_is_no_race_stop() {
-        let mut s = Strategy::load(None);
-        let race = Race { name: "Spa".into(), track: "Spa-Francorchamps".into(), laps: Some(21), ..Default::default() };
-        s.set_race(race);
-        s.update_live(Live { car_code: 3531, capacity: 100.0, fuel: 100.0, ..Default::default() });
-        // No box known yet: every long stand is a stop, as before
-        s.stopped_at(4, -284.0, -395.0);
-        assert_eq!(s.saved.stops.len(), 1);
-        // The box known from refuelling: standing 460 m away is no stop
-        s.box_at(-200.0, -452.0);
-        s.stopped_at(9, -284.0, -895.0);
-        assert_eq!(s.saved.stops.len(), 1);
-        s.stopped_at(12, -205.0, -450.0);
-        assert_eq!(s.saved.stops.len(), 2);
     }
 
     #[test]
