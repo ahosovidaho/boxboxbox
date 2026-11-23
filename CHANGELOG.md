@@ -2,6 +2,12 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Měření ukazovalo jiné auto, než které jede.** Při otevření stránka načte auto s poslední
+  jízdou (Ferrari); když během toho přišla data z jedoucího auta (AMG), druhé načtení se
+  zahodilo a stránka zůstala na Ferrari. Výběr AMG (●) v nabídce pak nic neudělal – bral ho
+  jako „už zobrazené“. Načtení během jiného teď počká a proběhne po něm; výběr jedoucího auta
+  ho načte, pokud zobrazené data jsou jiného auta.
+
 - **Hlas: časy kol bez kola z boxu.** První kolo z boxu začíná ve GT7 na výjezdu z boxů (Spa
   2:04 místo 2:11) a počítalo se jako nejlepší – každé další kolo pak bylo „o 8–13 s pomalejší“.
   Server teď u každého kola posílá, jestli šlo od čáry do čáry (`laps_full`); hlas i seznam kol

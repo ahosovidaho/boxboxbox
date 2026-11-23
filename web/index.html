@@ -2951,20 +2951,27 @@
   const setHtml = (id, html) => { const e = $(id); if (e.innerHTML !== html) e.innerHTML = html; };
   const when = (iso, opts) => new Date(iso).toLocaleString(locale, opts);
 
+  // One fetch at a time; a request made meanwhile (another car got in) runs after it – before,
+  // it was dropped and the page stayed on the previous car (AMG driven, Ferrari shown)
+  let perfWant = undefined;
   async function fetchPerf(car) {
-    if (perfFetching) return;
+    if (perfFetching) { perfWant = car; return; }
     perfFetching = true;
     try {
       perf = await (await fetch('api/perf' + (car ? '?car=' + car : ''), { cache: 'no-store' })).json();
       livePts = [];
       renderPerfData();
     } catch (e) { perfKey = null; } finally { perfFetching = false; }
+    if (perfWant !== undefined) { const c = perfWant; perfWant = undefined; fetchPerf(c); }
   }
 
   $('perfCarSel').addEventListener('change', async e => {
     const car = +e.target.value;
     if (!car) return;
-    if (car === perfLiveCar || (perf && perf.car_code === car)) { perfManual = null; perfView = null; renderPerfData(); return; }
+    // The car of `perf` (the driven one): no extra fetch. The driven car while `perf` still holds
+    // another: fetched like any other
+    if (perf && perf.car_code === car) { perfManual = null; perfView = null; renderPerfData(); return; }
+    if (car === perfLiveCar) { perfKey = null; fetchPerf(car); }
     perfManual = car;
     try { perfView = await (await fetch('api/perf?car=' + car, { cache: 'no-store' })).json(); } catch { perfView = null; }
     renderPerfData();
