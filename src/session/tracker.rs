@@ -71,6 +71,9 @@ pub struct Snapshot {
     pub best_lap_ms: Option<i32>,
     pub live_delta_ms: Option<i64>,
     pub laps: Vec<i32>,
+    /// Per lap of `laps`: driven from the line to the line (false: the first lap from the pit
+    /// exit or of a race with separate start and finish lines – shorter, not comparable)
+    pub laps_full: Vec<bool>,
 
     pub position: Option<i16>,
     pub cars: Option<i16>,
@@ -293,8 +296,13 @@ impl Tracker {
             // (laps of a replay are not the driver's)
             if let Some(ms) = finished.filter(|_| on_track) {
                 self.snap.laps.push(ms);
+                self.snap.laps_full.push(self.lap_full && self.track.current_closed());
                 if self.snap.laps.len() > LAP_HISTORY {
                     self.snap.laps.remove(0);
+                }
+                // (an older state has no flags: the lists line up from the end)
+                while self.snap.laps_full.len() > self.snap.laps.len() {
+                    self.snap.laps_full.remove(0);
                 }
             }
             // Only complete laps without refuelling (a lap joined midway, e.g. after a server
@@ -338,6 +346,11 @@ impl Tracker {
             self.fuel_at_lap_start = (p.current_lap > 0).then_some(p.fuel_level);
         }
 
+        // Standing before the first lap: in practice that is the pit box
+        if p.current_lap == 0 && on_track && !paused && p.speed_ms < 0.3 {
+            let (x, z) = (p.position[0], p.position[2]);
+            self.with_strategy(|s| s.box_at(x, z, true));
+        }
         // Fuel: burnt per lap, and refuelling in the pit (fuel goes up)
         let loading = p.flags & flags::LOADING != 0;
         if let (Some(prev), true) = (self.prev_fuel, on_track && !loading && p.current_lap > 0) {
@@ -347,7 +360,13 @@ impl Tracker {
             if diff > 0.05 || (diff > 0.0 && p.speed_ms < 1.0) {
                 self.lap_refuel = true;
                 let lap = p.current_lap;
-                self.with_strategy(|s| s.refuelled(lap, diff));
+                let (x, z) = (p.position[0], p.position[2]);
+                self.with_strategy(|s| {
+                    if p.speed_ms < 1.0 {
+                        s.box_at(x, z, false);
+                    }
+                    s.refuelled(lap, diff)
+                });
             } else if diff < 0.0 && !paused {
                 self.lap_burn -= diff;
             }
@@ -370,7 +389,8 @@ impl Tracker {
             if self.still_since.is_some_and(|since| now.duration_since(since) >= PIT_STILL) {
                 let lap = p.current_lap;
                 self.lap_refuel = true; // this lap's fuel figure is not a racing lap
-                self.with_strategy(|s| s.stopped(lap));
+                let (x, z) = (p.position[0], p.position[2]);
+                self.with_strategy(|s| s.stopped_at(lap, x, z));
                 self.tyre_check.get_or_insert(TyreCheck { before: self.still_temp, moving_since: None, coldest: f32::MAX });
             }
         } else {
@@ -626,6 +646,8 @@ impl Tracker {
         let resume = self.session_car == Some(p.car_code) && self.track.is_near(p.position[0], p.position[2], RESUME_DISTANCE);
         if !resume {
             self.reset(true);
+            // Another place: the pit box is learnt anew
+            self.with_strategy(|s| s.box_forget());
         }
         self.session_car = Some(p.car_code);
         self.session_open = true;

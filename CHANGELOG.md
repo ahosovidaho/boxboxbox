@@ -2,6 +2,19 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Hlas: časy kol bez kola z boxu.** První kolo z boxu začíná ve GT7 na výjezdu z boxů (Spa
+  2:04 místo 2:11) a počítalo se jako nejlepší – každé další kolo pak bylo „o 8–13 s pomalejší“.
+  Server teď u každého kola posílá, jestli šlo od čáry do čáry (`laps_full`); hlas i seznam kol
+  v Jízdě kola z boxu nesrovnávají (v seznamu „z boxu“, bez hvězdičky).
+- **Trénink: stání na trati není zastávka.** Po hodinách na Bus Stopu (28 s na místě) se kolo
+  bralo jako zastávka v boxu a další kolo jako výjezd z boxu – nejrychlejší kolo dne (2:10,209)
+  se nepočítalo. Pozice boxu se zjistí ze startu tréninku (auto stojí v boxu) nebo z tankování;
+  stání dál než 150 m od boxu je nehoda: to kolo není čisté, další už ano. V závodě se takové
+  stání nebere jako zastávka (jen když je box známý z tankování).
+- **Tóny k brzdnému bodu** mají vlastní nastavení (Nastavení → Hlasový inženýr: Vypnuto /
+  Všechny zatáčky / Jen vybrané, „Tóny i v závodě“) a hrají i s vypnutým hlasem. Dosud byly
+  jen v kartě Hlasového kouče (Kouč), jen u 3 vybraných zatáček a jen se zapnutým hlasem.
+
 - **Strategie: víc zastávek, když gumy vydrží málo.** Plán zkoušel nejvýš 3 zastávky; Spa
   21 kol s RS na 5 kol se do toho nevejde, takže doporučil RS 6 → 5 → 5 → 5 s první sadou přes
   výdrž. Když žádný plán do 3 zastávek nedodrží výdrž, zkusí se až 6 zastávek se stinty

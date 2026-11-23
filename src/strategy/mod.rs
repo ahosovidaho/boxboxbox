@@ -338,7 +338,12 @@ pub struct Strategy {
     pub track_mismatch: Option<String>,
     /// Laps in a row that fit no stored layout (one is an excursion, two are another track)
     misfits: u32,
+    /// Where the pit box is (x, z): where fuel went up, or where a practice session started
+    box_pos: Option<[f32; 2]>,
 }
+
+/// A car standing this far from the pit box is not in the pit (a spin, a crash), m
+const BOX_RADIUS_M: f32 = 150.0;
 
 impl Strategy {
     /// `file = None`: nothing is stored (demo).
@@ -368,6 +373,7 @@ impl Strategy {
             history_scanned: Default::default(),
             track_mismatch: None,
             misfits: 0,
+            box_pos: None,
         };
         if renamed {
             s.save();
@@ -574,6 +580,30 @@ impl Strategy {
         match self.saved.stops.last_mut() {
             Some(s) if s.lap == lap || s.lap == lap - 1 => s.fuel_added += added,
             _ => self.saved.stops.push(Stop { lap, fuel_added: added, tyres: None }),
+        }
+    }
+
+    /// The pit box is here: fuel went up (`start` false), or the car stands at the start of a
+    /// session (`start` true – only practice starts in the box, a race on the grid).
+    pub fn box_at(&mut self, x: f32, z: f32, start: bool) {
+        if !start || self.practice.saved.active {
+            self.box_pos = Some([x, z]);
+        }
+    }
+
+    pub fn box_forget(&mut self) {
+        self.box_pos = None;
+    }
+
+    /// The car stood still long enough to be a pit stop, at (x, z). Far from the pit box it was a
+    /// spin or a crash: in practice the lap is not clean (the next one is no out-lap), in a race
+    /// no stop.
+    pub fn stopped_at(&mut self, lap: i16, x: f32, z: f32) {
+        let far = self.box_pos.is_some_and(|b| ((b[0] - x).powi(2) + (b[1] - z).powi(2)).sqrt() > BOX_RADIUS_M);
+        if !far {
+            self.stopped(lap);
+        } else if self.practice.saved.active {
+            self.practice.incident();
         }
     }
 
@@ -1982,6 +2012,43 @@ mod tests {
     fn running_dry_calls_box_now() {
         let p = plan(&barcelona(23), &live(14, 0.5, 4.0), Some(7.16), None);
         assert_eq!(p.calls[0].text, "BOX TEĎ – palivo nevystačí na další kolo!");
+    }
+
+    #[test]
+    fn standing_on_the_track_is_no_pit_stop() {
+        let mut s = Strategy::load(None);
+        let race = Race { name: "Spa".into(), track: "Spa-Francorchamps".into(), laps: Some(21), ..Default::default() };
+        s.set_race(race);
+        s.update_live(Live { car_code: 3531, capacity: 100.0, fuel: 100.0, ..Default::default() });
+        s.set_practice(true);
+        s.practice.new_set(Some("RM"));
+        // Session start in the box; lap 1 from the pit exit (not closed)
+        s.box_at(-425.0, -833.0, true);
+        s.lap_finished(1, 11.0, false, Some(124_000), false);
+        s.lap_finished(2, 11.4, false, Some(132_600), true);
+        // Lap 3: 28 s standing at the Bus Stop after a spin (460 m from the box)
+        s.stopped_at(3, -284.0, -395.0);
+        s.lap_finished(3, 9.2, false, Some(154_600), true);
+        s.lap_finished(4, 11.6, false, Some(130_200), true);
+        // A real stop in the box: that lap is not clean and neither is the next (out of the pit)
+        s.stopped_at(5, -420.0, -830.0);
+        s.lap_finished(5, 11.0, false, Some(160_000), true);
+        s.lap_finished(6, 11.0, false, Some(135_000), true);
+        s.lap_finished(7, 11.0, false, Some(131_000), true);
+        let clean: Vec<(i32, bool)> = s.practice.saved.laps.iter().map(|l| (l.ms, l.clean)).collect();
+        assert_eq!(
+            clean,
+            [(124_000, false), (132_600, true), (154_600, false), (130_200, true), (160_000, false), (135_000, false), (131_000, true)]
+        );
+        // A race: no box known after a new session – every long stand is a stop, as before
+        s.box_forget();
+        s.set_practice(false);
+        s.stopped_at(4, -284.0, -395.0);
+        assert_eq!(s.saved.stops.len(), 1);
+        // The box known from refuelling: standing elsewhere is no stop
+        s.box_at(-425.0, -833.0, false);
+        s.stopped_at(9, -284.0, -395.0);
+        assert_eq!(s.saved.stops.len(), 1);
     }
 
     #[test]

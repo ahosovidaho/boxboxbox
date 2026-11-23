@@ -1545,6 +1545,9 @@
     <label><span>Závod: box, palivo, gumy</span> <input type="checkbox" id="sVoRace"></label>
     <label><span>Kouč: rádio po kole a úkol</span> <input type="checkbox" id="sVoCoach"></label>
     <label><span>Povely k zatáčkám <small>(trénink · které zatáčky: Kouč → Trénink)</small></span> <input type="checkbox" id="sVoCorners"></label>
+    <label><span>Tóny k brzdnému bodu <small>(dva krátké + dlouhý = brzdi; funguje i bez hlasu)</small></span>
+      <select id="sCdMode"><option value="off">Vypnuto</option><option value="all">Všechny zatáčky</option><option value="pick">Jen vybrané zatáčky</option></select></label>
+    <label><span>Tóny i v závodě</span> <input type="checkbox" id="sCdRace"></label>
     <label><span>Hlas</span> <select id="sVoName"></select></label>
     <label><span>Rychlost řeči</span> <input type="range" id="sVoRate" min="0.8" max="1.5" step="0.05"></label>
     <label><span>Hlasitost</span> <input type="range" id="sVoVol" min="0.2" max="1" step="0.05"></label>
@@ -1642,13 +1645,16 @@
     custom: { name: t('Eigene Werte') },
   };
   const DEFAULTS = { preset: 'rm', cold: 65, hot: 90, over: 102, smooth: 4, mirror: false, bright: 1, shift: true,
-    voice: false, voLap: true, voRace: true, voCoach: true, voCorners: true, voName: '', voRate: 1.1, voVol: 1, voCountdown: false, cdLead: 0.25 };
+    voice: false, voLap: true, voRace: true, voCoach: true, voCorners: true, voName: '', voRate: 1.1, voVol: 1, voCountdown: false, cdLead: 0.25, cdMode: '', cdRace: false };
   let cfg = { ...DEFAULTS };
   try {
     const saved = JSON.parse(load('settings') || '{}');
     if (!saved.preset) { delete saved.cold; delete saved.hot; delete saved.over; } // old version
     Object.assign(cfg, saved);
   } catch {}
+  // Braking tones: off / the chosen corners / every corner (older versions: on or off)
+  if (!['off', 'pick', 'all'].includes(cfg.cdMode)) cfg.cdMode = cfg.voCountdown ? 'pick' : 'off';
+  const cdOn = () => cfg.cdMode === 'pick' || cfg.cdMode === 'all';
   $('sPreset').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join('');
   // Tyre limits are kept in °C and shown in the display unit
   const TEMPS = new Set(['cold', 'hot', 'over']);
@@ -1664,11 +1670,12 @@
   applyCfg();
 
   const fields = { sCold: 'cold', sHot: 'hot', sOver: 'over', sSmooth: 'smooth', sBright: 'bright', sVoRate: 'voRate', sVoVol: 'voVol' };
-  const checks = { sShift: 'shift', sMirror: 'mirror', sVoice: 'voice', sVoLap: 'voLap', sVoRace: 'voRace', sVoCoach: 'voCoach', sVoCorners: 'voCorners' };
+  const checks = { sShift: 'shift', sMirror: 'mirror', sVoice: 'voice', sVoLap: 'voLap', sVoRace: 'voRace', sVoCoach: 'voCoach', sVoCorners: 'voCorners', sCdRace: 'cdRace' };
   const openSettings = () => {
     for (const [id, k] of Object.entries(fields)) $(id).value = TEMPS.has(k) ? showTemp(cfg[k]) : cfg[k];
     for (const [id, k] of Object.entries(checks)) $(id).checked = cfg[k];
     $('sPreset').value = cfg.preset;
+    $('sCdMode').value = cfg.cdMode;
     voiceList();
     $('sErr').hidden = true;
     $('settings').hidden = false;
@@ -1721,6 +1728,8 @@
     for (const [id, k] of Object.entries(checks)) cfg[k] = $(id).checked;
     cfg.preset = $('sPreset').value;
     cfg.voName = $('sVoName').value;
+    cfg.cdMode = $('sCdMode').value;
+    if (cdOn()) audioCtx(); else cdCancel();   // the click lets the browser play sound
     if (!cfg.voice) voiceStop();
     applyCfg(); save(); drawMap(true);
   };
@@ -2152,6 +2161,7 @@
     updateNolink();
     if (!d.live) return;
     voiceTick(d);
+    countdownTick(d);
     if (d.map_version !== mapVersion) fetchMap(d.map_version);
 
     // Tyres: smoothing always runs, so the average is right after a page change
@@ -2335,8 +2345,11 @@
     setText('d_cur', fmt(d.current_lap_ms));
     setText('d_live', d.live_delta_ms == null ? '–' : sgn(d.live_delta_ms / 1000, 3, ' s'));
     setText('d_lb', d.last_lap_ms != null && d.best_lap_ms != null ? sgn((d.last_lap_ms - d.best_lap_ms) / 1000, 3, ' s') : '–');
-    const bestOwn = d.laps.length ? Math.min(...d.laps) : null;
-    const lapHtml = d.laps.map((ms, i) => `<span>${t('Runde {n}', { n: d.lap - d.laps.length + i })}</span><span>${fmt(ms)}</span><span>${ms === bestOwn ? '★' : sgn((ms - bestOwn) / 1000, 3)}</span>`).reverse().join('');
+    // Laps from the pit exit are shorter: no star, no gap
+    const lf = d.laps_full || [], loff = d.laps.length - lf.length, lfull = i => i < loff || lf[i - loff] !== false;
+    const fullMs = d.laps.filter((_, i) => lfull(i));
+    const bestOwn = fullMs.length ? Math.min(...fullMs) : null;
+    const lapHtml = d.laps.map((ms, i) => `<span>${t('Runde {n}', { n: d.lap - d.laps.length + i })}</span><span>${fmt(ms)}</span><span>${!lfull(i) ? '<small class="muted">z boxu</small>' : ms === bestOwn ? '★' : sgn((ms - bestOwn) / 1000, 3)}</span>`).reverse().join('');
     if ($('laplist').innerHTML !== lapHtml) $('laplist').innerHTML = lapHtml;
 
     flagEls.forEach(el => el.classList.toggle('on', !!d[el.dataset.flag]));
@@ -2622,14 +2635,14 @@
         const loss = c.loss ?? c.dt;
         return `<button class="vchip${on(c.n) ? ' on' : ''}${task && task.n === c.n ? ' task' : ''}" data-vc="${c.n}"><b>T${c.n}</b><small>${loss != null ? (loss >= 0.005 ? '+' + nf(loss, 2) : '±0') : '–'}</small></button>`;
       }).join('') + `</div>`
-      + `<div class="lhead" style="margin-top:14px"><b style="font-size:15px">Odpočet k brzdění</b><span class="seg"><button data-cd="0" class="${cfg.voCountdown ? '' : 'on'}">Vypnuto</button><button data-cd="1" class="${cfg.voCountdown ? 'on' : ''}">Tóny</button></span></div>`
-      + `<p class="muted" style="font-size:13px;margin:6px 0 8px">U vybraných zatáček dva krátké tóny a dlouhý tam, kde brzdí tvé nejlepší kolo – brzdi na dlouhý. Pouští ho o ${nf(cfg.cdLead ?? 0.25, 2)} s dřív (sluchátka a reakce).</p>`
+      + `<div class="lhead" style="margin-top:14px"><b style="font-size:15px">Tóny k brzdnému bodu</b><span class="seg">${[['off', 'Vypnuto'], ['all', 'Všechny'], ['pick', 'Vybrané']].map(([k, l]) => `<button data-cd="${k}" class="${cfg.cdMode === k ? 'on' : ''}">${l}</button>`).join('')}</span></div>`
+      + `<p class="muted" style="font-size:13px;margin:6px 0 8px">${cfg.cdMode === 'pick' ? 'U vybraných zatáček' : 'U každé zatáčky'} dva krátké tóny a dlouhý tam, kde brzdí tvé nejlepší kolo – brzdi na dlouhý. Hraje i s vypnutým hlasem${cfg.cdRace ? ', i v závodě' : ', v tréninku (v závodě: Nastavení)'}. Pouští ho o ${nf(cfg.cdLead ?? 0.25, 2)} s dřív (sluchátka a reakce).</p>`
       + `<div class="lhead"><span class="muted" style="font-size:13px">${CAL.on ? `Kalibrace běží: ${CAL.tries.length} z 5 · na rovince plný plyn nad 80 km/h, brzdi na dlouhý tón` : 'Kalibrace změří zpoždění na tomhle zařízení a sluchátkách (5 pokusů v tréninku).'}</span><span class="seg"><button class="on" data-cal="1">${CAL.on ? 'Zrušit' : 'Kalibrovat'}</button></span></div>`
       + (cfg.voice ? '' : `<p class="muted" style="font-size:12px;margin:10px 0 0">Na tomhle zařízení je hlas vypnutý – zapneš ho v Nastavení → Hlasový inženýr (dlouhý stisk).</p>`);
   }
   $('p3train').addEventListener('click', e => {
     const cd = e.target.closest('[data-cd]');
-    if (cd) { e.stopPropagation(); cfg.voCountdown = cd.dataset.cd === '1'; save(); if (cfg.voCountdown) { audioCtx(); tone(audioCtx().currentTime + 0.05, true); } else cdCancel(); renderVoiceCard(); return; }
+    if (cd) { e.stopPropagation(); cfg.cdMode = cd.dataset.cd; save(); if (cdOn()) { const a = audioCtx(); if (a) tone(a.currentTime + 0.05, true); } else cdCancel(); renderVoiceCard(); return; }
     const cal = e.target.closest('[data-cal]');
     if (cal) { e.stopPropagation(); if (CAL.on) calStop('Kalibrace zrušena.'); else { VO.unlocked = true; calStart(); } renderVoiceCard(); return; }
     const mode = e.target.closest('[data-vm]');
@@ -3622,8 +3635,13 @@
   }
   // Lap time at the line, against the best lap that counts: a lap out of the pit starts at the
   // pit exit (shorter, so "faster"), a lap with a stop is longer – neither is compared
-  function lapCall(laps) {
-    const all = laps.filter(x => x > 0);
+  function lapCall(laps, full) {
+    // Only laps from line to line: the first lap from the pit exit is shorter (Spa: 2:04 against
+    // 2:11) and made every lap after it "10 s slower"
+    const off = laps.length - (full || []).length;
+    const isFull = i => !full || i < off || full[i - off] !== false;
+    if (!isFull(laps.length - 1)) return null;
+    const all = laps.filter((x, i) => x > 0 && isFull(i));
     if (!all.length) return null;
     const ms = all[all.length - 1], prev = all.slice(0, -1);
     const sorted = [...all].sort((a, b) => a - b);
@@ -3810,6 +3828,19 @@
     if (v < 5) return Infinity;
     return a > 0.2 ? (-v + Math.sqrt(v * v + 2 * a * ahead)) / a : ahead / v;
   }
+  // Tones on their own (no speech needed): in practice, in a race when asked for; at every corner
+  // with a braking point of the best lap, or only at the corners the voice coach calls
+  function countdownTick(d) {
+    const driving = d.on_track !== false && !d.paused && !d.loading;
+    if (!cdOn() || CAL.on || !driving || !d.pos || (appMode !== 'practice' && !cfg.cdRace) || !tpPrepare()) {
+      if (CD.key) cdCancel();
+      return;
+    }
+    const sNow = tpProgress(d.pos[0], d.pos[2]);
+    if (sNow == null) return;
+    const set = cfg.cdMode === 'all' ? new Set(TP.cs.filter(o => o.c.bx != null).map(o => o.c.n)) : voiceCornerSet();
+    voiceCountdown(d, sNow, set);
+  }
   function voiceCountdown(d, sNow, set) {
     let next = null, ahead = Infinity;
     for (const o of TP.cs) {
@@ -3915,7 +3946,6 @@
     // The next chosen corner ahead: called 6 s before its braking point (at least 2 s; with the
     // countdown on, early enough to be over before its first tone)
     const set = voiceCornerSet();
-    if (cfg.voCountdown) voiceCountdown(d, sNow, set);
     let next = null, ahead = Infinity;
     for (const o of TP.cs) {
       if (!set.has(o.c.n) || VO.called.has(d.lap + '|' + o.c.n)) continue;
@@ -3925,7 +3955,7 @@
     if (!next) return;
     const t = ahead / v, key = d.lap + '|' + next.c.n;
     VO.nextCallIn = t - 6;
-    if (t <= 6 && t >= (cfg.voCountdown && next.c.bx != null ? 4.3 : 2) && !VO.called.has(key)) {
+    if (t <= 6 && t >= (cdOn() && next.c.bx != null ? 4.3 : 2) && !VO.called.has(key)) {
       VO.called.add(key);
       if (VO.called.size > 300) VO.called.clear();
       const call = cornerCall(next.c, task);
@@ -3950,7 +3980,7 @@
     const laps = d.laps || [];
     if (VO.lastLaps == null) VO.lastLaps = laps.length;
     if (laps.length > VO.lastLaps && cfg.voLap && driving) {
-      const t = lapCall(laps);
+      const t = lapCall(laps, d.laps_full);
       if (t) say(t, 3, 'lap' + laps.length + ':' + laps[laps.length - 1], 5, 12000);
     }
     VO.lastLaps = laps.length;

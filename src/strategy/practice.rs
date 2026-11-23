@@ -282,6 +282,7 @@ pub struct Practice {
     file: Option<PathBuf>,
     /// The lap running now had a pit stop / the previous one ended in the pit
     pit_this_lap: bool,
+    incident_this_lap: bool,
     pit_last_lap: bool,
     /// A full lap on a layout not stored yet: which one is it? (the driver picks from the catalogue)
     pub question: Option<TrackQuestion>,
@@ -307,6 +308,7 @@ impl Practice {
             saved,
             file,
             pit_this_lap: false,
+            incident_this_lap: false,
             pit_last_lap: false,
             question: None,
             layout_ok: true,
@@ -365,6 +367,11 @@ impl Practice {
         self.pit_this_lap = true;
     }
 
+    /// The car stood on the track (spin, crash): this lap is not clean, the next one is no out-lap.
+    pub fn incident(&mut self) {
+        self.incident_this_lap = true;
+    }
+
     /// New tyres were fitted (detected after a stop, or pressed by the driver).
     pub fn new_set(&mut self, compound: Option<&str>) {
         if let Some(c) = compound {
@@ -379,6 +386,7 @@ impl Practice {
         let pit = self.pit_this_lap || refuel;
         let out_lap = self.pit_last_lap;
         let wrong_layout = !std::mem::replace(&mut self.layout_ok, true);
+        let incident = std::mem::take(&mut self.incident_this_lap);
         let fuel_start = self.fuel_start.take();
         self.pit_last_lap = pit;
         self.pit_this_lap = false;
@@ -410,7 +418,7 @@ impl Practice {
             fuel_start,
             wear_mult: s.wear_mult,
             fuel_mult: s.fuel_mult,
-            clean: closed && !pit && !out_lap && !wrong_layout,
+            clean: closed && !pit && !out_lap && !wrong_layout && !incident,
             counted: s.counting,
             wrong_layout,
         });
