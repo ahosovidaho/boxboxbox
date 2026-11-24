@@ -331,6 +331,97 @@ pub fn from_lap(
     Ok(r)
 }
 
+/// First line of a shared lap (`.boxlap`): this, then the [`Reference`] as JSON; the lap CSV
+/// follows. The whole file is gzip.
+const PACK_HEAD: &str = "#boxboxbox-lap 1 ";
+/// A shared lap unpacked is never bigger than this (a lap at 60 Hz is ~5 MB)
+const PACK_MAX: u64 = 40 << 20;
+/// Columns a lap needs to be compared at all
+const PACK_COLUMNS: [&str; 4] = ["pos_x", "pos_z", "speed_kmh", "lap_ms"];
+
+/// 129840 → "2:09,840"
+fn lap_text(ms: i64) -> String {
+    format!("{}:{:02},{:03}", ms / 60_000, ms / 1000 % 60, ms % 1000)
+}
+
+/// A saved reference as one file to send to a friend: (file name, gzip bytes).
+pub fn export(root: &Path, id: &str) -> Result<(String, Vec<u8>), String> {
+    use std::io::Write;
+    let r = get(root, id).ok_or("Reference nenalezena.")?;
+    let lap = file(root, id).ok_or("Soubor reference chybí.")?;
+    let text = super::lap::read_text(&lap).map_err(|e| e.to_string())?;
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let meta = serde_json::to_string(&r).map_err(|e| e.to_string())?;
+    gz.write_all(format!("{PACK_HEAD}{meta}\n").as_bytes()).map_err(|e| e.to_string())?;
+    gz.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    let bytes = gz.finish().map_err(|e| e.to_string())?;
+    let ms = r.official_ms;
+    let time = format!("{}m{:02}s{:03}", ms / 60_000, ms / 1000 % 60, ms % 1000);
+    let tag = |s: &str| s.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect::<String>();
+    Ok((format!("{}_{}_{}.boxlap", track_key(&r.track), time, tag(&r.driver)), bytes))
+}
+
+/// A lap a friend shared (`.boxlap` from [`export`]) into the references. The track is the
+/// stored layout its line runs on (`track_of`), else the name in the file. Nothing of the file
+/// is trusted: size, columns, names and id are checked or made anew.
+pub fn import(root: &Path, bytes: &[u8], track_of: &dyn Fn(&[[f32; 2]]) -> Option<String>, created: &str) -> Result<Reference, String> {
+    use std::io::Read;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(bytes)
+        .take(PACK_MAX)
+        .read_to_string(&mut text)
+        .map_err(|_| "Tohle není soubor kola z BOXBOXBOX (.boxlap).".to_string())?;
+    let (head, csv) = text.split_once('\n').ok_or("Soubor je prázdný.")?;
+    let meta = head.strip_prefix(PACK_HEAD).ok_or("Tohle není soubor kola z BOXBOXBOX (.boxlap), nebo je z novější verze.")?;
+    let theirs: Reference = serde_json::from_str(meta).map_err(|_| "Popis kola v souboru je poškozený.".to_string())?;
+    let columns: Vec<&str> = csv.lines().next().unwrap_or_default().split(',').collect();
+    if let Some(c) = PACK_COLUMNS.iter().find(|c| !columns.contains(c)) {
+        return Err(format!("V souboru chybí sloupec {c}."));
+    }
+    let pts = points(csv);
+    if pts.len() < 100 || theirs.official_ms <= 0 {
+        return Err("Kolo v souboru je moc krátké.".into());
+    }
+    let clean = |s: &str, n: usize| s.trim().chars().filter(|c| !c.is_control()).take(n).collect::<String>();
+    let track = track_of(&pts).unwrap_or_else(|| clean(&theirs.track, 80));
+    if track.is_empty() {
+        return Err("Nevím, na jaké trati kolo je.".into());
+    }
+    let driver = clean(&theirs.driver, 40);
+    let driver = if driver.is_empty() { "Kamarád".to_string() } else { driver };
+    // The same lap once (imported twice, or one's own lap coming back)
+    if list(root).iter().any(|r| {
+        track_key(&r.track) == track_key(&track)
+            && r.official_ms == theirs.official_ms
+            && r.driver == driver
+            && r.car_code == theirs.car_code
+    }) {
+        return Err(format!("Kolo {driver} {} na {track} už v referencích máš.", lap_text(theirs.official_ms)));
+    }
+    let tag: String = driver.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let stamp: String = created.chars().filter(|c| c.is_ascii_digit()).take(14).collect();
+    let rid = format!("shr{stamp}_{}_{tag}", theirs.official_ms);
+    let length_m = pts.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt() as f64).sum::<f64>();
+    let r = Reference {
+        id: rid.clone(),
+        driver,
+        official_ms: theirs.official_ms,
+        telemetry_ms: theirs.telemetry_ms,
+        k: if theirs.k > 0.5 && theirs.k < 1.5 { theirs.k } else { 1.0 },
+        car_code: theirs.car_code,
+        car: clean(&theirs.car, 60),
+        track: track.clone(),
+        length_m: length_m.round(),
+        created: created.to_string(),
+        source: "shared".into(),
+    };
+    let dir = root.join(track_key(&track));
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join(format!("{rid}.csv")), csv).map_err(|e| e.to_string())?;
+    fs::write(dir.join(format!("{rid}.json")), serde_json::to_string_pretty(&r).unwrap_or_default()).map_err(|e| e.to_string())?;
+    Ok(r)
+}
+
 /// Removes a pending lap or a saved reference (its two files).
 pub fn remove(root: &Path, id: &str) -> Result<(), String> {
     if !safe(id) {
@@ -359,6 +450,45 @@ mod tests {
         assert_eq!(parse_time("110099"), Some(110_099));
         assert_eq!(parse_time("1:50:099"), Some(110_099));
         assert_eq!(parse_time(""), None);
+    }
+
+    #[test]
+    fn a_shared_lap_goes_out_and_comes_back_as_a_reference() {
+        let dir = std::env::temp_dir().join(format!("share-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        // An own lap: a circle of 300 rows
+        let mut t = String::from("lap,lap_ms,speed_kmh,pos_x,pos_z\n");
+        for i in 0..300 {
+            let a = i as f64 / 300.0 * std::f64::consts::TAU;
+            t.push_str(&format!("3,{},180,{:.2},{:.2}\n", i * 16, 300.0 * a.cos(), 300.0 * a.sin()));
+        }
+        let lap = dir.join("lap.csv");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&lap, &t).unwrap();
+        let mine =
+            from_lap(&dir.join("mine"), &lap, "Viktor", 129_840, 3531, "AMG GT3 '20", "Spa-Francorchamps", "2026-11-23 21:43").unwrap();
+        let (name, bytes) = export(&dir.join("mine"), &mine.id).unwrap();
+        assert_eq!(name, "spafrancorchamps_2m09s840_Viktor.boxlap");
+        // The friend's dashboard: the track is the stored layout the line runs on
+        let theirs = dir.join("theirs");
+        let r = import(&theirs, &bytes, &|_: &[[f32; 2]]| Some("Spa-Francorchamps".into()), "2026-11-24 14:00").unwrap();
+        assert_eq!((r.driver.as_str(), r.official_ms, r.car_code, r.source.as_str()), ("Viktor", 129_840, 3531, "shared"));
+        assert!(r.id.starts_with("shr20261124140") && file(&theirs, &r.id).is_some());
+        assert_eq!(fs::read_to_string(file(&theirs, &r.id).unwrap()).unwrap(), t);
+        // The same file again: not a second copy
+        let again = import(&theirs, &bytes, &|_: &[[f32; 2]]| Some("Spa-Francorchamps".into()), "2026-11-24 14:05");
+        assert!(again.unwrap_err().contains("už v referencích máš"));
+        assert_eq!(list(&theirs).len(), 1);
+        // Not a lap file, or one without positions: refused
+        assert!(import(&theirs, b"hello", &|_: &[[f32; 2]]| None, "x").is_err());
+        let mut bad = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(
+            &mut bad,
+            format!("{PACK_HEAD}{}\nlap,speed_kmh\n1,2\n", serde_json::to_string(&mine).unwrap()).as_bytes(),
+        )
+        .unwrap();
+        assert!(import(&theirs, &bad.finish().unwrap(), &|_: &[[f32; 2]]| None, "x").unwrap_err().contains("pos_x"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Sdílení kol s kamarády.** U každé uložené reference (Kouč → Reference) tlačítko **Sdílet**:
+  stáhne jeden soubor `.boxlap` (gzip: popis kola + celá telemetrie, ~1,3 MB), který pošleš
+  kamarádovi. Ten ho u sebe nahraje tlačítkem **Nahrát kolo od kamaráda** a má ho jako
+  referenci – pro porovnání v Telemetrii i hlasového kouče. Trať se pozná podle stopy (ne podle
+  názvu v souboru), ze souboru se nic nebere naslepo (velikost, sloupce, jména), stejné kolo
+  podruhé se nenahraje. Vlastní nejlepší kolo se sdílí přes „Uložit nejlepší kolo jako
+  referenci“ a pak Sdílet. API `GET /api/references/export?id=`, `POST /api/references/import`.
+
 - **iOS aplikace – fáze 1** (`ios/`). SwiftUI klient serveru: obrazovka Závod (hláška
   inženýra nahoře, „Nasazeno? RS RM RH“ po zastávce, jízda a otáčky, palivo, zastávka, gumy,
   časy, plán), hlas (česky, AVSpeech) a haptika u „BOX“, nezhasínání displeje, Nastavení

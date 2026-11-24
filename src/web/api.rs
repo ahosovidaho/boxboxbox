@@ -24,6 +24,8 @@
 //! | POST | `/api/notebook/note` | `{"track", "text"}` – the driver's notes for a track |
 //! | GET  | `/api/briefing` | one-page briefing for the chosen race |
 //! | GET/POST | `/api/references` | external reference laps from GT7 replays: capture state, captured laps, references; `{"action": "arm"/"stop"/"save"/"remove", …}` |
+//! | GET  | `/api/references/export?id=` | a saved reference as one file to share (`.boxlap`: gzip, meta line + lap CSV) |
+//! | POST | `/api/references/import` | body: a `.boxlap` file – a friend's lap into the references (its track by the line it runs on) |
 //! | GET  | `/api/coach/reference?session=&ref=` | the laps of a session (default: the coach's) against a reference lap of the library (default: the best on its track, the same car first): time lost per corner, figures, what to work on |
 //! | GET/POST | `/api/voice?track=` | which corners the voice coach calls on a track: `{mode: "auto" or "pick", corners}` |
 //! | GET  | `/api/training` | training task (one corner, one change): the active one, finished ones, corners worth a task |
@@ -94,6 +96,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/coach/reference", get(coach_reference))
         .route("/api/voice", get(voice_state).post(voice_set))
         .route("/api/references", get(references_state).post(references_action))
+        .route("/api/references/export", get(reference_export))
+        .route("/api/references/import", axum::routing::post(reference_import).layer(axum::extract::DefaultBodyLimit::max(16 << 20)))
         .route("/api/tracks", get(tracks_state).post(tracks_action))
         .route("/api/storage", get(storage_state))
         .route("/api/storage/action", axum::routing::post(storage_action))
@@ -520,6 +524,46 @@ fn references_json(s: &AppState) -> serde_json::Value {
 async fn references_state(State(s): State<AppState>) -> impl IntoResponse {
     let body = tokio::task::spawn_blocking(move || references_json(&s).to_string()).await.unwrap_or_default();
     json_body(body)
+}
+
+#[derive(Deserialize)]
+struct IdQuery {
+    id: String,
+}
+
+/// A saved reference as a file to send to a friend.
+async fn reference_export(State(s): State<AppState>, Query(q): Query<IdQuery>) -> axum::response::Response {
+    let root = references_root(&s);
+    match tokio::task::spawn_blocking(move || crate::coach::reference::export(&root, &q.id)).await {
+        Ok(Ok((name, bytes))) => (
+            [
+                (header::CONTENT_TYPE, "application/gzip".to_string()),
+                (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Ok(Err(e)) => (StatusCode::NOT_FOUND, Json(json!({ "error": e }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// A friend's lap (`.boxlap`) into the references.
+async fn reference_import(State(s): State<AppState>, body: axum::body::Bytes) -> axum::response::Response {
+    let res = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let (track_of, _) = track_matcher(&s.strategy);
+        let created = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let r = crate::coach::reference::import(&references_root(&s), &body, &track_of, &created)?;
+        let mut out = references_json(&s);
+        out["imported"] = json!(r);
+        Ok(out.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
+    match res {
+        Ok(body) => json_body(body).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
 }
 
 #[derive(Deserialize)]
