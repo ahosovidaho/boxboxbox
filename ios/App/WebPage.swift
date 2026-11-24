@@ -51,6 +51,7 @@ struct WebPage: UIViewRepresentable {
         web.scrollView.backgroundColor = .black
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.navigationDelegate = context.coordinator
+        web.uiDelegate = context.coordinator // confirm() of the mode switch, alert()
         #if DEBUG
         web.isInspectable = true // Safari → Vývojář → simulátor
         #endif
@@ -66,7 +67,7 @@ struct WebPage: UIViewRepresentable {
         if c.loaded != url || retry { c.load(url, in: web) }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var loaded: URL?
         var failed = false
         var wake = 0
@@ -75,6 +76,40 @@ struct WebPage: UIViewRepresentable {
             loaded = url
             failed = false
             web.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
+        }
+
+        // Without these WKWebView answers every alert/confirm/prompt silently with "no".
+
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                     initiatedByFrame _: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+            present(a, from: webView) { completionHandler() }
+        }
+
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                     initiatedByFrame _: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "Zrušit", style: .cancel) { _ in completionHandler(false) })
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+            present(a, from: webView) { completionHandler(false) }
+        }
+
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                     initiatedByFrame _: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+            let a = UIAlertController(title: nil, message: prompt, preferredStyle: .alert)
+            a.addTextField { $0.text = defaultText }
+            a.addAction(UIAlertAction(title: "Zrušit", style: .cancel) { _ in completionHandler(nil) })
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
+            present(a, from: webView) { completionHandler(nil) }
+        }
+
+        /// Shows the dialog over the topmost screen; `fallback` answers when there is none.
+        private func present(_ a: UIAlertController, from web: WKWebView, fallback: () -> Void) {
+            var top = web.window?.rootViewController
+            while let next = top?.presentedViewController { top = next }
+            guard let top else { return fallback() }
+            top.present(a, animated: true)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError error: Error) {
