@@ -75,7 +75,11 @@ struct WebPage: UIViewRepresentable {
         func load(_ url: URL, in web: WKWebView) {
             loaded = url
             failed = false
-            web.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
+            // ?app=1: the web keeps its top nav on every page (the app owns sideways swipes)
+            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            c?.queryItems = [URLQueryItem(name: "app", value: "1")]
+            let page = c?.url ?? url
+            web.load(URLRequest(url: page, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
         }
 
         // Without these WKWebView answers every alert/confirm/prompt silently with "no".

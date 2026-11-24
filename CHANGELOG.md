@@ -5,7 +5,9 @@
 - **iOS: stránky přejetím do strany.** Za nativní obrazovkou Závod je druhá stránka s celým
   webovým dashboardem serveru (WKWebView, tmavé pozadí, po pádu spojení se znovu načte při
   návratu do aplikace). Tečky stránek dole. Dialogy webu (potvrzení přepnutí Trénink/Závod,
-  upozornění) se ukazují jako nativní – bez nich je WKWebView tiše zamítal.
+  upozornění) se ukazují jako nativní – bez nich je WKWebView tiše zamítal. Web otevřený
+  z aplikace (`?app=1`) ukazuje horní navigaci i na stránkách Jízda – přejetí do strany patří
+  aplikaci, takže web se jinak nedal přepnout.
 
 - **Sdílení kol s kamarády.** U každé uložené reference (Kouč → Reference) tlačítko **Sdílet**:
   stáhne jeden soubor `.boxlap` (gzip: popis kola + celá telemetrie, ~1,3 MB), který pošleš
