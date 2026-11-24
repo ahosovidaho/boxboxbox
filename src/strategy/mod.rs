@@ -122,6 +122,10 @@ pub struct Stint {
     pub start: f32,
     pub compound: Option<String>,
     pub wear: Vec<WearMark>,
+    /// The compound was chosen by the driver (start, „Nasazeno“, new tyres); false: guessed from
+    /// the plan after a detected tyre change – asked on the dashboard, left out of the wear fit
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub confirmed: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -331,6 +335,8 @@ pub struct Plan {
     pub wear_laps_left: Option<f32>,
     pub wear_at_finish: Option<f32>,
     pub tyre_question: bool,
+    /// New tyres went on, their compound is only the plan's guess: ask the driver
+    pub compound_ask: bool,
     /// Advice for the driver, most important first
     pub calls: Vec<Call>,
 }
@@ -622,7 +628,9 @@ impl Strategy {
             }
             let at = (f.lap - 1) as f32;
             let Some((run, st)) = stints.iter().enumerate().rev().find(|(_, s)| s.start <= at + 0.01) else { continue };
-            let Some(compound) = st.compound.clone() else { continue };
+            // A guessed compound (not confirmed after the stop) counts for the fuel effect, not for
+            // the wear of a compound (Spa 23 Nov: RS laps fitted as RM)
+            let compound = st.compound.clone().filter(|_| st.confirmed || st.start <= 0.0).unwrap_or_default();
             laps.push((compound, degr::Obs { run, age: at - st.start, fuel, secs: ms as f32 / 1000.0 }));
         }
         let all: Vec<degr::Obs> = laps.iter().map(|(_, o)| *o).collect();
@@ -633,7 +641,7 @@ impl Strategy {
         names.dedup();
         let wear = race.tyre_wear.unwrap_or(1.0);
         let mut found = Vec::new();
-        for c in names {
+        for c in names.into_iter().filter(|c| !c.is_empty()) {
             let mine: Vec<degr::Obs> = laps.iter().filter(|(n, _)| n == c).map(|(_, o)| *o).collect();
             // Per compound with the race's fuel effect: one stint is enough then
             if let Some(d) = degr::run_fit(&mine, fuel_s) {
@@ -754,7 +762,7 @@ impl Strategy {
     fn stint_mut(&mut self) -> &mut Stint {
         if self.saved.stints.is_empty() {
             let compound = self.saved.race.as_ref().and_then(|r| r.start_compound.clone());
-            self.saved.stints.push(Stint { compound, ..Default::default() });
+            self.saved.stints.push(Stint { compound, confirmed: true, ..Default::default() });
         }
         self.saved.stints.last_mut().unwrap()
     }
@@ -781,14 +789,29 @@ impl Strategy {
             if self.saved.stints.is_empty() {
                 self.saved.stints = effective_stints(&self.saved);
             }
-            self.saved.stints.push(Stint { start: lap as f32, compound, wear: vec![] });
+            self.saved.stints.push(Stint { start: lap as f32, compound, wear: vec![], confirmed: false });
         }
+        self.save();
+    }
+
+    /// Forget the tyre wear and fuel effect measured in races on the race's track (all cars):
+    /// a wrong compound in a race fit spoils them, practice measures them again.
+    pub fn forget_race_wear(&mut self) {
+        let Some(track) = self.saved.race.as_ref().map(|r| practice::track_key(&r.track)) else { return };
+        self.saved.calibration.retain(|k, _| {
+            let mut parts = k.split('|');
+            let (kind, _, t) = (parts.next(), parts.next(), parts.next());
+            !(matches!(kind, Some("deg") | Some("fuelk")) && t == Some(track.as_str()))
+        });
+        self.cache = None;
         self.save();
     }
 
     /// Compound of the tyres on the car now (corrects the current stint).
     pub fn set_compound(&mut self, compound: &str) {
-        self.stint_mut().compound = Some(compound.to_uppercase());
+        let st = self.stint_mut();
+        st.compound = Some(compound.to_uppercase());
+        st.confirmed = true;
         self.save();
     }
 
@@ -802,10 +825,10 @@ impl Strategy {
         }
         if self.saved.stints.is_empty() && at < 0.5 {
             // Before the start: just the starting tyres
-            self.saved.stints.push(Stint { start: 0.0, compound: Some(compound.to_uppercase()), wear: vec![] });
+            self.saved.stints.push(Stint { start: 0.0, compound: Some(compound.to_uppercase()), wear: vec![], confirmed: true });
             self.saved.stops.pop();
         } else {
-            self.saved.stints.push(Stint { start: at, compound: Some(compound.to_uppercase()), wear: vec![] });
+            self.saved.stints.push(Stint { start: at, compound: Some(compound.to_uppercase()), wear: vec![], confirmed: true });
         }
         self.save();
     }
@@ -1439,7 +1462,7 @@ fn effective_stints(saved: &Saved) -> Vec<Stint> {
     let start = saved.race.as_ref().and_then(|r| r.start_compound.clone());
     let mut stints = saved.stints.clone();
     match stints.first_mut() {
-        None if start.is_some() => stints.push(Stint { compound: start, ..Default::default() }),
+        None if start.is_some() => stints.push(Stint { compound: start, confirmed: true, ..Default::default() }),
         Some(first) if first.compound.is_none() => first.compound = start,
         _ => {}
     }
@@ -1621,6 +1644,7 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
         None => true,
     };
     p.tyre_question = saved.stops.last().is_some_and(|s| s.tyres.is_none());
+    p.compound_ask = !p.tyre_question && saved.stints.last().is_some_and(|s| s.start > 0.0 && !s.confirmed);
     let (rate, wsource) = match (stint.and_then(wear_rate), calibrated_wear) {
         (Some(r), _) => (Some(r), "stint"),
         (None, Some(r)) => (Some(r), "calibration"),
@@ -1721,6 +1745,9 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
         if let Some(f) = fpl {
             calls.push(call("info", format!("Spotřeba se od kola {from} změnila – počítám s {} / kolo", fmt2(f))));
         }
+    }
+    if p.compound_ask && p.stop_add.is_none() {
+        calls.push(call("warn", format!("Nasazeno {}? Potvrď směs (ťukni na ni).", p.compound.as_deref().unwrap_or("?"))));
     }
     if p.tyre_question && p.stop_add.is_none() {
         calls.push(call("warn", "Zastávka? Zvol nové gumy, „Stejné gumy“, nebo „Nebyla to zastávka“.".into()));
@@ -2138,6 +2165,19 @@ mod tests {
     }
 
     #[test]
+    fn race_wear_of_a_track_can_be_forgotten() {
+        let mut s = Strategy::load(None);
+        s.set_race(Race { name: "Spa".into(), track: "Spa-Francorchamps".into(), ..Default::default() });
+        for k in
+            ["deg|3531|spafrancorchamps|RM|5", "fuelk|3531|spafrancorchamps", "deg|3562|yasmarinacircuit|RS|7", "pit|Spa-Francorchamps"]
+        {
+            s.saved.calibration.insert(k.into(), 1.0);
+        }
+        s.forget_race_wear();
+        assert_eq!(s.saved.calibration.keys().collect::<Vec<_>>(), ["deg|3562|yasmarinacircuit|RS|7", "pit|Spa-Francorchamps"]);
+    }
+
+    #[test]
     fn a_little_short_of_the_finish_is_no_stop() {
         // Spa, lap 18: 46.7 l for 4 laps at 10.98 (reserve 0.3 lap) – said "box, +0.5 l"
         let mut race = barcelona(21).race.unwrap();
@@ -2147,8 +2187,8 @@ mod tests {
             race: Some(race),
             stops: vec![Stop { lap: 9, fuel_added: 99.0, tyres: Some(true) }],
             stints: vec![
-                Stint { start: 0.0, compound: Some("RM".into()), wear: vec![] },
-                Stint { start: 9.0, compound: Some("RS".into()), wear: vec![] },
+                Stint { start: 0.0, compound: Some("RM".into()), wear: vec![], confirmed: true },
+                Stint { start: 9.0, compound: Some("RS".into()), wear: vec![], confirmed: true },
             ],
             ..Default::default()
         };
@@ -2219,6 +2259,14 @@ mod tests {
         assert_eq!(fit.as_deref(), Some("RS"), "{:?}", p.options.best);
         s.tyres_detected(true);
         assert_eq!(s.saved.stints.iter().map(|x| x.compound.as_deref().unwrap_or("?")).collect::<Vec<_>>(), ["RM", "RS"]);
+        // Only a guess: the dashboard asks, until the driver taps the compound
+        s.update_live(Live { car_code: 3531, lap: 11, total_laps: 21, capacity: 100.0, fuel: 80.0, ..Default::default() });
+        let p = s.plan();
+        assert!(p.compound_ask);
+        assert!(p.calls.iter().any(|c| c.text.starts_with("Nasazeno RS?")), "{:?}", p.calls);
+        s.set_compound("RS");
+        let p = s.plan();
+        assert!(!p.compound_ask && s.saved.stints[1].confirmed);
     }
 
     #[test]
@@ -2433,7 +2481,10 @@ mod tests {
             ..Default::default()
         });
         s.live.car_code = 3562;
-        s.saved.stints = [0.0, 9.0, 19.0, 26.0].iter().map(|&start| Stint { start, compound: Some("RS".into()), wear: vec![] }).collect();
+        s.saved.stints = [0.0, 9.0, 19.0, 26.0]
+            .iter()
+            .map(|&start| Stint { start, compound: Some("RS".into()), wear: vec![], confirmed: true })
+            .collect();
         s.saved.stops =
             [(9, 42.5), (19, 47.8), (26, 35.3)].iter().map(|&(lap, fuel_added)| Stop { lap, fuel_added, tyres: Some(true) }).collect();
         let laps: [(i16, i32, f32); 26] = [

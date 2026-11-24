@@ -344,6 +344,13 @@
   #r_left { grid-area: left; display: grid; grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr); gap: 8px; min-height: 0; }
   #r_tyrecard { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
   #r_tyrecard .row { color: #8c8c8c; }
+  #r_ask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px solid #F2C230; border-radius: 10px; background: rgba(242,194,48,.08); }
+  #r_ask[hidden] { display: none; }
+  #r_ask .rl { color: #F2C230; }
+  #r_askc { display: flex; gap: 6px; }
+  #r_askc button { min-width: 52px; min-height: 40px; border-radius: 8px; border: 1px solid #3a3a42; background: #16161a; color: #f2f2f2; font: 700 16px var(--disp); letter-spacing: .06em; }
+  #r_askc button.on { border-color: #F2C230; background: #F2C230; color: #111; }
+  #stChips button.ask { outline: 2px solid #F2C230; }
   /* Tablet / Mac: compound and set age readable from a distance */
   @media (min-width: 1000px) { #r_set { font-size: 18px; font-weight: 700; letter-spacing: .14em; } }
   #r_tyres { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
@@ -1376,6 +1383,7 @@
   <div id="r_left">
     <div class="rc" id="r_tyrecard">
       <div class="row"><span class="rl">Pneumatiky</span><span class="rl" id="r_set" style="color:#f2f2f2"></span></div>
+      <div id="r_ask" hidden><span class="rl">Nasazeno?</span><span id="r_askc"></span></div>
       <div id="r_tyres">
         <div id="r_t0"><small>LP</small><b>–</b></div><div id="r_t1"><small>PP</small><b>–</b></div>
         <div id="r_t2"><small>LZ</small><b>–</b></div><div id="r_t3"><small>PZ</small><b>–</b></div>
@@ -4082,6 +4090,13 @@
       c ? el.style.setProperty('--c', c) : el.style.removeProperty('--c');
     });
     setText('r_set', st && st.compound ? `${st.compound} · ${Math.floor(st.stint_laps || 0)} ${kol(Math.floor(st.stint_laps || 0)).toUpperCase()}` : '');
+    // After a stop the compound is the plan's guess: one tap confirms or corrects it
+    const ask = !!(st && st.compound_ask);
+    if ($('r_ask').hidden === ask) $('r_ask').hidden = !ask;
+    if (ask) {
+      const html = compoundsFor(st).map(c => `<button type="button" data-c="${c}" class="${c === st.compound ? 'on' : ''}">${c}</button>`).join('');
+      if ($('r_askc').innerHTML !== html) $('r_askc').innerHTML = html;
+    }
     // Pace
     const total = d.total_laps > 0 ? d.total_laps : st && st.total_laps;
     const lapHtml = d.lap > 0 ? `${d.lap}${total ? `<i>/${total}</i>` : ''}` : '–';
@@ -5251,7 +5266,9 @@
       return `<div class="datarow"><b>${esc(c.compound)}</b><span>${c.laps} kol${c.life ? ` · vydrží ${c.life}` : ''}${c.pace != null ? ` · tempo ${c.pace >= 0 ? '+' : '−'}${nf(Math.abs(c.pace), 2)} s` : ''}${c.deg != null ? ` · ${nf(c.deg, 2)} s/kolo stáří (${WEAR_SHORT[c.deg_source] || 'trénink'})` : ''}</span>${todo.length ? `<span class="todo">→ ${todo.join(', ')}</span>` : ''}</div>`;
     }).join('');
     const prep = b.prep && b.prep.items ? b.prep.items.filter(i => i.status !== 'ok') : [];
+    const fromRace = comps.some(c => c.deg_source === 'race' || c.deg_source === 'race_life');
     html += `<div class="card basis"><h2>Na čem plán stojí</h2><div class="cols">${rows || '<div class="muted">Zatím žádná kola z tréninku na téhle trati s tímhle autem.</div>'}</div>`
+      + (fromRace ? `<div class="pnote" style="margin-top:8px">Opotřebení „ze závodu“ se změřilo v závodě. Když v něm byla po zastávce zapsaná špatná směs, je zkreslené. <span class="seg"><button type="button" data-forget-wear="1">Zapomenout opotřebení ze závodů na téhle trati</button></span></div>` : '')
       + (prep.length ? `<h2 style="margin-top:12px">Ještě natrénovat / doplnit</h2><div class="cols">` + prep.map(i => `<div class="datarow"><span class="todo">${esc(i.label)}</span><span>${esc(i.todo || i.detail)}</span></div>`).join('') + '</div>' : '')
       + '</div>';
     // Fuel saving, only when it decides a stop
@@ -5376,6 +5393,11 @@
     const t = e.target;
     if (t.dataset.cuC != null) { CU.stints[+t.dataset.cuC].compound = t.value; cuDraw(); cuSend(); }
     else if (t.dataset.cuL != null) { cuSetLaps(+t.dataset.cuL, +t.value); cuDraw(); cuSend(); }
+  });
+  $('stBrief').addEventListener('click', async e => {
+    if (!e.target.closest('[data-forget-wear]')) return;
+    if (!confirm('Zapomenout opotřebení a vliv paliva změřené v závodech na téhle trati? Trénink je změří znovu.')) return;
+    if (await stAction('forget_wear')) { prKey = ''; loadPrep(); }
   });
   $('stBrief').addEventListener('change', async e => {
     if (e.target.id !== 'stCar') return;
@@ -5507,7 +5529,7 @@
     setText('stWearBig', st.wear_now == null ? (st.compound || '–') : `${st.compound || ''} ${nf(st.wear_now, 0)} %`);
     const question = st.tyre_question || stNewMode;
     const chips = compoundsFor(st).map(c =>
-      `<button data-c="${c}" class="${c === st.compound && !question ? 'on' : ''} ${question ? 'new' : ''}">${chip(c)}</button>`).join('')
+      `<button data-c="${c}" class="${c === st.compound && !question ? 'on' : ''} ${question ? 'new' : ''} ${st.compound_ask && !question ? 'ask' : ''}">${chip(c)}</button>`).join('')
       + (st.tyre_question ? '<button data-same="1">Stejné gumy</button><button data-nostop="1">Nebyla to zastávka</button>' : '');
     if (chips !== stLastChips) { $('stChips').innerHTML = chips; stLastChips = chips; }
     setText('stStint', nf(st.stint_laps));
@@ -5546,6 +5568,10 @@
     else if (q) await stAction('new_tyres', { compound: b.dataset.c });
     else await stAction('compound', { compound: b.dataset.c });
     stNewMode = false;
+  });
+  $('r_askc').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-c]');
+    if (b) await stAction('compound', { compound: b.dataset.c });
   });
   $('stNewTyres').onclick = () => { stNewMode = !stNewMode; if (lastData.live) renderStrategy(lastData); };
   $('stReset').onclick = async () => { if (confirm('Začít závod znovu? Zastávky a směsi se smažou, závod a kalibrace zůstanou.')) await stAction('reset'); };

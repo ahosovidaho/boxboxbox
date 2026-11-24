@@ -11,7 +11,7 @@
 //! | POST | `/api/strategy/custom` | the driver's own plan `{"stints": [{"compound", "laps"}], "follow": bool}`: stored with the race, returned costed (stops, fuel to add, against the recommendation) |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
 //! | POST | `/api/strategy/preview` | recommended + alternative strategy for race settings |
-//! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
+//! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear"/"forget_wear", …}` |
 //! | POST | `/api/strategy/action` | practice: `"practice"` (value "1"/"0"), `"practice_track"`, `"practice_compound"`, `"practice_new_set"`, `"practice_counting"`, `"practice_mults"`, `"practice_life"`, `"practice_toggle_lap"` |
 //! | GET  | `/api/practice?track=&car=` | practice state, figures per compound, last laps, known tracks |
 //! | GET/POST | `/api/setups?car=` | car setups (GT7 settings sheet) and the active one; POST saves a card |
@@ -236,6 +236,10 @@ async fn strategy_action(State(s): State<AppState>, Json(a): Json<StrategyAction
         }
         ("wear", _, Some(p)) => {
             st.add_wear(p);
+            true
+        }
+        ("forget_wear", ..) => {
+            st.forget_race_wear();
             true
         }
         ("reset", ..) => {
