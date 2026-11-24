@@ -51,5 +51,7 @@ cd ios/BoxCore && swift test
 ## Stav
 
 Fáze 1 (tato verze): připojení, obrazovka Závod, potvrzení směsi, hlas a haptika, ukázková data.
+Přejetím doleva se otevře druhá stránka: celý webový dashboard serveru (Strategie, Trénink, Kouč,
+Měření, Rekap…), dokud nebudou nativní. Tečky dole ukazují stránku.
 Další fáze: brífink a vlastní plán (2), Rekap a historie (3), Live Activity / Dynamic Island a
 Apple Watch (4).
