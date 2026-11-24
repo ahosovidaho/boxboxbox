@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **iOS: stránky přejetím do strany.** Za nativní obrazovkou Závod je druhá stránka s celým
+  webovým dashboardem serveru (WKWebView, tmavé pozadí, po pádu spojení se znovu načte při
+  návratu do aplikace). Tečky stránek dole.
+
 - **Sdílení kol s kamarády.** U každé uložené reference (Kouč → Reference) tlačítko **Sdílet**:
   stáhne jeden soubor `.boxlap` (gzip: popis kola + celá telemetrie, ~1,3 MB), který pošleš
   kamarádovi. Ten ho u sebe nahraje tlačítkem **Nahrát kolo od kamaráda** a má ho jako

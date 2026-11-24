@@ -30,6 +30,7 @@ struct RaceView: View {
                     otherCalls
                 }
                 .padding(12)
+                .padding(.bottom, 24) // the page dots
             }
         }
         .sheet(isPresented: $settings) { SettingsView() }

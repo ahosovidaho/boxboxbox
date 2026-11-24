@@ -13,7 +13,7 @@ struct BoxboxboxApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RaceView()
+            RootView()
                 .environmentObject(live)
                 .environmentObject(announcer)
                 .preferredColorScheme(.dark)
