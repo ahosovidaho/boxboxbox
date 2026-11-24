@@ -396,6 +396,11 @@
   #p7head { display: flex; align-items: center; gap: 12px; height: 22px; flex-shrink: 0; font-size: 13px; color: var(--dim); white-space: nowrap; }
   #p7head b { color: var(--text); font-weight: 600; }
   #p7head #rcName { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #rcPick { max-width: 320px; min-width: 0; }
+  #rcRaces table { width: 100%; }
+  #rcRaces tr[data-race] { cursor: pointer; }
+  #rcRaces tr[data-race]:hover td { background: rgba(255,255,255,.04); }
+  #rcRaces tr.on td { background: rgba(255,255,255,.08); }
   #p7body { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: grid; gap: 8px;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); grid-auto-rows: max-content; align-content: start; padding-bottom: 8px; }
   #p7body .card h2, #p6 .card h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 600; margin-bottom: 6px; }
@@ -1502,6 +1507,7 @@
   <div id="p7head">
     <b>Rekapitulace</b>
     <span id="rcName">–</span>
+    <select id="rcPick" title="Který závod"><option value="current">Aktuální závod</option></select>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
   </div>
@@ -1511,6 +1517,7 @@
     <div class="card"><h2>Stinty a zastávky</h2><div id="rcStints">–</div></div>
     <div class="card"><h2>Kde jsem ztrácel / co šlo dobře</h2><div id="rcCoach"><span class="muted">Kouč zatím nic nevyhodnotil.</span></div></div>
     <div class="card"><h2>Strategie</h2><div id="rcStrategy">–</div></div>
+    <div class="card wide"><h2>Odjeté závody</h2><div id="rcRaces"><span class="muted">Načítám…</span></div></div>
   </div>
 </section>
 </div>
@@ -4428,15 +4435,54 @@
   }
 
   // ---------- Race recap (race mode) ----------
-  var recapTimer = null;
+  // Races driven in race mode (practice laps never get here): the one in progress and the
+  // archived ones. The race in progress refreshes every 10 s, an archived one is drawn once.
+  var recapTimer = null, rcRace = 'current', rcList = [], rcListAt = 0;
   async function loadRecap() {
     clearTimeout(recapTimer);
     try {
-      const saved = await (await fetch('api/strategy', { cache: 'no-store' })).json();
-      renderRecap(saved);
+      if (Date.now() - rcListAt > 60000) {
+        rcList = await (await fetch('api/races', { cache: 'no-store' })).json();
+        rcListAt = Date.now();
+        renderRaceList();
+      }
+      const url = rcRace === 'current' ? 'api/strategy' : 'api/races?id=' + encodeURIComponent(rcRace);
+      const saved = await (await fetch(url, { cache: 'no-store' })).json();
+      renderRecap(saved, rcRace !== 'current');
     } catch {}
-    if (page === 7) recapTimer = setTimeout(loadRecap, 10000);
+    if (page === 7 && rcRace === 'current') recapTimer = setTimeout(loadRecap, 10000);
   }
+  function raceLabel(r) {
+    const d = r.at ? new Date(r.at.replace(' ', 'T')) : null;
+    const when = d && !isNaN(d) ? d.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' }) + ' ' + r.at.slice(11) : '';
+    return `${r.id === 'current' ? 'Aktuální · ' : ''}${when ? when + ' · ' : ''}${r.name}`;
+  }
+  function renderRaceList() {
+    const opts = [`<option value="current">Aktuální závod</option>`]
+      .concat(rcList.filter(r => r.id !== 'current').map(r => `<option value="${esc(r.id)}">${esc(raceLabel(r))}</option>`));
+    $('rcPick').innerHTML = opts.join('');
+    $('rcPick').value = rcList.some(r => r.id === rcRace) || rcRace === 'current' ? rcRace : 'current';
+    if (!rcList.length) { $('rcRaces').innerHTML = '<span class="muted">Zatím žádný závod. Ukládají se jen závody odjeté v režimu ZÁVOD – po restartu závodu nebo výběru jiného.</span>'; return; }
+    const rows = rcList.map(r => `<tr data-race="${esc(r.id)}" class="${r.id === rcRace ? 'on' : ''}">`
+      + `<td>${esc(raceLabel(r))}${r.track ? `<div class="muted" style="font-size:12px">${esc(r.track)}</div>` : ''}</td>`
+      + `<td>${esc(r.car_name || '–')}</td>`
+      + `<td>${r.laps}${r.race_laps ? ' / ' + r.race_laps : ''}${r.finished ? '' : ' <small class="muted">nedokončen</small>'}</td>`
+      + `<td>${r.finished ? fmt(r.total_ms) : '–'}</td><td>${r.best_ms ? fmt(r.best_ms) : '–'}</td>`
+      + `<td>${esc((r.compounds || []).join(' → ') || '–')}</td><td>${r.stops}</td></tr>`).join('');
+    $('rcRaces').innerHTML = `<table class="ptab"><thead><tr><th>Závod</th><th>Auto</th><th>Kola</th><th>Čas</th><th>Nejlepší</th><th>Gumy</th><th>Zast.</th></tr></thead><tbody>${rows}</tbody></table>`
+      + `<div class="pnote">Jen závody odjeté v režimu ZÁVOD (v Tréninku se kola ukládají do tréninku). Závod se uloží, když ho restartuješ nebo vybereš jiný; do té doby je to „Aktuální“. Klepnutím ho otevřeš.</div>`;
+  }
+  function pickRace(id) {
+    rcRace = id || 'current';
+    $('rcPick').value = rcRace;
+    document.querySelectorAll('#rcRaces tr[data-race]').forEach(tr => tr.classList.toggle('on', tr.dataset.race === rcRace));
+    loadRecap();
+  }
+  $('rcPick').addEventListener('change', e => pickRace(e.target.value));
+  $('rcRaces').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-race]');
+    if (tr) { pickRace(tr.dataset.race); $('p7').scrollTo?.({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  });
   const fmtS = v => v == null ? '–' : nf(v, 2) + ' s';
   function slope(pts) {
     if (pts.length < 3) return null;
@@ -4455,7 +4501,7 @@
     }
     return out;
   }
-  function renderRecap(saved) {
+  function renderRecap(saved, archived) {
     const race = saved.race || {};
     setText('rcName', race.name ? `${race.name}${race.track ? ' · ' + race.track : ''}` : 'žádný závod');
     const stops = saved.stops || [];
@@ -4464,7 +4510,7 @@
     if (!laps.length) {
       $('rcResult').innerHTML = '<span class="muted">Zatím žádné kolo závodu.</span>';
       $('rcChart').innerHTML = ''; $('rcStints').textContent = '–'; $('rcStrategy').textContent = '–';
-      renderRecapCoach();
+      renderRecapCoach(archived);
       return;
     }
     const clean = laps.filter(l => l.lap > 1 && !pitLap(l.lap) && !l.refuel);
@@ -4508,12 +4554,17 @@
     const stopRows = stops.map(s => {
       const inl = laps.find(l => l.lap === s.lap), out = laps.find(l => l.lap === s.lap + 1);
       const loss = inl && out && med ? (inl.ms + out.ms - 2 * med) / 1000 : null;
-      return `<li>Kolo ${s.lap}: ${s.fuel_added > 0.05 ? '+' + nf(s.fuel_added, 1) + ' paliva' : 'bez tankování'}, ${s.tyres ? 'nové gumy' : s.tyres === false ? 'stejné gumy' : 'gumy ?'}${loss != null ? ` · ztráta ${nf(loss, 1)} s` : ''}</li>`;
+      const fuelS = race.refuel_rate > 0 && s.fuel_added > 0.05 ? s.fuel_added / race.refuel_rate : null;
+      return `<li>Kolo ${s.lap}: ${s.fuel_added > 0.05 ? '+' + nf(s.fuel_added, 1) + ' paliva' : 'bez tankování'}, ${s.tyres ? 'nové gumy' : s.tyres === false ? 'stejné gumy' : 'gumy ?'}${loss != null ? ` · ztráta ${nf(loss, 1)} s${fuelS != null ? ` (z toho tankování ~${nf(fuelS, 0)} s)` : ''}` : ''}</li>`;
     }).join('');
     $('rcStints').innerHTML = `<table class="ptab"><thead><tr><th>Směs</th><th>Kola</th><th>Průměr</th><th>Ztráta / kolo</th></tr></thead><tbody>${rows}</tbody></table>`
       + (stopRows ? `<ul class="rclist" style="margin-top:8px">${stopRows}</ul>` : '<div class="pnote">Bez zastávky.</div>');
     // Strategy: rules met, fuel
-    const st = lastData.strategy || {};
+    // An archived race: the rules from its own record, not from the race in progress
+    const st = archived ? {
+      pit_done: stops.length > 0,
+      mandatory_done: !race.mandatory || [race.start_compound, ...(saved.stints || []).map(x => x.compound)].includes(race.mandatory),
+    } : (lastData.strategy || {});
     const used = laps.reduce((a, l) => a + (l.used || 0), 0), added = stops.reduce((a, s) => a + (s.fuel_added || 0), 0);
     const fl = laps.filter(l => l.lap > 1 && !l.refuel && !pitLap(l.lap)).map(l => l.used);
     $('rcStrategy').innerHTML = `<div class="kvs">`
@@ -4523,9 +4574,10 @@
       + `<span>Spotřeba / kolo</span><span>${fl.length ? nf(avg(fl), 2) : '–'}</span>`
       + (st.practice_use && st.practice_use.fuel_per_lap != null ? `<span>Spotřeba z tréninku</span><span>${nf(st.practice_use.fuel_per_lap, 2)}</span>` : '')
       + `</div>`;
-    renderRecapCoach();
+    renderRecapCoach(archived);
   }
-  function renderRecapCoach() {
+  function renderRecapCoach(archived) {
+    if (archived) { $('rcCoach').innerHTML = '<span class="muted">Rozbor kouče je jen u aktuálního závodu.</span>'; return; }
     const items = coachSession();
     const loss = {}, gain = {};
     for (const it of items.filter(i => i.kind === 'lap')) {

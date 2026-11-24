@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Rekap: odjeté závody.** Karta „Odjeté závody“ a výběr v hlavičce Rekapitulace: všechny
+  závody z `strategy-history/` (+ aktuální), nejnovější nahoře – datum, auto, kola, celkový
+  čas, nejlepší kolo, gumy, zastávky. Klepnutím se celá rekapitulace (časy kol, stinty,
+  zastávky, palivo, pravidla) ukáže pro ten závod. Kola se do závodu zapisují jen v režimu
+  ZÁVOD, takže jsou tu jen závody jeté jako závod. Závod uložený dvakrát beze změny se ukáže
+  jednou; nově se k závodu ukládá auto, se kterým se jel (`car`). API `GET /api/races[?id=]`.
+  U zastávek se ukazuje i odhad času tankování.
+
 - **Závod Spa 23. 11.: zastávka se rozpadala na dvě.** GT7 zastávku dělá ve dvou krocích: 16 s
   stání na místě boxu (konec kola), pak přesun auta o ~330 m dál a tam výměna gum + tankování
   (6–7 s + litry ÷ 3 l/s; 99 l → 40 s, 32 l → 18 s). Pravidlo z #21/#23 „stání dál než 150 m

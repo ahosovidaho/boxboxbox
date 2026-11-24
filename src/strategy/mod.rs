@@ -13,6 +13,7 @@
 pub mod courses;
 pub mod degr;
 pub mod handling;
+pub mod history;
 pub mod planner;
 pub mod practice;
 pub mod prep;
@@ -146,6 +147,9 @@ pub struct Saved {
     pub fuel_laps: Vec<FuelLap>,
     /// Tyre wear per lap (%), key "car|track|compound|multiplier"; pit loss (s), key "pit|track"
     pub calibration: BTreeMap<String, f32>,
+    /// Car the race laps were driven with (for the race history)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub car: Option<i32>,
 }
 
 /// What the tracker knows right now.
@@ -420,6 +424,29 @@ impl Strategy {
         self.saved.stints.clear();
         self.saved.stops.clear();
         self.saved.fuel_laps.clear();
+        self.saved.car = None;
+    }
+
+    fn history_dir(&self) -> Option<std::path::PathBuf> {
+        self.file.as_ref()?.parent().map(|d| d.join("strategy-history"))
+    }
+
+    /// The races driven in race mode, newest first: the one in progress or just finished (if it
+    /// has laps), then the archived ones.
+    pub fn races(&self) -> Vec<history::Summary> {
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let car = self.saved.car.or((self.live.car_code > 0).then_some(self.live.car_code));
+        let mut out: Vec<history::Summary> = history::summary("current", &now, car, &self.saved).into_iter().collect();
+        out.extend(self.history_dir().map(|d| history::list(&d)).unwrap_or_default());
+        out
+    }
+
+    /// One race of [`Self::races`], whole (as `/api/strategy`).
+    pub fn race_saved(&self, id: &str) -> Option<Saved> {
+        if id == "current" {
+            return Some(self.saved.clone());
+        }
+        history::load(&self.history_dir()?, id)
     }
 
     fn archive(&self) {
@@ -487,6 +514,9 @@ impl Strategy {
         self.saved.fuel_laps.retain(|l| l.lap != lap);
         let fuel = self.practice.fuel_start;
         self.saved.fuel_laps.push(FuelLap { lap, used, refuel, ms: ms.filter(|m| *m > 0), fuel });
+        if self.live.car_code > 0 {
+            self.saved.car = Some(self.live.car_code);
+        }
         if self.saved.fuel_laps.len() > 200 {
             self.saved.fuel_laps.remove(0);
         }
