@@ -1531,6 +1531,7 @@
     <b>Rekapitulace</b>
     <span id="rcName">–</span>
     <select id="rcPick" title="Který závod"><option value="current">Aktuální závod</option></select>
+    <button type="button" class="stbtn small" id="rcRemove" hidden title="Přesune záznam do koše v datové složce">Smazat záznam</button>
     <span class="conn"><span class="rec" hidden>● REC</span><i></i><span class="connText">offline</span></span>
     <span class="dots"></span>
   </div>
@@ -4583,7 +4584,11 @@
       const sl = clean.filter(l => l.lap >= a && l.lap <= b);
       const k = slope(sl.map(l => [l.lap, l.ms / 1000]));
       const comp = compounds[i] || (i === 0 ? race.start_compound : null) || '?';
-      rows += `<tr><td>${comp}</td><td>${a}–${b}</td><td>${sl.length ? fmt(Math.round(avg(sl.map(l => l.ms)))) : '–'}</td><td>${k == null ? '–' : sgn(k, 2) + ' s'}</td></tr>`;
+      // An archived race: the compounds can be corrected (after the stop only the plan's guess)
+      const cell = archived
+        ? `<select data-rc-c="${i}">${['RS', 'RM', 'RH', 'SS', 'SM', 'SH', 'CS', 'CM', 'CH', 'IM', 'W'].filter(c => c.charAt(0) === (comp.charAt(0) === '?' ? 'R' : comp.charAt(0)) || c === comp || c === 'IM' || c === 'W').map(c => `<option ${c === comp ? 'selected' : ''}>${c}</option>`).join('')}${comp === '?' ? '<option selected>?</option>' : ''}</select>`
+        : comp;
+      rows += `<tr><td>${cell}</td><td>${a}–${b}</td><td>${sl.length ? fmt(Math.round(avg(sl.map(l => l.ms)))) : '–'}</td><td>${k == null ? '–' : sgn(k, 2) + ' s'}</td></tr>`;
     }
     const med = cleanMs.length ? [...cleanMs].sort((x, z) => x - z)[Math.floor(cleanMs.length / 2)] : null;
     const stopRows = stops.map(s => {
@@ -4609,8 +4614,30 @@
       + `<span>Spotřeba / kolo</span><span>${fl.length ? nf(avg(fl), 2) : '–'}</span>`
       + (st.practice_use && st.practice_use.fuel_per_lap != null ? `<span>Spotřeba z tréninku</span><span>${nf(st.practice_use.fuel_per_lap, 2)}</span>` : '')
       + `</div>`;
+    $('rcRemove').hidden = !archived;
     renderRecapCoach(archived);
   }
+  $('rcStints').addEventListener('change', async e => {
+    const sel = e.target.closest('select[data-rc-c]');
+    if (!sel || rcRace === 'current') return;
+    const compounds = [...$('rcStints').querySelectorAll('select[data-rc-c]')].map(x => x.value === '?' ? '' : x.value);
+    try {
+      await fetch('api/races', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: rcRace, action: 'compounds', compounds }) });
+    } catch {}
+    rcListAt = 0;
+    loadRecap();
+  });
+  $('rcRemove').addEventListener('click', async () => {
+    if (rcRace === 'current') return;
+    const r = rcList.find(x => x.id === rcRace);
+    if (!confirm(`Smazat záznam „${r ? raceLabel(r) : rcRace}“ z historie? Soubor se přesune do koše v datové složce (trash/).`)) return;
+    try {
+      const res = await fetch('api/races', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: rcRace, action: 'remove' }) });
+      if (!res.ok) { alert('Záznam se nepodařilo smazat.'); return; }
+    } catch { return; }
+    rcRace = 'current'; rcListAt = 0;
+    loadRecap();
+  });
   function renderRecapCoach(archived) {
     if (archived) { $('rcCoach').innerHTML = '<span class="muted">Rozbor kouče je jen u aktuálního závodu.</span>'; return; }
     const items = coachSession();

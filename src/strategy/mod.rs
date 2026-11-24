@@ -538,6 +538,17 @@ impl Strategy {
         out
     }
 
+    /// Correct the compounds of an archived race (the race in progress: „Nasazeno“ / „Směs“).
+    pub fn race_set_compounds(&self, id: &str, compounds: &[String]) -> Option<Saved> {
+        history::set_compounds(&self.history_dir()?, id, compounds)
+    }
+
+    /// Take an archived race out of the history (into `trash/` of the data folder).
+    pub fn race_remove(&self, id: &str) -> bool {
+        let (Some(dir), Some(data)) = (self.history_dir(), self.file.as_ref().and_then(|f| f.parent())) else { return false };
+        history::remove(&dir, &data.join("trash").join("strategy-history"), id)
+    }
+
     /// One race of [`Self::races`], whole (as `/api/strategy`).
     pub fn race_saved(&self, id: &str) -> Option<Saved> {
         if id == "current" {

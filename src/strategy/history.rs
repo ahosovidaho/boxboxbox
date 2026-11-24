@@ -103,10 +103,44 @@ pub fn list(dir: &Path) -> Vec<Summary> {
 
 /// One archived race, or None (unknown id, or an id that is not a plain file name).
 pub fn load(dir: &Path, id: &str) -> Option<Saved> {
-    if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
+    if !plain(id) {
         return None;
     }
     serde_json::from_str(&std::fs::read_to_string(dir.join(format!("{id}.json"))).ok()?).ok()
+}
+
+fn plain(id: &str) -> bool {
+    !(id.is_empty() || id.contains(['/', '\\']) || id.contains(".."))
+}
+
+/// Correct the compounds of an archived race (stint by stint, as driven): marked as confirmed.
+pub fn set_compounds(dir: &Path, id: &str, compounds: &[String]) -> Option<Saved> {
+    let mut s = load(dir, id)?;
+    for (st, c) in s.stints.iter_mut().zip(compounds) {
+        let c = c.trim().to_uppercase();
+        if !c.is_empty() {
+            st.compound = Some(c);
+            st.confirmed = true;
+        }
+    }
+    // A race with one stint recorded only as the start compound
+    if s.stints.is_empty() {
+        if let Some(c) = compounds.first().map(|c| c.trim().to_uppercase()).filter(|c| !c.is_empty()) {
+            s.stints.push(super::Stint { compound: Some(c), confirmed: true, ..Default::default() });
+        }
+    }
+    std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string_pretty(&s).ok()?).ok()?;
+    Some(s)
+}
+
+/// Take a race out of the history: the file goes to `trash/` of the data folder (not deleted).
+pub fn remove(dir: &Path, trash: &Path, id: &str) -> bool {
+    if !plain(id) {
+        return false;
+    }
+    let from = dir.join(format!("{id}.json"));
+    let _ = std::fs::create_dir_all(trash);
+    from.is_file() && std::fs::rename(&from, trash.join(format!("{id}.json"))).is_ok()
 }
 
 #[cfg(test)]
@@ -153,6 +187,19 @@ mod tests {
         assert!(!l[1].finished && l[1].car.is_none());
         assert!(load(&dir, &s.id).is_some());
         assert!(load(&dir, "../strategy").is_none());
+        // RM, RM recorded; it was RM, RS
+        let fixed = set_compounds(&dir, &s.id, &["rm".into(), "RS".into()]).unwrap();
+        assert_eq!(
+            fixed.stints.iter().map(|x| (x.compound.clone().unwrap(), x.confirmed)).collect::<Vec<_>>(),
+            [("RM".into(), true), ("RS".into(), true)]
+        );
+        assert_eq!(list(&dir)[0].compounds, ["RM", "RS"]);
+        // Out of the history, into the bin
+        let trash = dir.join("trash");
+        assert!(remove(&dir, &trash, &s.id));
+        assert!(trash.join(format!("{}.json", s.id)).is_file());
+        assert_eq!(list(&dir).len(), 1);
+        assert!(!remove(&dir, &trash, "../x"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
