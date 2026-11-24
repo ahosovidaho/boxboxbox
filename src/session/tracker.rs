@@ -964,3 +964,132 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+
+/// A recorded session (the lap CSV files of `recordings/…`) driven through the tracker and the
+/// strategy as it happened: what the dashboard would have said, lap by lap. Run with
+/// `REPLAY_DIR=<session folder> [REPLAY_RACE=<race.json>] [REPLAY_PRACTICE=1]
+/// cargo test --release replay_recording -- --ignored --nocapture`.
+#[cfg(test)]
+mod replay_csv {
+    use super::*;
+    use crate::telemetry::packet::Packet;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    fn packets(dir: &Path, car: i32) -> Vec<Packet> {
+        let mut files: Vec<_> =
+            std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.to_string_lossy().contains(".csv")).collect();
+        files.sort();
+        let mut out = Vec::new();
+        for f in files {
+            let text = crate::coach::lap::read_text(&f).unwrap();
+            let mut lines = text.lines();
+            let head: Vec<&str> = lines.next().unwrap().split(',').collect();
+            let ix = |n: &str| head.iter().position(|h| *h == n);
+            for l in lines {
+                let c: Vec<&str> = l.split(',').collect();
+                let g = |n: &str| ix(n).and_then(|i| c.get(i)).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+                let a3 = |p: &str| [g(&format!("{p}_x")), g(&format!("{p}_y")), g(&format!("{p}_z"))];
+                let w4 = |p: &str| [g(&format!("{p}_fl")), g(&format!("{p}_fr")), g(&format!("{p}_rl")), g(&format!("{p}_rr"))];
+                let mut ratios = [0.0; 8];
+                for (i, r) in ratios.iter_mut().enumerate() {
+                    *r = g(&format!("gear_ratio_{}", i + 1));
+                }
+                out.push(Packet {
+                    position: a3("pos"),
+                    velocity: a3("vel"),
+                    rotation: [g("rot_x"), g("rot_y"), g("rot_z"), g("rot_w")],
+                    angular_velocity: a3("angvel"),
+                    body_height: g("body_height"),
+                    engine_rpm: g("rpm"),
+                    fuel_level: g("fuel"),
+                    fuel_capacity: g("fuel_capacity"),
+                    speed_ms: g("speed_kmh") / 3.6,
+                    tire_temp: w4("tire_temp"),
+                    packet_id: g("packet_id") as i32,
+                    current_lap: g("lap") as i16,
+                    total_laps: g("total_laps") as i16,
+                    best_lap_ms: g("best_lap_ms") as i32,
+                    last_lap_ms: g("last_lap_ms") as i32,
+                    flags: g("flags") as u16,
+                    gear: g("gear") as u8,
+                    suggested_gear: g("suggested_gear") as u8,
+                    throttle: g("throttle") as u8,
+                    brake: g("brake") as u8,
+                    road_plane: a3("road_plane"),
+                    road_plane_distance: g("road_plane_distance"),
+                    wheel_rps: w4("wheel_rps"),
+                    tire_radius: w4("tire_radius"),
+                    suspension_height: w4("susp"),
+                    gear_ratios: ratios,
+                    car_code: car,
+                    steering: g("steering"),
+                    ..Default::default()
+                });
+            }
+        }
+        out
+    }
+
+    #[test]
+    #[ignore]
+    fn replay_recording() {
+        let Ok(dir) = std::env::var("REPLAY_DIR") else { return };
+        let dir = PathBuf::from(dir);
+        let session: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("session.json")).unwrap()).unwrap();
+        let car = session["car_code"].as_i64().unwrap_or(0) as i32;
+        let mut st = strategy::Strategy::load(None);
+        if let Ok(r) = std::env::var("REPLAY_RACE") {
+            st.set_race(serde_json::from_str(&std::fs::read_to_string(r).unwrap()).unwrap());
+        }
+        st.set_practice(std::env::var("REPLAY_PRACTICE").is_ok());
+        if let Some(track) = st.saved.race.as_ref().map(|r| r.track.clone()) {
+            st.practice.saved.track = track;
+        }
+        if let Ok(c) = std::env::var("REPLAY_PRACTICE") {
+            st.practice.new_set(Some(&c));
+        }
+        let shared = st.shared();
+        let mut t = Tracker::new(None, None);
+        t.set_strategy(shared.clone());
+        let ps = packets(&dir, car);
+        let (base, id0) = (Instant::now(), ps.first().map_or(0, |p| p.packet_id));
+        let mut lap = -1;
+        for p in &ps {
+            let now = base + Duration::from_secs_f64((p.packet_id - id0).max(0) as f64 / 59.94);
+            t.update_at(p, now);
+            t.tick_at(now);
+            if p.current_lap != lap {
+                lap = p.current_lap;
+                let plan = shared.lock().unwrap().plan();
+                let best = plan.options.best.as_ref().map(|b| {
+                    b.stints.iter().map(|s| format!("{}{}", s.compound, s.laps)).collect::<Vec<_>>().join("→")
+                        + &b.stops.iter().map(|s| format!(" box{}+{:.0}{}", s.lap, s.fuel, s.compound)).collect::<String>()
+                });
+                println!(
+                    "lap {:>2} fuel {:>5.1} fpl {:?} target {:?} next_fuel {:?} add {:?} | {} | calls: {}",
+                    lap,
+                    p.fuel_level,
+                    plan.fuel_per_lap.map(|v| (v * 100.0).round() / 100.0),
+                    plan.target_lap,
+                    plan.next_stop_fuel.map(|v| v.round()),
+                    plan.stop_add.map(|v| v.round()),
+                    best.unwrap_or_default(),
+                    plan.calls.iter().map(|c| c.text.clone()).collect::<Vec<_>>().join(" / ")
+                );
+            }
+        }
+        let s = shared.lock().unwrap();
+        println!("stops {:?}", s.saved.stops);
+        println!("stints {:?}", s.saved.stints);
+        println!("laps {:?}", s.saved.fuel_laps.iter().map(|f| (f.lap, f.ms, f.refuel)).collect::<Vec<_>>());
+        println!("calibration {:?}", s.saved.calibration);
+        println!("laps_full {:?}", t.snap.laps.iter().zip(&t.snap.laps_full).collect::<Vec<_>>());
+        for l in &s.practice.saved.laps {
+            println!(
+                "practice {} {} age {} ms {} clean {} pit {} out {} fuel {:.2}",
+                l.track, l.compound, l.age, l.ms, l.clean, l.pit, l.out, l.fuel
+            );
+        }
+    }
+}

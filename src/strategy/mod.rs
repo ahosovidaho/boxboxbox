@@ -30,6 +30,9 @@ pub type Shared = Arc<Mutex<Strategy>>;
 /// Fuel left over at the finish, in laps
 const DEFAULT_RESERVE: f32 = 0.3;
 /// Fuel left on arriving at a stop, in laps (a slower lap, a lap more before the box)
+/// Lift and coast saves this share of the fuel without much loss: short of the finish by less,
+/// no stop (the planner and the race calls alike)
+pub const FINISH_SAVE: f32 = 0.03;
 const DEFAULT_STOP_RESERVE: f32 = 0.3;
 /// Tyre wear (%) at which the tyres count as finished
 const DEFAULT_WEAR_LIMIT: f32 = 70.0;
@@ -416,7 +419,7 @@ pub struct Strategy {
     misfits: u32,
     /// Compound the plan fits at the stop under way (stood still, the plan said what to put on):
     /// the stint after it gets it unless the driver chooses
-    stop_compound: Option<String>,
+    stop_compound: Option<(i16, String)>,
 }
 
 impl Strategy {
@@ -772,7 +775,7 @@ impl Strategy {
         }
         stop.tyres = Some(changed);
         let lap = stop.lap;
-        let planned = self.stop_compound.take();
+        let planned = self.stop_compound.take().map(|(_, c)| c);
         if changed {
             let compound = planned.or_else(|| effective_stints(&self.saved).last().and_then(|s| s.compound.clone()));
             if self.saved.stints.is_empty() {
@@ -1138,10 +1141,15 @@ impl Strategy {
         p.practice_use = practice_use;
         p.practice = self.practice_state();
         self.apply_max(&mut p);
-        // Standing in the box: what the plan puts on now
-        if p.stop_add.is_some() {
-            if let Some(st) = p.options.best.as_ref().and_then(|b| b.stops.first()) {
-                self.stop_compound = Some(st.compound.clone());
+        // Standing in the box: what the plan puts on, as it was when the car came in (the tyres
+        // were chosen in the pit menu before; during the stop the plan may tip to another
+        // compound – Spa: RS on arrival, RM half way through the refuelling)
+        let stop_lap = self.saved.stops.last().map(|s| s.lap);
+        if let (true, Some(lap)) = (p.stop_add.is_some(), stop_lap) {
+            if self.stop_compound.as_ref().is_none_or(|(l, _)| *l != lap) {
+                if let Some(st) = p.options.best.as_ref().and_then(|b| b.stops.first()) {
+                    self.stop_compound = Some((lap, st.compound.clone()));
+                }
             }
         }
         p
@@ -1635,7 +1643,16 @@ pub fn plan(saved: &Saved, live: &Live, measured_fpl: Option<f32>, calibrated_we
         p.fuel_needed = Some(need);
         p.fuel_margin_laps = Some(live.fuel / fpl - left);
         let total = total.unwrap_or(0) as f32;
-        if need > live.fuel {
+        // Short of the reserve only (or of a few per cent that lift and coast saves) on the way
+        // to the finish, with no stop or compound still owed: no stop – a stop costs ~20 s,
+        // saving 3 % a few tenths (Spa, lap 18: 46,7 l for 4 laps at 10,98 – the plan said
+        // "box, +0,5 l")
+        let owed = (race.pit_required && !p.pit_done) || !p.mandatory_done;
+        let tight = need > live.fuel && live.fuel >= left * fpl * (1.0 - FINISH_SAVE) && !owed;
+        if tight && live.fuel < left * fpl {
+            p.no_stop_fpl = Some(live.fuel / left.max(0.05));
+        }
+        if need > live.fuel && !tight {
             p.stops_needed = ((need - live.fuel) / cap).ceil().max(1.0) as u32;
             // Latest: arrive in the pit before the tank is empty
             let latest = ((driven + live.fuel / fpl - PIT_MARGIN).floor() as i16).min(total as i16 - 1);
@@ -1690,6 +1707,11 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
     let fpl = p.fuel_per_lap;
     let lap = live.lap;
     let mut calls = Vec::new();
+    // Over the line for the last time: nothing to call any more
+    if p.total_laps.is_some_and(|t| t > 0 && lap as i64 > t as i64) {
+        calls.push(call("info", "Cíl – závod je dojetý.".into()));
+        return calls;
+    }
     if let Some(add) = p.stop_add {
         let laps = p.stop_add_laps.map_or(String::new(), |n| format!(" (na {n} kol)"));
         let max = p.stop_add_max.map_or(String::new(), |m| format!(" · naplno +{}", fmt1(m)));
@@ -1744,7 +1766,7 @@ fn calls(p: &Plan, live: &Live) -> Vec<Call> {
             None => {}
         }
     }
-    if let (Some(target), Some(f)) = (p.no_stop_fpl, fpl) {
+    if let (Some(target), Some(f)) = (p.no_stop_fpl.filter(|t| fpl.is_some_and(|f| *t < f)), fpl) {
         calls.push(call("info", format!("Bez zastávky při spotřebě {} / kolo (ušetřit {})", fmt2(target), fmt2(f - target))));
     }
     if p.stops_needed > 1 {
@@ -2113,6 +2135,36 @@ mod tests {
         assert_eq!(p.stops_needed, 2);
         assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
         assert!(p.calls.iter().any(|c| c.text.starts_with("Box v kole")), "{:?}", p.calls);
+    }
+
+    #[test]
+    fn a_little_short_of_the_finish_is_no_stop() {
+        // Spa, lap 18: 46.7 l for 4 laps at 10.98 (reserve 0.3 lap) – said "box, +0.5 l"
+        let mut race = barcelona(21).race.unwrap();
+        race.start_compound = Some("RS".into());
+        race.fuel_per_lap = Some(10.98);
+        let saved = Saved {
+            race: Some(race),
+            stops: vec![Stop { lap: 9, fuel_added: 99.0, tyres: Some(true) }],
+            stints: vec![
+                Stint { start: 0.0, compound: Some("RM".into()), wear: vec![] },
+                Stint { start: 9.0, compound: Some("RS".into()), wear: vec![] },
+            ],
+            ..Default::default()
+        };
+        let live = Live { lap: 18, total_laps: 21, capacity: 100.0, fuel: 46.7, ..Default::default() };
+        let p = full(&saved, &live, 10.98);
+        assert_eq!(p.stops_needed, 0, "{:?}", p.calls);
+        assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
+        // 3 % short: still no stop, but save
+        let live = Live { fuel: 42.8, ..live };
+        let p = full(&saved, &live, 10.98);
+        assert_eq!(p.stops_needed, 0, "{:?}", p.calls);
+        assert!(p.calls.iter().any(|c| c.text.starts_with("Bez zastávky při spotřebě")), "{:?}", p.calls);
+        // Over the line: the finish, nothing else
+        let live = Live { lap: 22, fuel: 1.4, ..live };
+        let p = full(&saved, &live, 10.98);
+        assert_eq!(p.calls.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), ["Cíl – závod je dojetý."]);
     }
 
     #[test]

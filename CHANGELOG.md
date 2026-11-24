@@ -2,6 +2,18 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Audit na nahraném závodě Spa 23. 11.** Nový test `replay_recording` (ignorovaný, spouští se
+  s `REPLAY_DIR`) pošle nahrané kolo po kole přes tracker a strategii a vypíše, co by aplikace
+  v každém kole hlásila. Odhalil a opravil:
+  - **Směs po zastávce** se brala z plánu v posledním okamžiku stání; během tankování se plán
+    překlopil z RS na RM, takže se 2. stint zapsal jako RM. Teď platí plán v okamžiku příjezdu
+    do boxu (směs je zvolená v pit menu předem).
+  - **Rezerva do cíle byla povinná**: v kolech 18–20 hlásilo „BOX na konci kola, +0,5 l“ (zastávka
+    ~21 s kvůli 0,5 l). Do cíle je teď rezerva měkká a do 3 % se dá ušetřit: bez zastávky,
+    s hláškou kolik šetřit. Stejně počítá planner.
+  - **Poslední kolo a po cíli** hlásilo „BOX TEĎ – palivo nevystačí“ (12,6 l na kolo za 11,1 l);
+    po projetí cílem teď jen „Cíl – závod je dojetý.“
+
 - **Závod podle vlastního plánu.** V kartě Vlastní přepínač „V závodě jet podle: Doporučené /
   Tohoto plánu“ (`Race::follow_custom`). Když je zapnutý, řídí se vlastním plánem hlášky
   „Box v kole X“, „DOTANKUJ +Y“ i směs po zastávce; doporučená je v závodě jako alternativa
