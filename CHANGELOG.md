@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **API pro iOS aplikaci.** `GET /api/version` (`{"server", "api": 1}`) – klient pozná
+  nekompatibilní server. `docs/API.md`: WebSocket `/ws` (Snapshot), endpointy pro závod a
+  popis objektů (Snapshot, Plan, Call, plány, vlastní plán, závod, historie, trénink) generovaný
+  z Rust struktur (`scripts/api-doc.sh`, úvod v `docs/API.intro.md`).
+
 - **Rekap: oprava a mazání uložených závodů.** U uloženého závodu jde v „Stinty a zastávky“
   opravit směs každého stintu (Spa 23. 11.: RM → RS → RS, pak „Povinná směs RS ✓“), tlačítko
   „Smazat záznam“ přesune soubor do `trash/strategy-history/` v datové složce (s potvrzením,
