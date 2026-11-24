@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Závod podle vlastního plánu.** V kartě Vlastní přepínač „V závodě jet podle: Doporučené /
+  Tohoto plánu“ (`Race::follow_custom`). Když je zapnutý, řídí se vlastním plánem hlášky
+  „Box v kole X“, „DOTANKUJ +Y“ i směs po zastávce; doporučená je v závodě jako alternativa
+  (s tím, o kolik je teď rychlejší). Zastavíš-li o kolo dřív/později, posune se jen ta hranice
+  – další stinty si nechají délku a palivo se dopočítá ze skutečné nádrže. Když plán dodržet
+  nejde (víc zastávek, než měl, na další stinty nezbývá kol, stint se nevejde do nádrže),
+  aplikace přejde na doporučenou a ukáže proč.
+
 - **Strategie: vlastní plán.** V brífinku zůstává Doporučeno a Alternativa, třetí karta je
   „Vlastní“: počet stintů (1–6), u každého směs a počet kol (−/+ nebo číslem; poslední stint
   dorovná součet na délku závodu), u směsi kola a výdrž. Ke každé zastávce se dopočítá, co

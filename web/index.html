@@ -3338,10 +3338,15 @@
     return `<div class="muted" style="font-size:13px;margin-top:4px">Proč: ${bits.join(' · ')}.${tip}</div>`;
   }
   const dayCz = d => d ? `${+d.slice(8, 10)}. ${+d.slice(5, 7)}.` : '?';
-  function plansHtml(opts, pu) {
+  function plansHtml(opts, pu, following, note) {
     if (!opts || !opts.best) return '';
-    return planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa 1', '', whyHtml(opts.alternative, opts.best, pu))
-      + planHtml(opts.second, 'Alternativa 2', '', whyHtml(opts.second, opts.best, pu));
+    const warn = note ? `<div class="planbox"><div class="risk">${esc(note)}</div></div>` : '';
+    // Following the own plan: it comes first, the recommendation as the alternative
+    if (following === 'custom') {
+      const d = opts.alternative && opts.alternative.delta < -0.3 ? `<div class="muted" style="font-size:13px;margin-top:4px">Doporučená je teď o ${nf(-opts.alternative.delta, 1)} s rychlejší.</div>` : '';
+      return planHtml(opts.best, 'Vlastní – jedu podle něj', 'best') + planHtml({ ...opts.alternative, delta: 0 }, 'Doporučeno', '', d);
+    }
+    return warn + planHtml(opts.best, 'Doporučeno', 'best') + planHtml(opts.alternative, 'Alternativa', '', whyHtml(opts.alternative, opts.best, pu));
   }
 
   // Page 1: laps to the suggested pit stop, readable at a glance
@@ -5276,6 +5281,7 @@
     CU.best = b.options && b.options.best;
     CU.stints = (r.custom || []).map(x => ({ compound: x.compound, laps: x.laps }));
     CU.res = c;
+    CU.follow = !!r.follow_custom;
     cuDraw();
   }
   // n stints over the race: laps shared evenly (the first ones get the odd laps)
@@ -5305,7 +5311,8 @@
     const n = CU.stints.length;
     const counts = [1, 2, 3, 4, 5, 6].map(k => `<button type="button" data-cu-n="${k}" class="${k === n ? 'on' : ''}">${k}</button>`).join('');
     let html = `<span class="tag">Vlastní</span><div class="cuhead"><span class="muted">Stintů</span><span class="seg">${counts}</span>`
-      + `<span class="seg"><button type="button" data-cu="best">Podle doporučené</button>${n ? '<button type="button" data-cu="clear">Smazat</button>' : ''}</span></div>`;
+      + `<span class="seg"><button type="button" data-cu="best">Podle doporučené</button>${n ? '<button type="button" data-cu="clear">Smazat</button>' : ''}</span></div>`
+      + (n ? `<div class="cuhead"><span class="muted">V závodě jet podle</span><span class="seg"><button type="button" data-cu-f="0" class="${CU.follow ? '' : 'on'}">Doporučené</button><button type="button" data-cu-f="1" class="${CU.follow ? 'on' : ''}">Tohoto plánu</button></span></div>` : '');
     if (!n) {
       html += `<div class="muted" style="margin-top:8px">Zvol počet stintů nebo převezmi doporučenou a uprav si ji. Palivo do každé zastávky se dopočítá samo.</div>`;
       box.innerHTML = html;
@@ -5337,7 +5344,8 @@
       || '<div class="muted">Bez zastávky – jedeš na plnou nádrž.</div>';
     const d = o.delta, vs = Math.abs(d) < 0.3 ? 'stejně rychlé jako doporučená' : d > 0 ? `o ${nf(d, 1)} s pomalejší než doporučená` : `o ${nf(-d, 1)} s rychlejší než doporučená`;
     const risks = [...(r.rules || []).map(x => `<div class="risk">${esc(x)}</div>`), ...(o.risks || []).map(x => `<div class="risk">${esc(x.replace(/(\d)\.(\d)/g, '$1,$2'))}</div>`)].join('');
-    out.innerHTML = bar + `<div class="custops">${stops}</div><div class="muted">${vs}</div>${risks}`;
+    const fol = CU.follow ? '<div class="muted" style="margin-top:6px">V závodě: box, tankování a gumy podle tohoto plánu. Když ho nepůjde dodržet, aplikace přejde na doporučenou a řekne proč.</div>' : '';
+    out.innerHTML = bar + `<div class="custops">${stops}</div><div class="muted">${vs}</div>${risks}${fol}`;
   }
   function cuSend() {
     clearTimeout(CU.timer);
@@ -5345,19 +5353,21 @@
     cuOut();
     CU.timer = setTimeout(async () => {
       try {
-        const res = await fetch('api/strategy/custom', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stints: CU.stints }) });
+        const res = await fetch('api/strategy/custom', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stints: CU.stints, follow: CU.follow }) });
         CU.res = await res.json();
-        if (stRace) stRace.custom = CU.stints.map(x => ({ ...x }));
+        CU.follow = !!CU.res.follow;
+        if (stRace) { stRace.custom = CU.stints.map(x => ({ ...x })); stRace.follow_custom = CU.follow; }
       } catch { CU.res = { error: 'Nepodařilo se spočítat (server neodpovídá).' }; }
       cuOut();
     }, 300);
   }
   $('stBrief').addEventListener('click', e => {
-    const t = e.target.closest('[data-cu-n],[data-cu],[data-cu-d]');
+    const t = e.target.closest('[data-cu-n],[data-cu],[data-cu-d],[data-cu-f]');
     if (!t || !$('cuBox') || !$('cuBox').contains(t)) return;
     if (t.dataset.cuN) cuSpread(+t.dataset.cuN);
     else if (t.dataset.cu === 'best' && CU.best) CU.stints = CU.best.stints.map(x => ({ compound: x.compound, laps: x.laps }));
-    else if (t.dataset.cu === 'clear') CU.stints = [];
+    else if (t.dataset.cu === 'clear') { CU.stints = []; CU.follow = false; }
+    else if (t.dataset.cuF) CU.follow = t.dataset.cuF === '1';
     else if (t.dataset.cuD) { const i = +t.dataset.cuD; cuSetLaps(i, CU.stints[i].laps + +t.dataset.v); }
     cuDraw();
     cuSend();
@@ -5505,7 +5515,7 @@
     setText('stToLimit', st.wear_laps_left == null ? '–' : `${nf(st.wear_laps_left)} kola (limit ${st.wear_limit} %)`);
     setText('stWearEnd', st.wear_at_finish == null ? '–' : nf(st.wear_at_finish, 0) + ' %');
     // Plan
-    const ph = plansHtml(st.options, st.practice_use) || '<span class="muted">Plán se spočítá, až bude známá spotřeba a počet kol.</span>';
+    const ph = plansHtml(st.options, st.practice_use, st.following, st.custom_note) || '<span class="muted">Plán se spočítá, až bude známá spotřeba a počet kol.</span>';
     if ($('stPlan').innerHTML !== ph) $('stPlan').innerHTML = ph;
     setText('stFrom', st.practice_use ? practiceFrom(st.practice_use) : '');
     // Practice mode
@@ -5649,6 +5659,7 @@
       no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked, date: $('raceSheet').dataset.date || null,
       car: (stRace && stRace.track && $('rTrack').value.trim() === stRace.track && stRace.car) || null,
       custom: (stRace && stRace.track && $('rTrack').value.trim() === stRace.track && stRace.custom) || [],
+      follow_custom: !!(stRace && stRace.track && $('rTrack').value.trim() === stRace.track && stRace.follow_custom),
     };
   }
   function syncNoWearFuel() {

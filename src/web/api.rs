@@ -8,7 +8,7 @@
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
 //! | GET | `/api/strategy` | race, stints, stops and calibration |
 //! | GET | `/api/races[?id=]` | races driven in race mode (summaries, newest first); with `id` one race whole, as `/api/strategy` |
-//! | POST | `/api/strategy/custom` | the driver's own plan `{"stints": [{"compound", "laps"}]}`: stored with the race, returned costed (stops, fuel to add, against the recommendation) |
+//! | POST | `/api/strategy/custom` | the driver's own plan `{"stints": [{"compound", "laps"}], "follow": bool}`: stored with the race, returned costed (stops, fuel to add, against the recommendation) |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
 //! | POST | `/api/strategy/preview` | recommended + alternative strategy for race settings |
 //! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
@@ -112,13 +112,15 @@ async fn strategy_state(State(s): State<AppState>) -> impl IntoResponse {
 #[derive(Deserialize)]
 struct CustomBody {
     stints: Vec<strategy::CustomStint>,
+    /// Follow it in the race (unchanged when missing)
+    follow: Option<bool>,
 }
 
 async fn strategy_custom(State(s): State<AppState>, Json(b): Json<CustomBody>) -> impl IntoResponse {
     let st = s.strategy.clone();
     let body = tokio::task::spawn_blocking(move || {
         let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
-        serde_json::to_string(&st.set_custom(b.stints)).unwrap_or_default()
+        serde_json::to_string(&st.set_custom(b.stints, b.follow)).unwrap_or_default()
     })
     .await
     .unwrap_or_default();
