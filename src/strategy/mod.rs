@@ -67,6 +67,9 @@ pub struct Race {
     pub reserve_laps: Option<f32>,
     /// Fuel left on arriving at a planned stop, in laps (default [`DEFAULT_STOP_RESERVE`])
     pub stop_reserve_laps: Option<f32>,
+    /// The driver's own plan: compound and laps per stint (the third plan of the briefing)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub custom: Vec<CustomStint>,
     /// Car the race is planned with (its practice laps on the track); None = the car driven now,
     /// else the one with the most laps there
     pub car: Option<i32>,
@@ -136,6 +139,24 @@ pub struct FuelLap {
     /// Fuel at the start of the lap, litres
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fuel: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct CustomStint {
+    pub compound: String,
+    pub laps: u32,
+}
+
+/// The driver's own plan, costed: the plan with its stops and fuel, or why it does not work
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Custom {
+    pub plan: Option<planner::Option_>,
+    pub error: Option<String>,
+    /// Compounds the plan may use (those with data), laps of the race
+    pub compounds: Vec<String>,
+    pub laps: u32,
+    /// Rules of the race the plan breaks
+    pub rules: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -1115,6 +1136,71 @@ impl Strategy {
     }
 
     /// Strategy for a race before the start (race settings dialog).
+    /// The driver's own plan of `race` (its `custom` stints) against the recommendation, as the
+    /// briefing plans it (before the race: full tank, practice figures).
+    pub fn custom(&mut self, race: &Race) -> Custom {
+        let (filled, _) = self.race_with_practice(race);
+        let saved = Saved { race: Some(filled.clone()), calibration: self.saved.calibration.clone(), ..Default::default() };
+        let live = self.briefing_live();
+        let fpl = filled.fuel_per_lap.or(self.fuel_per_lap());
+        let mut p = plan(&saved, &live, fpl, None);
+        let (pit_loss, source) = pit_loss_of(&saved);
+        p.pit_loss = pit_loss;
+        p.pit_loss_source = source;
+        let Some(inp) = planner_input(&saved, &live, &p, pit_loss) else {
+            return Custom {
+                error: Some("Chybí počet kol nebo spotřeba – plán zatím spočítat nejde.".into()), ..Default::default()
+            };
+        };
+        let mut out = Custom { compounds: inp.compounds.iter().map(|c| c.name.clone()).collect(), laps: inp.laps, ..Default::default() };
+        if race.custom.is_empty() {
+            return out;
+        }
+        let stints: Vec<(String, u32)> = race.custom.iter().map(|s| (s.compound.to_uppercase(), s.laps)).collect();
+        match planner::evaluate_custom(&inp, &stints) {
+            Ok(mut o) => {
+                if let Some(best) = planner::plan(&inp).best {
+                    o.delta = o.cost - best.cost;
+                }
+                if race.pit_required && o.stops.is_empty() {
+                    out.rules.push("Povinná zastávka chybí.".into());
+                }
+                if let Some(m) = race.mandatory.as_deref().filter(|m| !stints.iter().any(|s| s.0.eq_ignore_ascii_case(m))) {
+                    out.rules.push(format!("Povinná směs {m} chybí."));
+                }
+                out.plan = Some(o);
+            }
+            Err(e) => out.error = Some(e),
+        }
+        out
+    }
+
+    /// Before the race, standing with a full tank (the car's tank if known)
+    fn briefing_live(&self) -> Live {
+        let cap = if self.live.capacity > 0.0 { self.live.capacity } else { 100.0 };
+        Live {
+            lap: 0,
+            total_laps: 0,
+            frac: 0.0,
+            fuel: cap,
+            capacity: cap,
+            car_code: self.live.car_code,
+            standing: true,
+            lap_start_fuel: None,
+        }
+    }
+
+    /// The driver's own plan: stored with the race, costed.
+    pub fn set_custom(&mut self, stints: Vec<CustomStint>) -> Custom {
+        let Some(mut race) = self.saved.race.clone() else {
+            return Custom { error: Some("Není vybraný závod.".into()), ..Default::default() };
+        };
+        race.custom = stints;
+        self.saved.race = Some(race.clone());
+        self.save();
+        self.custom(&race)
+    }
+
     pub fn preview(&mut self, race: &Race) -> (planner::Options, Plan) {
         let (race, practice_use) = self.race_with_practice(race);
         let saved = Saved { race: Some(race.clone()), calibration: self.saved.calibration.clone(), ..Default::default() };

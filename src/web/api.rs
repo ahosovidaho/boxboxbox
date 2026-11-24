@@ -8,6 +8,7 @@
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
 //! | GET | `/api/strategy` | race, stints, stops and calibration |
 //! | GET | `/api/races[?id=]` | races driven in race mode (summaries, newest first); with `id` one race whole, as `/api/strategy` |
+//! | POST | `/api/strategy/custom` | the driver's own plan `{"stints": [{"compound", "laps"}]}`: stored with the race, returned costed (stops, fuel to add, against the recommendation) |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
 //! | POST | `/api/strategy/preview` | recommended + alternative strategy for race settings |
 //! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
@@ -98,6 +99,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/strategy/race", axum::routing::post(strategy_race))
         .route("/api/strategy/preview", axum::routing::post(strategy_preview))
         .route("/api/strategy/action", axum::routing::post(strategy_action))
+        .route("/api/strategy/custom", axum::routing::post(strategy_custom))
         .route("/api/practice", get(practice_state))
         .route("/api/setups", get(setups_list).post(setups_save))
         .route("/api/setups/action", axum::routing::post(setups_action))
@@ -105,6 +107,22 @@ pub fn routes() -> Router<AppState> {
 
 async fn strategy_state(State(s): State<AppState>) -> impl IntoResponse {
     json_body(s.strategy.lock().unwrap_or_else(|e| e.into_inner()).json())
+}
+
+#[derive(Deserialize)]
+struct CustomBody {
+    stints: Vec<strategy::CustomStint>,
+}
+
+async fn strategy_custom(State(s): State<AppState>, Json(b): Json<CustomBody>) -> impl IntoResponse {
+    let st = s.strategy.clone();
+    let body = tokio::task::spawn_blocking(move || {
+        let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::to_string(&st.set_custom(b.stints)).unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default();
+    json_body(body)
 }
 
 #[derive(Deserialize)]
@@ -816,13 +834,14 @@ async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
         let Some(race) = race else { return json!({ "error": "no_race" }).to_string() };
         let (track, car) = track_and_car(&s, Some(race.track.clone()), None);
         let book = notebook_json(&s, Some(track.clone()), car);
-        let (options, plan, setup, prep) = {
+        let (options, plan, setup, prep, custom) = {
             let mut st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
             let (o, p) = st.preview(&race);
+            let custom = st.custom(&race);
             let setup = car.and_then(|c| st.setups.active(c)).map(|x| json!({ "name": x.name, "bop": x.bop }));
             let perf = s.perf.clone();
             let prep = st.prep(|car, setup| crate::perf::track::read(perf.dir(), car, setup).is_some());
-            (o, p, setup, prep)
+            (o, p, setup, prep, custom)
         };
         // Fuel: what saving costs (lift and coast), for the amount that saves a stop if there is one
         let target = plan.no_stop_fpl.or(plan.one_stop_fpl);
@@ -861,6 +880,7 @@ async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
             "car_name": car.and_then(crate::telemetry::cars::name),
             "setup": setup,
             "options": options,
+            "custom": custom,
             "plan": {
                 "fuel_per_lap": plan.fuel_per_lap, "fuel_source": plan.fuel_source, "stops_needed": plan.stops_needed,
                 "one_stop_fpl": plan.one_stop_fpl, "no_stop_fpl": plan.no_stop_fpl, "pit_loss": plan.pit_loss,
