@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Potvrzení směsi po zastávce.** Po výměně gum aplikace směs jen odhadne podle plánu; na
+  Jízdě (závod) se v kartě Pneumatiky ukáže žlutý řádek „Nasazeno? RS RM RH“ s předvybraným
+  odhadem a hláška „Nasazeno RS? Potvrď směs“. Jedno ťuknutí ji potvrdí nebo opraví (stejně
+  čipy ve Strategii). Stint má příznak `confirmed`.
+- **Opotřebení ze závodu jen z potvrzených směsí.** Kola stintu s nepotvrzenou směsí se počítají
+  jen do vlivu paliva, ne do opotřebení směsi. V brífinku u opotřebení „ze závodu“ tlačítko
+  „Zapomenout opotřebení ze závodů na téhle trati“ (s potvrzením; akce `forget_wear`).
+
 - **Audit na nahraném závodě Spa 23. 11.** Nový test `replay_recording` (ignorovaný, spouští se
   s `REPLAY_DIR`) pošle nahrané kolo po kole přes tracker a strategii a vypíše, co by aplikace
   v každém kole hlásila. Odhalil a opravil:
