@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Ztráta v boxu = medián posledních 5 zastávek** (dřív průměr nové a staré hodnoty, takže
+  jedna zastávka s provozem na vjezdu – Spa 29 s proti 21 s – hodnotu silně posunula). Měření
+  ze závodu i z tréninku se ukládají do `pit_samples`; dřívější jediná hodnota je první vzorek.
+  Brífink a Parametry ukazují, z kolika zastávek hodnota je.
+
 - **Potvrzení směsi po zastávce.** Po výměně gum aplikace směs jen odhadne podle plánu; na
   Jízdě (závod) se v kartě Pneumatiky ukáže žlutý řádek „Nasazeno? RS RM RH“ s předvybraným
   odhadem a hláška „Nasazeno RS? Potvrď směs“. Jedno ťuknutí ji potvrdí nebo opraví (stejně
