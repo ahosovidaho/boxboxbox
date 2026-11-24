@@ -1,6 +1,6 @@
 [package]
 name = "boxboxbox"
-version = "0.1.0"
+version = "0.8.0-fork1"
 edition = "2021"
 description = "Telemetry dashboard, race strategy and driving coach for Gran Turismo 7 (PS5) – fork of Apexline"
 license = "MIT OR Apache-2.0"

@@ -2,6 +2,9 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Verze serveru = verze v changelogu** (`Cargo.toml` 0.1.0 → 0.8.0-fork1), `/api/version`
+  ji hlásí.
+
 - **API pro iOS aplikaci.** `GET /api/version` (`{"server", "api": 1}`) – klient pozná
   nekompatibilní server. `docs/API.md`: WebSocket `/ws` (Snapshot), endpointy pro závod a
   popis objektů (Snapshot, Plan, Call, plány, vlastní plán, závod, historie, trénink) generovaný
