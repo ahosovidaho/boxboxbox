@@ -32,6 +32,8 @@ const DEFAULT_RESERVE: f32 = 0.3;
 /// Fuel left on arriving at a stop, in laps (a slower lap, a lap more before the box)
 /// Lift and coast saves this share of the fuel without much loss: short of the finish by less,
 /// no stop (the planner and the race calls alike)
+/// Pit losses kept per track for the median
+const PIT_SAMPLES: usize = 5;
 pub const FINISH_SAVE: f32 = 0.03;
 const DEFAULT_STOP_RESERVE: f32 = 0.3;
 /// Tyre wear (%) at which the tyres count as finished
@@ -221,6 +223,10 @@ pub struct Saved {
     pub fuel_laps: Vec<FuelLap>,
     /// Tyre wear per lap (%), key "car|track|compound|multiplier"; pit loss (s), key "pit|track"
     pub calibration: BTreeMap<String, f32>,
+    /// Measured pit losses per track (key "pit|track"), the last few; `calibration` holds their
+    /// median
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub pit_samples: BTreeMap<String, Vec<f32>>,
     /// Car the race laps were driven with (for the race history)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub car: Option<i32>,
@@ -310,6 +316,8 @@ pub struct Plan {
     pub pit_loss: f32,
     /// "manual", "measured", "catalogue" (pit lane delta of the GT7 track database) or "default"
     pub pit_loss_source: &'static str,
+    /// Stops the measured pit loss comes from
+    pub pit_loss_n: usize,
     /// Practice figures the plan uses (car, laps per compound), and the practice mode state
     pub practice_use: Option<PracticeUse>,
     pub practice: PracticeState,
@@ -694,9 +702,8 @@ impl Strategy {
         if !(5.0..=90.0).contains(&loss) {
             return;
         }
-        let key = format!("pit|{}", last.track);
-        let v = self.saved.calibration.get(&key).map_or(loss, |old| (old + loss) / 2.0);
-        self.saved.calibration.insert(key, v);
+        let track = last.track.clone();
+        self.add_pit_sample(&track, loss);
         self.save();
     }
 
@@ -722,9 +729,28 @@ impl Strategy {
         if !(5.0..=90.0).contains(&loss) {
             return;
         }
-        let key = format!("pit|{}", race.track);
-        let v = self.saved.calibration.get(&key).map_or(loss, |old| (old + loss) / 2.0);
-        self.saved.calibration.insert(key, v);
+        let track = race.track.clone();
+        self.add_pit_sample(&track, loss);
+    }
+
+    /// One more measured pit loss of a track: the last [`PIT_SAMPLES`] are kept, the plan takes
+    /// their median – one stop with traffic at the pit entry (Spa: 29 s against 21 s) does not
+    /// pull it away. The single value kept before becomes the first sample.
+    fn add_pit_sample(&mut self, track: &str, loss: f32) {
+        let key = format!("pit|{track}");
+        let list = self.saved.pit_samples.entry(key.clone()).or_default();
+        if list.is_empty() {
+            list.extend(self.saved.calibration.get(&key).copied());
+        }
+        list.push((loss * 10.0).round() / 10.0);
+        if list.len() > PIT_SAMPLES {
+            list.remove(0);
+        }
+        let mut sorted = list.clone();
+        sorted.sort_by(f32::total_cmp);
+        let n = sorted.len();
+        let median = if !n.is_multiple_of(2) { sorted[n / 2] } else { (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0 };
+        self.saved.calibration.insert(key, median);
     }
 
     /// Fuel went up during `lap` (in the pit).
@@ -1183,6 +1209,7 @@ impl Strategy {
         let (pit_loss, source) = self.pit_loss();
         p.pit_loss = pit_loss;
         p.pit_loss_source = source;
+        p.pit_loss_n = pit_samples_of(&self.saved);
         if let Some(inp) = planner_input(&self.saved, &self.live, &p, pit_loss) {
             // Recompute when something that matters changes, not for every packet
             let r = |v: f32, step: f32| (v / step).round() as i32;
@@ -1230,6 +1257,7 @@ impl Strategy {
         let (pit_loss, source) = pit_loss_of(&saved);
         p.pit_loss = pit_loss;
         p.pit_loss_source = source;
+        p.pit_loss_n = pit_samples_of(&self.saved);
         let Some(inp) = planner_input(&saved, &live, &p, pit_loss) else {
             return Custom {
                 error: Some("Chybí počet kol nebo spotřeba – plán zatím spočítat nejde.".into()), ..Default::default()
@@ -1314,6 +1342,7 @@ impl Strategy {
         let (pit_loss, source) = pit_loss_of(&saved);
         p.pit_loss = pit_loss;
         p.pit_loss_source = source;
+        p.pit_loss_n = pit_samples_of(&self.saved);
         let options = planner_input(&saved, &live, &p, pit_loss).map(|i| planner::plan(&i)).unwrap_or_default();
         // Before the race the practice figure is what the plan is based on
         if practice_use.as_ref().is_some_and(|u| u.fuel_per_lap.is_some()) {
@@ -1467,6 +1496,12 @@ fn effective_stints(saved: &Saved) -> Vec<Stint> {
         _ => {}
     }
     stints
+}
+
+/// How many stops the measured pit loss of the race track comes from (0: none kept yet, or an
+/// older single value)
+fn pit_samples_of(saved: &Saved) -> usize {
+    saved.race.as_ref().and_then(|r| saved.pit_samples.get(&format!("pit|{}", r.track))).map_or(0, Vec::len)
 }
 
 fn pit_loss_of(saved: &Saved) -> (f32, &'static str) {
@@ -2162,6 +2197,23 @@ mod tests {
         assert_eq!(p.stops_needed, 2);
         assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
         assert!(p.calls.iter().any(|c| c.text.starts_with("Box v kole")), "{:?}", p.calls);
+    }
+
+    #[test]
+    fn pit_loss_is_the_median_of_the_last_stops() {
+        let mut s = Strategy::load(None);
+        s.set_race(Race { name: "Spa".into(), track: "Spa-Francorchamps".into(), ..Default::default() });
+        // An older single value, then Spa 23 Nov: 21.2 and 29.2 (traffic at the pit entry)
+        s.saved.calibration.insert("pit|Spa-Francorchamps".into(), 18.8);
+        s.add_pit_sample("Spa-Francorchamps", 21.2);
+        s.add_pit_sample("Spa-Francorchamps", 29.2);
+        assert_eq!(s.saved.calibration["pit|Spa-Francorchamps"], 21.2);
+        for v in [20.0, 21.0, 22.0, 60.0] {
+            s.add_pit_sample("Spa-Francorchamps", v);
+        }
+        assert_eq!(s.saved.pit_samples["pit|Spa-Francorchamps"], [29.2, 20.0, 21.0, 22.0, 60.0]);
+        assert_eq!(s.saved.calibration["pit|Spa-Francorchamps"], 22.0);
+        assert_eq!(pit_samples_of(&s.saved), 5);
     }
 
     #[test]

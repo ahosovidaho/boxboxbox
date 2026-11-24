@@ -5242,7 +5242,7 @@
       <div>${esc(r.track)}${when ? ' · ' + esc(when) : ''}</div><div class="muted">${rules}</div>${carPick(b)}</div>
       <div class="bkkpis">
         <div><span class="lbl">Palivo / kolo</span><span class="big" style="font-size:22px">${p.fuel_per_lap != null ? nf(p.fuel_per_lap, 2) + ' l' : '–'}</span></div>
-        <div><span class="lbl">Ztráta zastávkou</span><span class="big" style="font-size:22px">${nf(p.pit_loss || 0, 1)} s</span></div>
+        <div><span class="lbl">Ztráta zastávkou</span><span class="big" style="font-size:22px">${nf(p.pit_loss || 0, 1)} s</span><span class="muted" style="font-size:12px">${{ measured: p.pit_loss_n > 1 ? `medián ${p.pit_loss_n} zastávek` : 'změřeno', manual: 'zadáno', catalogue: 'z databáze GT7', default: 'odhad' }[p.pit_loss_source] || ''}</span></div>
         <div><span class="lbl">Cílové tempo</span><span class="big" style="font-size:22px">${fmtLap(b.book && b.book.typical_ms)}</span></div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="seg"><button type="button" data-goto="10">Změnit závod</button></span><span class="seg"><button type="button" data-st-params="1">Parametry strategie</button></span></div></div>`;
@@ -5699,7 +5699,7 @@
   async function runPreview() {
     try {
       const r = await (await fetch('api/strategy/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(raceFromForm()) })).json();
-      const src = { measured: 'změřeno na této trati', manual: 'zadáno ručně', catalogue: 'průjezd boxy podle databáze tratí GT7 – změří se při první zastávce', default: 'odhad – trať zatím nezměřena' }[r.pit_loss_source] || '';
+      const src = { measured: r.pit_loss_n > 1 ? `změřeno na této trati – medián posledních ${r.pit_loss_n} zastávek` : 'změřeno na této trati', manual: 'zadáno ručně', catalogue: 'průjezd boxy podle databáze tratí GT7 – změří se při první zastávce', default: 'odhad – trať zatím nezměřena' }[r.pit_loss_source] || '';
       setText('rPitInfo', `Počítám se ztrátou zastávkou ${nf(r.pit_loss, 1)} s (${src}) + tankování.`
         + (r.practice_use ? '\n' + practiceFrom(r.practice_use) + ' Prázdná pole doplní trénink (šedá čísla).' : ''));
       const pu = {};

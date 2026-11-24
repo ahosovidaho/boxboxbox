@@ -156,7 +156,7 @@ async fn strategy_preview(State(s): State<AppState>, Json(race): Json<strategy::
         let mut st = st.lock().unwrap_or_else(|e| e.into_inner());
         let (options, plan) = st.preview(&race);
         json!({ "options": options, "fuel_per_lap": plan.fuel_per_lap, "fuel_source": plan.fuel_source,
-                "pit_loss": plan.pit_loss, "pit_loss_source": plan.pit_loss_source, "total_laps": plan.total_laps,
+                "pit_loss": plan.pit_loss, "pit_loss_source": plan.pit_loss_source, "pit_loss_n": plan.pit_loss_n, "total_laps": plan.total_laps,
                 "practice_use": plan.practice_use })
         .to_string()
     })
@@ -890,6 +890,7 @@ async fn briefing(State(s): State<AppState>) -> impl IntoResponse {
             "plan": {
                 "fuel_per_lap": plan.fuel_per_lap, "fuel_source": plan.fuel_source, "stops_needed": plan.stops_needed,
                 "one_stop_fpl": plan.one_stop_fpl, "no_stop_fpl": plan.no_stop_fpl, "pit_loss": plan.pit_loss,
+                "pit_loss_source": plan.pit_loss_source, "pit_loss_n": plan.pit_loss_n,
                 "total_laps": plan.total_laps, "practice_use": plan.practice_use, "save": save,
             },
             "fuel": fuel,
