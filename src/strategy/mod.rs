@@ -400,6 +400,8 @@ pub struct PracticeState {
     pub layout_warning: Option<String>,
     /// Length of the stored layout, m
     pub track_length_m: Option<f32>,
+    /// Laps not kept because no compound is chosen
+    pub missed_laps: u32,
     /// A full lap on a layout not stored yet: its length and the catalogue layouts it may be
     pub question: Option<TrackQuestionView>,
 }
@@ -1090,6 +1092,7 @@ impl Strategy {
             laps: p.laps.len(),
             layout_warning: self.practice.layout_warning.clone(),
             track_length_m: self.practice.track_length(&p.track),
+            missed_laps: self.practice.missed_laps,
             question: self.practice.question.as_ref().map(|q| TrackQuestionView {
                 length_m: (q.length_m / 10.0).round() * 10.0,
                 candidates: q.candidates.iter().filter_map(|id| courses::get(*id)).map(|c| (c.id, c.name.clone())).collect(),
