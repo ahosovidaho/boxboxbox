@@ -1,0 +1,49 @@
+# XcodeGen: `xcodegen` in this folder creates Boxboxbox.xcodeproj (see README.md).
+name: Boxboxbox
+options:
+  bundleIdPrefix: cz.tamayo
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  BoxCore:
+    path: BoxCore
+targets:
+  Boxboxbox:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: BoxCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: BOXBOXBOX
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIUserInterfaceStyle: Dark
+        NSLocalNetworkUsageDescription: BOXBOXBOX se připojuje k serveru BOXBOXBOX ve tvé síti (Mac mini).
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cz.tamayo.boxboxbox
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: YES
+        GENERATE_INFOPLIST_FILE: NO
