@@ -2,6 +2,7 @@
 //!
 //! | Method | Path | Purpose |
 //! |---|---|---|
+//! | GET | `/api/version` | `{"server", "api"}` – the API version a client (the iOS app) checks; see `docs/API.md` |
 //! | GET | `/api/coach` | coach feed (page 3) |
 //! | GET | `/api/map` | track map |
 //! | GET | `/api/perf?car=<code>` | measurements of a car (page 4) |
@@ -33,6 +34,10 @@
 //! | POST | `/api/setups/action` | `{"action": "activate"/"remove", "car", "id"}` |
 
 use super::Feeds;
+
+/// Version of the HTTP and WebSocket API (`docs/API.md`). Raised when a field a client relies on
+/// changes or goes; new fields do not raise it.
+pub const API_VERSION: u32 = 1;
 use crate::config::{Config, DataPaths, Language, Units};
 use crate::perf;
 use crate::strategy;
@@ -77,6 +82,7 @@ pub struct Settings {
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/version", get(|| async { json_body(json!({ "server": env!("CARGO_PKG_VERSION"), "api": API_VERSION }).to_string()) }))
         .route("/api/coach", get(coach))
         .route("/api/map", get(map))
         .route("/api/traces", get(traces))
