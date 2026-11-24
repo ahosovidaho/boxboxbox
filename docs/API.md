@@ -5,7 +5,7 @@ HTTP, živá data přes WebSocket. Bez přihlášení – je to v domácí síti
 
 ## Verze
 
-`GET /api/version` → `{"server": "0.1.0", "api": 1}`. Klient porovná `api` se svou verzí: když je
+`GET /api/version` → `{"server": "0.8.0-fork1", "api": 1}`. Klient porovná `api` se svou verzí: když je
 vyšší, než zná, upozorní („aktualizuj aplikaci“). `api` se zvyšuje jen při změně nebo odstranění
 pole, na které klient spoléhá; nová pole ho nemění. Číslo je `API_VERSION` v `src/web/api.rs`.
 
