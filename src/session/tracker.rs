@@ -1059,6 +1059,21 @@ mod replay_csv {
             let now = base + Duration::from_secs_f64((p.packet_id - id0).max(0) as f64 / 59.94);
             t.update_at(p, now);
             t.tick_at(now);
+            // Snapshots for client fixtures (iOS): each lap start and the first moment of a stop
+            if let Ok(dump) = std::env::var("REPLAY_DUMP") {
+                let stop = t.snap.strategy.as_ref().is_some_and(|s| s.stop_add.is_some());
+                let name = if p.current_lap != lap {
+                    Some(format!("lap{:02}.json", p.current_lap))
+                } else if stop {
+                    Some(format!("stop{:02}.json", p.current_lap))
+                } else {
+                    None
+                };
+                if let Some(n) = name.filter(|n| !Path::new(&dump).join(n).exists()) {
+                    let _ = std::fs::create_dir_all(&dump);
+                    std::fs::write(Path::new(&dump).join(n), serde_json::to_string_pretty(&t.snap).unwrap()).unwrap();
+                }
+            }
             if p.current_lap != lap {
                 lap = p.current_lap;
                 let plan = shared.lock().unwrap().plan();

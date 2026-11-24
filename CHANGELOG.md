@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **iOS aplikace – fáze 1** (`ios/`). SwiftUI klient serveru: obrazovka Závod (hláška
+  inženýra nahoře, „Nasazeno? RS RM RH“ po zastávce, jízda a otáčky, palivo, zastávka, gumy,
+  časy, plán), hlas (česky, AVSpeech) a haptika u „BOX“, nezhasínání displeje, Nastavení
+  (adresa serveru, ukázková data, hlas, verze serveru/API). `BoxCore` (Swift balíček): modely
+  JSON, připojení k `/ws` s obnovením, API, ukázkové snímky ze závodu Spa a testy. Projekt přes
+  XcodeGen (`ios/project.yml`), návod v `ios/README.md`. Test `replay_recording` umí snímky
+  uložit (`REPLAY_DUMP`).
+
 - **Verze serveru = verze v changelogu** (`Cargo.toml` 0.1.0 → 0.8.0-fork1), `/api/version`
   ji hlásí.
 
