@@ -1302,6 +1302,7 @@
       <div class="pnote" id="prTrackInfo"></div>
       <div class="prow"><label>Opotřebení × <input type="number" id="prWear" inputmode="decimal" step="0.5" min="0"></label>
         <label>Spotřeba × <input type="number" id="prFuel" inputmode="decimal" step="0.5" min="0"></label></div>
+      <div class="pnote bad" id="prNoCompound" hidden></div>
       <div class="chips tyres9" id="prChips"></div>
       <div class="chips">
         <button id="prNewSet">Nová sada</button>
@@ -5437,6 +5438,10 @@
     setText('prTrackInfo', info + (prData && prData.setup ? ` · setup: ${prData.setup}` : prData ? ' · bez setupu (stránka Nastavení auta)' : ''));
     $('prTrackInfo').classList.toggle('bad', !!ps.layout_warning);
     renderFromRace(ps);
+    // No compound chosen: laps are not kept – say it loudly
+    const noC = !ps.compound;
+    $('prNoCompound').hidden = !noC;
+    if (noC) setText('prNoCompound', ps.missed_laps ? `Vyber směs – ${ps.missed_laps} ${ps.missed_laps === 1 ? 'kolo se neuložilo' : ps.missed_laps < 5 ? 'kola se neuložila' : 'kol se neuložilo'}.` : 'Vyber směs, na které jedeš – bez ní se kola neukládají.');
     $('prChips').innerHTML = ['R', 'S', 'C'].flatMap(k => ['S', 'M', 'H'].map(c => k + c))
       .map(c => `<button data-c="${c}" class="${c === ps.compound ? 'on' : ''}">${chip(c)}</button>`).join('');
     $('prCount').classList.toggle('on', ps.counting);

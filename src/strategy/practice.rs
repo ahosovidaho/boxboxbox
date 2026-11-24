@@ -309,6 +309,8 @@ pub struct Practice {
     layout_ok: bool,
     /// Why the last lap did not fit the track name
     pub layout_warning: Option<String>,
+    /// Laps not kept because no compound was chosen (this run of the server)
+    pub missed_laps: u32,
     /// Fuel at the start of the lap that is being finished (set just before [`Practice::lap_done`])
     pub fuel_start: Option<f32>,
 }
@@ -333,6 +335,7 @@ impl Practice {
             question: None,
             layout_ok: true,
             layout_warning: None,
+            missed_laps: 0,
             fuel_start: None,
         };
         if changed {
@@ -418,7 +421,19 @@ impl Practice {
         let fuel_start = self.fuel_start.take();
         self.pit_last_lap = pit;
         self.pit_this_lap = false;
-        let (Some(ms), Some(compound)) = (ms.filter(|m| *m > 0), self.saved.compound.clone()) else { return };
+        let Some(ms) = ms.filter(|m| *m > 0) else { return };
+        // No compound chosen: the one of the last lap with this car on this track; none known
+        // – the lap cannot be kept, the dashboard says so (it used to go silently)
+        if self.saved.compound.is_none() {
+            let key = track_key(&self.saved.track);
+            self.saved.compound =
+                self.saved.laps.iter().rev().find(|l| l.car == car && track_key(&l.track) == key).map(|l| l.compound.clone());
+        }
+        let Some(compound) = self.saved.compound.clone() else {
+            self.missed_laps += 1;
+            return;
+        };
+        self.missed_laps = 0;
         if self.saved.track.is_empty() {
             return;
         }
@@ -975,6 +990,24 @@ mod tests {
         for age in 0..n {
             p.lap_done(3475, "", fuel, false, Some(((base + deg * age as f32) * 1000.0) as i32), true);
         }
+    }
+
+    #[test]
+    fn laps_without_a_compound_take_the_last_one_or_are_counted_as_missed() {
+        let mut p = practice();
+        p.saved.compound = None;
+        p.lap_done(3475, "", 6.9, false, Some(160_000), true);
+        assert_eq!((p.saved.laps.len(), p.missed_laps), (0, 1));
+        stint(&mut p, "SM", 2, 161.0, 0.0, 6.9);
+        // The compound forgotten (a restart of the server, say): the last one of this car here
+        p.saved.compound = None;
+        p.lap_done(3475, "", 6.9, false, Some(161_500), true);
+        assert_eq!(p.saved.laps.last().map(|l| l.compound.as_str()), Some("SM"));
+        assert_eq!(p.missed_laps, 0);
+        // Another car: nothing to go by
+        p.saved.compound = None;
+        p.lap_done(9999, "", 6.9, false, Some(161_500), true);
+        assert_eq!(p.missed_laps, 1);
     }
 
     #[test]

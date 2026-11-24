@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Trénink bez zvolené směsi.** Kola se bez směsi tiše zahazovala. Teď se vezme směs
+  posledního kola stejného auta na stejné trati; když žádné není, v Tréninku (Strategie) svítí
+  „Vyber směs – N kol se neuložilo“.
+
 - **Závod se uloží do historie hned po cíli** (dřív až při startu dalšího závodu nebo výběru
   jiného). V Rekapu je tak hned se správným časem a autem; další start ho už neukládá znovu
   (`Saved::archived`).
