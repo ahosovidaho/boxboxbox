@@ -7,6 +7,7 @@
 //! | GET | `/api/perf?car=<code>` | measurements of a car (page 4) |
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
 //! | GET | `/api/strategy` | race, stints, stops and calibration |
+//! | GET | `/api/races[?id=]` | races driven in race mode (summaries, newest first); with `id` one race whole, as `/api/strategy` |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
 //! | POST | `/api/strategy/preview` | recommended + alternative strategy for race settings |
 //! | POST | `/api/strategy/action` | `{"action": "compound"/"new_tyres"/"same_tyres"/"no_stop"/"wear"/"reset"/"clear", …}` |
@@ -93,6 +94,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/perf/gearing", get(perf_gearing))
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/strategy", get(strategy_state))
+        .route("/api/races", get(races))
         .route("/api/strategy/race", axum::routing::post(strategy_race))
         .route("/api/strategy/preview", axum::routing::post(strategy_preview))
         .route("/api/strategy/action", axum::routing::post(strategy_action))
@@ -103,6 +105,22 @@ pub fn routes() -> Router<AppState> {
 
 async fn strategy_state(State(s): State<AppState>) -> impl IntoResponse {
     json_body(s.strategy.lock().unwrap_or_else(|e| e.into_inner()).json())
+}
+
+#[derive(Deserialize)]
+struct RaceQuery {
+    id: Option<String>,
+}
+
+async fn races(State(s): State<AppState>, Query(q): Query<RaceQuery>) -> axum::response::Response {
+    let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    match q.id {
+        Some(id) => match st.race_saved(&id) {
+            Some(saved) => json_body(serde_json::to_string(&saved).unwrap_or_default()).into_response(),
+            None => (StatusCode::NOT_FOUND, "no such race").into_response(),
+        },
+        None => json_body(serde_json::to_string(&st.races()).unwrap_or_default()).into_response(),
+    }
 }
 
 async fn strategy_race(State(s): State<AppState>, Json(race): Json<strategy::Race>) -> impl IntoResponse {
