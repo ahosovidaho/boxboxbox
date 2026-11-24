@@ -255,9 +255,24 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
         } else {
             // The fuel on board is what it is: to the next stop the reserve is a wish (a cost when
             // it is not kept), only a twentieth of a lap is a must
-            let hard = if i == last { inp.reserve } else { inp.stop_reserve.min(MIN_STOP_RESERVE) };
+            // To the finish: a few per cent short can be saved on the way (lift and coast), the
+            // reserve costs time when it is not kept; to a stop a twentieth of a lap is a must
+            let hard = if i == last { -(n as f32) * super::FINISH_SAVE } else { inp.stop_reserve.min(MIN_STOP_RESERVE) };
             if fuel + 0.01 < (n as f32 + hard) * fpl {
                 return None;
+            }
+            if i == last && fpl > 0.01 {
+                let left = fuel / fpl - n as f32;
+                if left + 0.001 < inp.reserve {
+                    let short = inp.reserve - left;
+                    cost += short * SHORT_RESERVE_S;
+                    parts.stops += short * SHORT_RESERVE_S;
+                    risks.push(if left < 0.0 {
+                        format!("do cíle chybí {:.1} l – šetři {:.2} l/kolo", -left * fpl, -left * fpl / n as f32)
+                    } else {
+                        format!("do cíle rezerva jen {:.1} l", left * fpl)
+                    });
+                }
             }
             if i != last && fpl > 0.01 {
                 let left = fuel / fpl - n as f32;
@@ -272,7 +287,7 @@ fn evaluate(inp: &Input, lens: &[u32], tyres: &[&Compound]) -> Option<Eval> {
                     ));
                 }
             }
-            let margin = fuel_margin(fuel, n, if i == last { inp.reserve } else { hard }, fpl);
+            let margin = fuel_margin(fuel, n, if i == last { inp.reserve.min(0.0) } else { hard }, fpl);
             if fpl > 0.01 && margin < fpl * 0.04 {
                 risks.push(format!("{} kol bez tankování: rezerva jen {:.2} l/kolo", n, margin.max(0.0)));
             }
