@@ -643,6 +643,20 @@
   .stcar label { display: inline-flex; gap: 8px; align-items: center; }
   .stcar select { max-width: 260px; }
   .stbrief .basis { grid-column: 1 / -1; }
+  .cubox .cuhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 6px; }
+  .cubox .cutable { margin: 10px 0 6px; display: grid; gap: 6px; }
+  .cubox .curow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .cubox .cuno { width: 20px; color: var(--label); font-weight: 600; }
+  .cubox select { min-width: 64px; }
+  .cubox .custep { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cubox .custep button { width: 30px; height: 30px; background: transparent; color: var(--text); border: 0; font-size: 18px; cursor: pointer; }
+  .cubox .custep input { width: 44px; text-align: center; border: 0; background: transparent; color: var(--text); font: inherit; -moz-appearance: textfield; }
+  .cubox .custep input::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .cubox .cuinfo { font-size: 13px; }
+  .cubox .cuinfo .bad { color: #ff4a3d; }
+  .cubox .custops { display: grid; gap: 4px; margin: 6px 0; }
+  .cubox .custop { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; }
+  .cubox .custop b { font-size: 14px; }
   .stbrief .basis .cols { columns: 340px; column-gap: 24px; }
   .stbrief .basis .datarow { break-inside: avoid; }
   /* Strategy briefing: the whole width, plans side by side */
@@ -5213,8 +5227,8 @@
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="seg"><button type="button" data-goto="10">Změnit závod</button></span><span class="seg"><button type="button" data-st-params="1">Parametry strategie</button></span></div></div>`;
     if (o.best) {
-      html += planHtml(o.best, 'Doporučeno', 'best') + planHtml(o.alternative, 'Alternativa 1', '', whyHtml(o.alternative, o.best, pu))
-        + planHtml(o.second, 'Alternativa 2', '', whyHtml(o.second, o.best, pu));
+      html += planHtml(o.best, 'Doporučeno', 'best') + planHtml(o.alternative, 'Alternativa', '', whyHtml(o.alternative, o.best, pu))
+        + `<div class="planbox cubox" id="cuBox"></div>`;
     } else {
       html += `<div class="card hero"><h2>Plán</h2><div class="muted">Chybí údaje pro plán: počet kol a spotřeba (z tréninku nebo zadaná v Parametrech).</div></div>`;
     }
@@ -5243,7 +5257,116 @@
         + `<div class="muted" style="margin-top:4px">Zvednout nohu: ${lifts} · ≈ +${nf(pl.cost_s, 2)} s/kolo, za závod ${nf(total, 1)} s proti ${nf(p.pit_loss || 0, 1)} s za zastávku → ${total < (p.pit_loss || 0) ? '<b>vyplatí se</b>' : 'radši zastav'}.</div></div>`;
     }
     el.innerHTML = html;
+    if (o.best) cuInit(b);
   }
+
+  // ---------- Own plan: stints and tyres chosen by hand, fuel per stop worked out ----------
+  // The form keeps its state here; every change is sent (300 ms after the last one) and the
+  // server stores it with the race and answers with the stops, fuel and cost.
+  const CU = { stints: [], laps: 0, compounds: [], lives: {}, best: null, res: null, timer: null };
+  function cuInit(b) {
+    const c = b.custom || {}, r = b.race || {};
+    CU.laps = c.laps || r.laps || 0;
+    CU.compounds = c.compounds && c.compounds.length ? c.compounds : ['RS', 'RM', 'RH'];
+    CU.lives = {};
+    for (const n of CU.compounds) {
+      const pc = (b.plan && b.plan.practice_use && b.plan.practice_use.compounds || []).find(x => x.compound === n);
+      CU.lives[n] = (r.tyres && r.tyres[n] && r.tyres[n].life) || (pc && pc.life) || null;
+    }
+    CU.best = b.options && b.options.best;
+    CU.stints = (r.custom || []).map(x => ({ compound: x.compound, laps: x.laps }));
+    CU.res = c;
+    cuDraw();
+  }
+  // n stints over the race: laps shared evenly (the first ones get the odd laps)
+  function cuSpread(n) {
+    const old = CU.stints;
+    CU.stints = Array.from({ length: n }, (_, i) => ({
+      compound: (old[i] || old[old.length - 1] || {}).compound || (CU.best && CU.best.stints[Math.min(i, CU.best.stints.length - 1)].compound) || CU.compounds[0],
+      laps: Math.floor(CU.laps / n) + (i < CU.laps % n ? 1 : 0),
+    }));
+  }
+  // One stint's laps changed: the last other stint takes the difference (never under 1 lap)
+  function cuSetLaps(i, v) {
+    const st = CU.stints, n = st.length;
+    v = Math.max(1, Math.min(CU.laps - (n - 1), Math.round(v) || 1));
+    st[i].laps = v;
+    let diff = CU.laps - st.reduce((a, x) => a + x.laps, 0);
+    for (let k = n - 1; k >= 0 && diff !== 0; k--) {
+      if (k === i) continue;
+      const nv = Math.max(1, st[k].laps + diff);
+      diff -= nv - st[k].laps;
+      st[k].laps = nv;
+    }
+  }
+  function cuDraw() {
+    const box = $('cuBox');
+    if (!box) return;
+    const n = CU.stints.length;
+    const counts = [1, 2, 3, 4, 5, 6].map(k => `<button type="button" data-cu-n="${k}" class="${k === n ? 'on' : ''}">${k}</button>`).join('');
+    let html = `<span class="tag">Vlastní</span><div class="cuhead"><span class="muted">Stintů</span><span class="seg">${counts}</span>`
+      + `<span class="seg"><button type="button" data-cu="best">Podle doporučené</button>${n ? '<button type="button" data-cu="clear">Smazat</button>' : ''}</span></div>`;
+    if (!n) {
+      html += `<div class="muted" style="margin-top:8px">Zvol počet stintů nebo převezmi doporučenou a uprav si ji. Palivo do každé zastávky se dopočítá samo.</div>`;
+      box.innerHTML = html;
+      return;
+    }
+    const opts = c => CU.compounds.map(x => `<option value="${x}" ${x === c ? 'selected' : ''}>${x}</option>`).join('');
+    let from = 1;
+    html += `<div class="cutable">` + CU.stints.map((x, i) => {
+      const to = from + x.laps - 1, life = CU.lives[x.compound];
+      const row = `<div class="curow"><span class="cuno">${i + 1}.</span>`
+        + `<select data-cu-c="${i}">${opts(x.compound)}</select>`
+        + `<span class="custep"><button type="button" data-cu-d="${i}" data-v="-1">−</button><input type="number" inputmode="numeric" min="1" data-cu-l="${i}" value="${x.laps}"><button type="button" data-cu-d="${i}" data-v="1">+</button></span>`
+        + `<span class="muted cuinfo">kola ${from}–${to}${life ? ` · vydrží ${life}${x.laps > life ? ' <b class="bad">přes</b>' : ''}` : ''}</span></div>`;
+      from = to + 1;
+      return row;
+    }).join('') + `</div><div id="cuOut"></div>`;
+    box.innerHTML = html;
+    cuOut();
+  }
+  function cuOut() {
+    const out = $('cuOut');
+    if (!out) return;
+    const r = CU.res || {};
+    if (r.error) { out.innerHTML = `<div class="risk">${esc(r.error)}</div>`; return; }
+    const o = r.plan;
+    if (!o) { out.innerHTML = '<div class="muted">Počítám…</div>'; return; }
+    const bar = `<div class="pbar">${o.stints.map((x, k) => `${k ? '<i></i>' : ''}<span style="flex:${Math.max(1, x.laps)}">${o.stints.length > 4 ? x.laps : esc(x.compound) + ' · ' + x.laps}</span>`).join('')}</div>`;
+    const stops = o.stops.map(st => `<div class="custop"><b>Box po ${st.lap}. kole</b><span>nasadit ${esc(st.compound)}</span><span>${st.fuel > 0.05 ? `dotankovat <b>+${nf(st.fuel, 0)} l</b>` : 'bez tankování'}</span></div>`).join('')
+      || '<div class="muted">Bez zastávky – jedeš na plnou nádrž.</div>';
+    const d = o.delta, vs = Math.abs(d) < 0.3 ? 'stejně rychlé jako doporučená' : d > 0 ? `o ${nf(d, 1)} s pomalejší než doporučená` : `o ${nf(-d, 1)} s rychlejší než doporučená`;
+    const risks = [...(r.rules || []).map(x => `<div class="risk">${esc(x)}</div>`), ...(o.risks || []).map(x => `<div class="risk">${esc(x.replace(/(\d)\.(\d)/g, '$1,$2'))}</div>`)].join('');
+    out.innerHTML = bar + `<div class="custops">${stops}</div><div class="muted">${vs}</div>${risks}`;
+  }
+  function cuSend() {
+    clearTimeout(CU.timer);
+    CU.res = { ...(CU.res || {}), plan: null, error: null, rules: [] };
+    cuOut();
+    CU.timer = setTimeout(async () => {
+      try {
+        const res = await fetch('api/strategy/custom', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stints: CU.stints }) });
+        CU.res = await res.json();
+        if (stRace) stRace.custom = CU.stints.map(x => ({ ...x }));
+      } catch { CU.res = { error: 'Nepodařilo se spočítat (server neodpovídá).' }; }
+      cuOut();
+    }, 300);
+  }
+  $('stBrief').addEventListener('click', e => {
+    const t = e.target.closest('[data-cu-n],[data-cu],[data-cu-d]');
+    if (!t || !$('cuBox') || !$('cuBox').contains(t)) return;
+    if (t.dataset.cuN) cuSpread(+t.dataset.cuN);
+    else if (t.dataset.cu === 'best' && CU.best) CU.stints = CU.best.stints.map(x => ({ compound: x.compound, laps: x.laps }));
+    else if (t.dataset.cu === 'clear') CU.stints = [];
+    else if (t.dataset.cuD) { const i = +t.dataset.cuD; cuSetLaps(i, CU.stints[i].laps + +t.dataset.v); }
+    cuDraw();
+    cuSend();
+  });
+  $('stBrief').addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.cuC != null) { CU.stints[+t.dataset.cuC].compound = t.value; cuDraw(); cuSend(); }
+    else if (t.dataset.cuL != null) { cuSetLaps(+t.dataset.cuL, +t.value); cuDraw(); cuSend(); }
+  });
   $('stBrief').addEventListener('change', async e => {
     if (e.target.id !== 'stCar') return;
     let cur = null;
@@ -5525,6 +5648,7 @@
       fuel_per_lap: numIn($('rFpl').value), reserve_laps: numIn($('rReserve').value), stop_reserve_laps: numIn($('rStopReserve').value), wear_limit: numIn($('rLimit').value),
       no_wear: $('rNoWear').checked, no_fuel: $('rNoFuel').checked, date: $('raceSheet').dataset.date || null,
       car: (stRace && stRace.track && $('rTrack').value.trim() === stRace.track && stRace.car) || null,
+      custom: (stRace && stRace.track && $('rTrack').value.trim() === stRace.track && stRace.custom) || [],
     };
   }
   function syncNoWearFuel() {

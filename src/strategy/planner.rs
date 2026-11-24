@@ -360,11 +360,8 @@ fn search(
     }
 }
 
-pub fn plan(inp: &Input) -> Options {
-    if inp.laps == 0 || inp.fuel_per_lap <= 0.0 || inp.compounds.is_empty() {
-        return Options::default();
-    }
-    // Shorter life = faster wear
+/// Shorter life = faster wear: the wear factor of each compound against the average life.
+fn with_wear_factors(inp: &Input) -> Input {
     let lives: Vec<f32> = inp.compounds.iter().filter_map(|c| c.life).map(|l| l as f32).collect();
     let avg = if lives.is_empty() { 0.0 } else { lives.iter().sum::<f32>() / lives.len() as f32 };
     let compounds: Vec<Compound> = inp
@@ -372,7 +369,67 @@ pub fn plan(inp: &Input) -> Options {
         .iter()
         .map(|c| Compound { wear_factor: c.life.filter(|l| *l > 0 && avg > 0.0).map_or(1.0, |l| avg / l as f32), ..c.clone() })
         .collect();
-    let inp = &Input { compounds, ..inp.clone() };
+    Input { compounds, ..inp.clone() }
+}
+
+/// A plan the driver put together (compound and laps per stint): costed like the planner's own,
+/// with the fuel to add at each stop. Err: why it cannot be driven, in Czech.
+pub fn evaluate_custom(inp: &Input, stints: &[(String, u32)]) -> Result<Option_, String> {
+    if stints.is_empty() {
+        return Err("Zadej aspoň jeden stint.".into());
+    }
+    let sum: u32 = stints.iter().map(|s| s.1).sum();
+    if sum != inp.laps {
+        return Err(if sum < inp.laps {
+            format!("Stinty mají {sum} kol – chybí {} do {}.", inp.laps - sum, inp.laps)
+        } else {
+            format!("Stinty mají {sum} kol – o {} víc než {}.", sum - inp.laps, inp.laps)
+        });
+    }
+    if let Some(i) = stints.iter().position(|s| s.1 == 0) {
+        return Err(format!("Stint {} nemá žádné kolo.", i + 1));
+    }
+    let inp = with_wear_factors(inp);
+    let mut tyres = Vec::new();
+    for (name, _) in stints {
+        match inp.compounds.iter().find(|c| &c.name == name) {
+            Some(c) => tyres.push(c),
+            None => return Err(format!("Pro {name} nejsou data (tempo ani výdrž) – zadej je v Parametrech strategie.")),
+        }
+    }
+    let lens: Vec<u32> = stints.iter().map(|s| s.1).collect();
+    let Some(e) = evaluate(&inp, &lens, &tyres) else {
+        // The only way to fail: a stint the tank cannot cover
+        let fpl = inp.fuel_per_lap.max(0.001);
+        let max = ((inp.capacity / fpl) - inp.stop_reserve).floor().max(0.0) as u32;
+        let first = ((inp.fuel / fpl) - MIN_STOP_RESERVE).floor().max(0.0) as u32;
+        let long = stints.iter().enumerate().find(|(i, s)| s.1 > if *i == 0 && !inp.stop_now { first } else { max });
+        return Err(match long {
+            Some((i, s)) => format!(
+                "Stint {} ({} kol) se do nádrže nevejde – nejvýš {} kol.",
+                i + 1,
+                s.1,
+                if i == 0 && !inp.stop_now { first } else { max }
+            ),
+            None => "Na tenhle plán palivo nevyjde.".into(),
+        });
+    };
+    Ok(Option_ {
+        stints: stints.iter().map(|(c, laps)| Stint { compound: c.clone(), laps: *laps }).collect(),
+        stops: e.stops,
+        cost: e.cost,
+        delta: 0.0,
+        over_limit: e.over > 0.0,
+        parts: e.parts,
+        risks: e.risks,
+    })
+}
+
+pub fn plan(inp: &Input) -> Options {
+    if inp.laps == 0 || inp.fuel_per_lap <= 0.0 || inp.compounds.is_empty() {
+        return Options::default();
+    }
+    let inp = &with_wear_factors(inp);
     let current = inp.current.as_ref().and_then(|c| inp.compounds.iter().find(|x| &x.name == c)).cloned();
     let current_compound = current.clone().or_else(|| inp.current.as_ref().map(|c| Compound::new(c, None, 0.0)));
     // (stops, cost, over, option)
@@ -534,6 +591,27 @@ mod tests {
                 assert!(fuel >= want * fpl - 0.05, "stint {i}, reserve {reserve}: {fuel} l left · {best:?}");
             }
         }
+    }
+
+    #[test]
+    fn own_plan_gets_its_fuel_and_cost() {
+        // Spa: 21 laps, 11.26 l per lap, RM 8 → RM 8 → RS 5
+        let mut inp = race(21, 11.26);
+        inp.compounds = vec![Compound::new("RS", Some(6), 0.0), Compound::new("RM", Some(11), 1.0)];
+        inp.current = Some("RM".into());
+        inp.need_compound = None;
+        inp.stop_reserve = 0.3;
+        let st = |v: &[(&str, u32)]| v.iter().map(|(c, l)| (c.to_string(), *l)).collect::<Vec<_>>();
+        let o = evaluate_custom(&inp, &st(&[("RM", 8), ("RM", 8), ("RS", 5)])).unwrap();
+        let fuel: Vec<(i16, &str, i32)> = o.stops.iter().map(|s| (s.lap, s.compound.as_str(), s.fuel.round() as i32)).collect();
+        assert_eq!(fuel, [(8, "RM", 84), (16, "RS", 56)]);
+        assert!(!o.over_limit);
+        // Wrong sums, a stint the tank cannot cover, a compound without data
+        assert!(evaluate_custom(&inp, &st(&[("RM", 8), ("RS", 5)])).unwrap_err().contains("chybí 8"));
+        assert!(evaluate_custom(&inp, &st(&[("RM", 2), ("RM", 14), ("RS", 5)]))
+            .unwrap_err()
+            .contains("Stint 2 (14 kol) se do nádrže nevejde"));
+        assert!(evaluate_custom(&inp, &st(&[("RM", 16), ("RH", 5)])).unwrap_err().contains("RH"));
     }
 
     #[test]

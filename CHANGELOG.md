@@ -2,6 +2,14 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Strategie: vlastní plán.** V brífinku zůstává Doporučeno a Alternativa, třetí karta je
+  „Vlastní“: počet stintů (1–6), u každého směs a počet kol (−/+ nebo číslem; poslední stint
+  dorovná součet na délku závodu), u směsi kola a výdrž. Ke každé zastávce se dopočítá, co
+  nasadit a kolik dotankovat (stejně jako u doporučené: na kola do další zastávky + rezerva),
+  rozdíl proti doporučené v sekundách a rizika (výdrž, palivo, povinná zastávka/směs). Stint,
+  který se do nádrže nevejde, ukáže, kolik kol nejvýš. Plán se ukládá k závodu (`Race::custom`).
+  API `POST /api/strategy/custom`; `planner::evaluate_custom`.
+
 - **Rekap: odjeté závody.** Karta „Odjeté závody“ a výběr v hlavičce Rekapitulace: všechny
   závody z `strategy-history/` (+ aktuální), nejnovější nahoře – datum, auto, kola, celkový
   čas, nejlepší kolo, gumy, zastávky. Klepnutím se celá rekapitulace (časy kol, stinty,
