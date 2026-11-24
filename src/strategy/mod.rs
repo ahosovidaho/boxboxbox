@@ -70,6 +70,10 @@ pub struct Race {
     /// The driver's own plan: compound and laps per stint (the third plan of the briefing)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub custom: Vec<CustomStint>,
+    /// In the race the calls (box lap, fuel to add, tyres) follow the own plan, not the
+    /// recommendation
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub follow_custom: bool,
     /// Car the race is planned with (its practice laps on the track); None = the car driven now,
     /// else the one with the most laps there
     pub car: Option<i32>,
@@ -157,6 +161,48 @@ pub struct Custom {
     pub laps: u32,
     /// Rules of the race the plan breaks
     pub rules: Vec<String>,
+    /// The race calls follow this plan
+    pub follow: bool,
+}
+
+/// The rest of the driver's own plan from where the race is now: the stint being driven (or the
+/// one after the stop under way) takes the laps left over by the later stints, which keep their
+/// length – stopping a lap early or late moves only that boundary. It replaces the
+/// recommendation (which becomes the alternative); when it cannot be kept any more, the
+/// recommendation stays and `custom_note` says why.
+fn follow_custom(saved: &Saved, inp: &planner::Input, options: planner::Options, p: &mut Plan) -> planner::Options {
+    let Some(race) = saved.race.as_ref().filter(|r| r.follow_custom && !r.custom.is_empty()) else { return options };
+    let note = |p: &mut Plan, why: String| p.custom_note = Some(format!("Vlastní plán: {why} Řídím se doporučenou."));
+    let idx = saved.stops.len();
+    let Some(rest) = race.custom.get(idx..).filter(|r| !r.is_empty()) else {
+        note(p, format!("počítal s {} zastávkami a ty už jsou za tebou.", race.custom.len() - 1));
+        return options;
+    };
+    let later: u32 = rest[1..].iter().map(|s| s.laps).sum();
+    if inp.laps <= later {
+        note(p, format!("na další stinty ({later} kol) už nezbývá dost kol ({}).", inp.laps));
+        return options;
+    }
+    // On the car now: what is on it (before the stop under way the plan's compound is put on)
+    let first =
+        if inp.stop_now { rest[0].compound.to_uppercase() } else { inp.current.clone().unwrap_or_else(|| rest[0].compound.to_uppercase()) };
+    let mut stints = vec![(first, inp.laps - later)];
+    stints.extend(rest[1..].iter().map(|s| (s.compound.to_uppercase(), s.laps)));
+    match planner::evaluate_custom(inp, &stints) {
+        Ok(mut own) => {
+            p.following = "custom";
+            let mut rec = options.best;
+            if let Some(r) = rec.as_mut() {
+                r.delta = r.cost - own.cost;
+            }
+            own.delta = 0.0;
+            planner::Options { best: Some(own), alternative: rec, second: None }
+        }
+        Err(e) => {
+            note(p, e);
+            options
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -247,8 +293,13 @@ pub struct Plan {
     /// In the pit box right now: fuel to add, and the laps it is meant for
     pub stop_add: Option<f32>,
     pub stop_add_laps: Option<u32>,
-    /// Recommended and alternative strategy for the rest of the race
+    /// Recommended and alternative strategy for the rest of the race. Following the own plan:
+    /// `best` is the own plan (the rest of it), `alternative` the recommendation.
     pub options: planner::Options,
+    /// "custom" when the calls follow the driver's own plan
+    pub following: &'static str,
+    /// Why the own plan is not followed now (it cannot be kept any more)
+    pub custom_note: Option<String>,
     pub pit_loss: f32,
     /// "manual", "measured", "catalogue" (pit lane delta of the GT7 track database) or "default"
     pub pit_loss_source: &'static str,
@@ -1130,6 +1181,7 @@ impl Strategy {
                     o
                 }
             };
+            let options = follow_custom(&self.saved, &inp, options, &mut p);
             apply_options(&mut p, &inp, options, &self.live);
         }
         p
@@ -1152,7 +1204,12 @@ impl Strategy {
                 error: Some("Chybí počet kol nebo spotřeba – plán zatím spočítat nejde.".into()), ..Default::default()
             };
         };
-        let mut out = Custom { compounds: inp.compounds.iter().map(|c| c.name.clone()).collect(), laps: inp.laps, ..Default::default() };
+        let mut out = Custom {
+            compounds: inp.compounds.iter().map(|c| c.name.clone()).collect(),
+            laps: inp.laps,
+            follow: race.follow_custom,
+            ..Default::default()
+        };
         if race.custom.is_empty() {
             return out;
         }
@@ -1191,11 +1248,17 @@ impl Strategy {
     }
 
     /// The driver's own plan: stored with the race, costed.
-    pub fn set_custom(&mut self, stints: Vec<CustomStint>) -> Custom {
+    pub fn set_custom(&mut self, stints: Vec<CustomStint>, follow: Option<bool>) -> Custom {
         let Some(mut race) = self.saved.race.clone() else {
             return Custom { error: Some("Není vybraný závod.".into()), ..Default::default() };
         };
         race.custom = stints;
+        if let Some(f) = follow {
+            race.follow_custom = f;
+        }
+        if race.custom.is_empty() {
+            race.follow_custom = false;
+        }
         self.saved.race = Some(race.clone());
         self.save();
         self.custom(&race)
@@ -2050,6 +2113,39 @@ mod tests {
         assert_eq!(p.stops_needed, 2);
         assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
         assert!(p.calls.iter().any(|c| c.text.starts_with("Box v kole")), "{:?}", p.calls);
+    }
+
+    #[test]
+    fn race_calls_follow_the_own_plan() {
+        let mut s = Strategy::load(None);
+        let mut race = barcelona(21).race.unwrap();
+        race.start_compound = Some("RM".into());
+        race.fuel_per_lap = Some(11.0);
+        race.custom = [("RM", 8), ("RM", 8), ("RS", 5)].iter().map(|(c, l)| CustomStint { compound: (*c).into(), laps: *l }).collect();
+        race.follow_custom = true;
+        s.set_race(race);
+        // Lap 3 of the first stint
+        s.update_live(Live { car_code: 3531, lap: 3, total_laps: 21, capacity: 100.0, fuel: 78.0, ..Default::default() });
+        let p = s.plan();
+        assert_eq!(p.following, "custom", "{:?}", p.custom_note);
+        assert_eq!(p.target_lap, Some(8));
+        let st: Vec<(i16, String)> = p.options.best.as_ref().unwrap().stops.iter().map(|x| (x.lap, x.compound.clone())).collect();
+        assert_eq!(st, [(8, "RM".to_string()), (16, "RS".to_string())]);
+        assert!(p.options.alternative.is_some());
+        // Stopped a lap late (after 9): the second stint gets 7 laps, the last one keeps its 5
+        s.stopped(9);
+        s.update_live(Live { car_code: 3531, lap: 10, total_laps: 21, capacity: 100.0, fuel: 0.8, standing: true, ..Default::default() });
+        let p = s.plan();
+        assert_eq!(p.following, "custom");
+        assert_eq!(p.stop_add_laps, Some(7));
+        assert!((p.stop_add.unwrap() - ((7.0 + 0.3) * 11.0 - 0.8)).abs() < 0.5, "{:?}", p.stop_add);
+        // Two more stops than planned: back to the recommendation, with the reason
+        s.stopped(12);
+        s.stopped(14);
+        s.update_live(Live { car_code: 3531, lap: 15, total_laps: 21, capacity: 100.0, fuel: 60.0, ..Default::default() });
+        let p = s.plan();
+        assert_eq!(p.following, "");
+        assert!(p.custom_note.is_some());
     }
 
     #[test]
