@@ -778,6 +778,8 @@
   #topnav { position: absolute; left: 0; right: 0; top: 0; height: 50px; z-index: 5; display: flex; align-items: center; gap: 14px;
     border-bottom: 1px solid #1C1C22; background: #000; font: 13px -apple-system, system-ui, sans-serif; color: #A6A6B0; }
   #topnav[hidden] { display: none; }
+  /* Inside the iOS app (?app=1) the app swipes its own pages, so the nav stays on the driving pages too */
+  body.inapp #p1, body.inapp #p6 { top: 56px; }
   #topnav .brand { font: italic 800 18px "Saira Condensed", sans-serif; letter-spacing: .02em; color: #E6E6EA; white-space: nowrap; }
   #topnav .brand i { color: #E10600; font-style: inherit; }
   /* Mode switch: both modes, the active one lit – practice blue, race red */
@@ -1796,6 +1798,9 @@
   // Pages in groups: driving | analysis | preparation | system (the nav bar shows the names)
   // Practice: drive, the track and the coach, analysis, preparation, data. Race: the strategy
   // briefing first, then driving and the recap.
+  // Opened inside the iOS app: sideways swipes belong to the app, so the top nav is always shown
+  const inApp = new URLSearchParams(location.search).has('app');
+  document.body.classList.toggle('inapp', inApp);
   const ORDER = { practice: [1, 10, 3, 9, 4, 5, 8, 11], race: [5, 6, 7, 11] };
   // Pages opened from another one (no tab of their own): page → the tab that stays lit
   const SUB = { practice: { 12: 3, 2: 11 }, race: { 10: 5, 12: 5, 2: 11 } };
@@ -1813,7 +1818,7 @@
     $$('.dots').forEach(el => { if (el.innerHTML !== html) el.innerHTML = html; });
     // Top navigation on every page but the driving dashboards
     const nav = $('topnav');
-    nav.hidden = page === 1 || page === 6;
+    nav.hidden = !inApp && (page === 1 || page === 6);
     const chip = nav.querySelector('.modechip');
     chip.className = 'modechip ' + appMode;
     if (chip.innerHTML !== modeChip()) chip.innerHTML = modeChip();
