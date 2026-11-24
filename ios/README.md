@@ -27,7 +27,7 @@ open Boxboxbox.xcodeproj
 
 1. V Xcode vlevo klikni na projekt **Boxboxbox** → target **Boxboxbox** → **Signing & Capabilities**
    → **Team**: tvoje Apple ID (Personal Team). Když Xcode hlásí obsazený Bundle Identifier, změň
-   `cz.tamayo.boxboxbox` na jiný (např. `cz.tamayo.boxboxbox2`).
+   `cz.tamayo.boxboxbox.viktor` na jiný (např. `cz.tamayo.boxboxbox.viktor2`).
 2. Připoj iPhone kabelem, nahoře vyber jako cíl svůj iPhone.
 3. Na iPhonu zapni **Nastavení → Soukromí a zabezpečení → Režim pro vývojáře** (iPhone se restartuje).
 4. V Xcode **▶ Run** (⌘R).

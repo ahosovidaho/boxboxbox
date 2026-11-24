@@ -39,7 +39,7 @@ targets:
           NSAllowsArbitraryLoads: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cz.tamayo.boxboxbox
+        PRODUCT_BUNDLE_IDENTIFIER: cz.tamayo.boxboxbox.viktor
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_STYLE: Automatic
