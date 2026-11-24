@@ -2,6 +2,11 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Rekap: oprava a mazání uložených závodů.** U uloženého závodu jde v „Stinty a zastávky“
+  opravit směs každého stintu (Spa 23. 11.: RM → RS → RS, pak „Povinná směs RS ✓“), tlačítko
+  „Smazat záznam“ přesune soubor do `trash/strategy-history/` v datové složce (s potvrzením,
+  nic se nemaže natrvalo). API `POST /api/races` (`compounds`, `remove`).
+
 - **Trénink bez zvolené směsi.** Kola se bez směsi tiše zahazovala. Teď se vezme směs
   posledního kola stejného auta na stejné trati; když žádné není, v Tréninku (Strategie) svítí
   „Vyber směs – N kol se neuložilo“.

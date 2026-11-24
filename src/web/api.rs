@@ -7,6 +7,7 @@
 //! | GET | `/api/perf?car=<code>` | measurements of a car (page 4) |
 //! | GET/POST | `/api/settings` | server settings (`config.toml`) |
 //! | GET | `/api/strategy` | race, stints, stops and calibration |
+//! | POST | `/api/races` | an archived race: `{"id", "action": "compounds", "compounds": [..]}` (correct the stints) or `{"id", "action": "remove"}` (into `trash/`) |
 //! | GET | `/api/races[?id=]` | races driven in race mode (summaries, newest first); with `id` one race whole, as `/api/strategy` |
 //! | POST | `/api/strategy/custom` | the driver's own plan `{"stints": [{"compound", "laps"}], "follow": bool}`: stored with the race, returned costed (stops, fuel to add, against the recommendation) |
 //! | POST | `/api/strategy/race` | set the race (JSON of [`strategy::Race`]) |
@@ -95,7 +96,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/perf/gearing", get(perf_gearing))
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/strategy", get(strategy_state))
-        .route("/api/races", get(races))
+        .route("/api/races", get(races).post(races_action))
         .route("/api/strategy/race", axum::routing::post(strategy_race))
         .route("/api/strategy/preview", axum::routing::post(strategy_preview))
         .route("/api/strategy/action", axum::routing::post(strategy_action))
@@ -125,6 +126,27 @@ async fn strategy_custom(State(s): State<AppState>, Json(b): Json<CustomBody>) -
     .await
     .unwrap_or_default();
     json_body(body)
+}
+
+#[derive(Deserialize)]
+struct RaceAction {
+    id: String,
+    action: String,
+    #[serde(default)]
+    compounds: Vec<String>,
+}
+
+async fn races_action(State(s): State<AppState>, Json(a): Json<RaceAction>) -> axum::response::Response {
+    let st = s.strategy.lock().unwrap_or_else(|e| e.into_inner());
+    match a.action.as_str() {
+        "compounds" => match st.race_set_compounds(&a.id, &a.compounds) {
+            Some(saved) => json_body(serde_json::to_string(&saved).unwrap_or_default()).into_response(),
+            None => (StatusCode::NOT_FOUND, "no such race").into_response(),
+        },
+        "remove" if st.race_remove(&a.id) => json_body(json!({ "ok": true }).to_string()).into_response(),
+        "remove" => (StatusCode::NOT_FOUND, "no such race").into_response(),
+        _ => (StatusCode::BAD_REQUEST, "unknown action").into_response(),
+    }
 }
 
 #[derive(Deserialize)]
