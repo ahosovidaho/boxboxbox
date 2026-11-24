@@ -2,6 +2,10 @@
 
 ## BOXBOXBOX 0.8.0-fork1 – rozpracováno
 
+- **Závod se uloží do historie hned po cíli** (dřív až při startu dalšího závodu nebo výběru
+  jiného). V Rekapu je tak hned se správným časem a autem; další start ho už neukládá znovu
+  (`Saved::archived`).
+
 - **Ztráta v boxu = medián posledních 5 zastávek** (dřív průměr nové a staré hodnoty, takže
   jedna zastávka s provozem na vjezdu – Spa 29 s proti 21 s – hodnotu silně posunula). Měření
   ze závodu i z tréninku se ukládají do `pit_samples`; dřívější jediná hodnota je první vzorek.

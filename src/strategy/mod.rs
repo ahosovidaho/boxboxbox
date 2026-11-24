@@ -227,6 +227,9 @@ pub struct Saved {
     /// median
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub pit_samples: BTreeMap<String, Vec<f32>>,
+    /// Already kept in `strategy-history/` (at the finish): a restart does not keep it again
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub archived: bool,
     /// Car the race laps were driven with (for the race history)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub car: Option<i32>,
@@ -514,6 +517,7 @@ impl Strategy {
         self.saved.stops.clear();
         self.saved.fuel_laps.clear();
         self.saved.car = None;
+        self.saved.archived = false;
     }
 
     fn history_dir(&self) -> Option<std::path::PathBuf> {
@@ -525,7 +529,9 @@ impl Strategy {
     pub fn races(&self) -> Vec<history::Summary> {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
         let car = self.saved.car.or((self.live.car_code > 0).then_some(self.live.car_code));
-        let mut out: Vec<history::Summary> = history::summary("current", &now, car, &self.saved).into_iter().collect();
+        // Kept at the finish already: the archived copy stands for it
+        let current = if self.saved.archived { None } else { history::summary("current", &now, car, &self.saved) };
+        let mut out: Vec<history::Summary> = current.into_iter().collect();
         out.extend(self.history_dir().map(|d| history::list(&d)).unwrap_or_default());
         out
     }
@@ -539,6 +545,9 @@ impl Strategy {
     }
 
     fn archive(&self) {
+        if self.saved.archived {
+            return;
+        }
         let (Some(file), false) = (&self.file, self.saved.fuel_laps.len() < 2 && self.saved.stops.is_empty()) else { return };
         let Some(dir) = file.parent().map(|d| d.join("strategy-history")) else { return };
         let name: String = self
@@ -611,6 +620,14 @@ impl Strategy {
         }
         self.measure_pit_loss(lap);
         self.measure_wear();
+        // Over the line for the last time: the race goes to the history now (Rekap), not only
+        // when the next one starts
+        let total =
+            self.saved.race.as_ref().and_then(|r| r.laps).map(|n| n as i16).or((self.live.total_laps > 0).then_some(self.live.total_laps));
+        if total.is_some_and(|t| lap == t) && !self.saved.archived {
+            self.archive();
+            self.saved.archived = self.file.is_some();
+        }
         self.save();
     }
 
@@ -2197,6 +2214,31 @@ mod tests {
         assert_eq!(p.stops_needed, 2);
         assert!(p.calls.iter().all(|c| c.level != "box"), "{:?}", p.calls);
         assert!(p.calls.iter().any(|c| c.text.starts_with("Box v kole")), "{:?}", p.calls);
+    }
+
+    #[test]
+    fn a_race_goes_to_the_history_at_the_finish() {
+        let dir = std::env::temp_dir().join(format!("finish-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = Strategy::load(Some(dir.join("strategy.json")));
+        let mut race = barcelona(3).race.unwrap();
+        race.start_compound = Some("RS".into());
+        s.set_race(race);
+        s.update_live(Live { car_code: 3531, lap: 1, total_laps: 3, capacity: 100.0, fuel: 100.0, ..Default::default() });
+        let files = || std::fs::read_dir(dir.join("strategy-history")).map_or(0, |d| d.count());
+        s.lap_finished(1, 10.0, false, Some(91_000), true);
+        s.lap_finished(2, 10.0, false, Some(90_000), true);
+        assert_eq!(files(), 0);
+        s.lap_finished(3, 10.0, false, Some(90_500), true);
+        assert_eq!(files(), 1);
+        let r = s.races();
+        assert_eq!(r.len(), 1);
+        assert!(r[0].id != "current" && r[0].finished, "{r:?}");
+        // The next start: not kept a second time
+        s.reset_progress();
+        assert_eq!(files(), 1);
+        assert!(!s.saved.archived);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
